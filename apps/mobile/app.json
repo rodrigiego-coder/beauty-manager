@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Beauty Manager",
+    "slug": "beauty-manager",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "beautymanager",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ec4899"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.beautymanager.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ec4899"
+      },
+      "package": "com.beautymanager.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": ["expo-router"]
+  }
+}

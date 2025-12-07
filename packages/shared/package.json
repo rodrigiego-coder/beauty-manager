@@ -1,0 +1,15 @@
+{
+  "name": "@beauty-manager/shared",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tipos e utilitarios compartilhados do Beauty Manager",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

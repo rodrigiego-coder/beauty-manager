@@ -1,0 +1,35 @@
+{
+  "name": "beauty-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SaaS de gestão de salão de beleza",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @beauty-manager/api",
+    "dev:web": "npm run dev -w @beauty-manager/web",
+    "dev:mobile": "npm run dev -w @beauty-manager/mobile",
+    "build:api": "npm run build -w @beauty-manager/api",
+    "build:web": "npm run build -w @beauty-manager/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "keywords": [
+    "beauty",
+    "salon",
+    "management",
+    "saas",
+    "monorepo"
+  ],
+  "author": "",
+  "license": "UNLICENSED"
+}
