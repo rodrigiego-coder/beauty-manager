@@ -67,6 +67,50 @@ export const GEMINI_TOOLS: FunctionDeclaration[] = [
       required: [],
     },
   },
+  {
+    name: 'check_low_stock',
+    description:
+      'Verifica produtos com estoque baixo (quantidade atual menor ou igual ao estoque minimo). Use para alertar sobre produtos que precisam ser repostos.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'calculate_kpis',
+    description:
+      'Calcula indicadores de performance (KPIs) do salao: Ticket Medio, Taxa de Retorno de clientes, Top 3 servicos mais rentaveis. Use para relatorios gerenciais e analise de desempenho.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        startDate: {
+          type: SchemaType.STRING,
+          description: 'Data inicial do periodo no formato YYYY-MM-DD. Opcional.',
+        },
+        endDate: {
+          type: SchemaType.STRING,
+          description: 'Data final do periodo no formato YYYY-MM-DD. Opcional.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_client_history',
+    description:
+      'Busca historico completo de um cliente: notas tecnicas (quimica, alergias), preferencias pessoais e ultimos agendamentos. Use para personalizar o atendimento.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        phone: {
+          type: SchemaType.STRING,
+          description: 'Telefone do cliente para buscar historico.',
+        },
+      },
+      required: ['phone'],
+    },
+  },
 ];
 
 /**

@@ -6,6 +6,8 @@ import {
   FunctionCallingMode,
 } from '@google/generative-ai';
 import { ClientsService } from '../clients';
+import { ProductsService } from '../products';
+import { AppointmentsService } from '../appointments';
 import { GEMINI_TOOLS, MOCK_DATA } from './ai-receptionist.tools';
 
 // Comandos de controle Human Handoff
@@ -49,6 +51,8 @@ Regras importantes:
   constructor(
     private configService: ConfigService,
     private clientsService: ClientsService,
+    private productsService: ProductsService,
+    private appointmentsService: AppointmentsService,
   ) {
     this.genAI = new GoogleGenerativeAI(
       this.configService.get<string>('GEMINI_API_KEY') || '',
@@ -214,6 +218,18 @@ Regras importantes:
       case 'get_services':
         return this.getServices();
 
+      case 'check_low_stock':
+        return this.checkLowStock();
+
+      case 'calculate_kpis':
+        return this.calculateKPIs(
+          args.startDate as string | undefined,
+          args.endDate as string | undefined,
+        );
+
+      case 'get_client_history':
+        return this.getClientHistory(args.phone as string);
+
       default:
         return { error: `Funcao ${name} nao encontrada` };
     }
@@ -271,6 +287,102 @@ Regras importantes:
   private async getServices() {
     return {
       services: MOCK_DATA.services,
+    };
+  }
+
+  /**
+   * Verifica produtos com estoque baixo
+   */
+  private async checkLowStock(): Promise<{
+    products: { id: number; name: string; currentStock: number; minStock: number; unit: string }[];
+    count: number;
+    message: string;
+  }> {
+    const lowStockProducts = await this.productsService.findLowStock();
+
+    return {
+      products: lowStockProducts.map((p) => ({
+        id: p.id,
+        name: p.name,
+        currentStock: p.currentStock,
+        minStock: p.minStock,
+        unit: p.unit,
+      })),
+      count: lowStockProducts.length,
+      message:
+        lowStockProducts.length > 0
+          ? `Existem ${lowStockProducts.length} produto(s) com estoque baixo que precisam ser repostos.`
+          : 'Todos os produtos estao com estoque adequado.',
+    };
+  }
+
+  /**
+   * Calcula KPIs do negócio
+   */
+  private async calculateKPIs(startDate?: string, endDate?: string): Promise<{
+    ticketMedio: number;
+    taxaRetorno: number;
+    totalFaturamento: number;
+    totalClientes: number;
+    clientesRecorrentes: number;
+    top3Servicos: { service: string; count: number; revenue: number }[];
+    periodo: string;
+  }> {
+    const kpis = await this.appointmentsService.calculateKPIs(startDate, endDate);
+
+    return {
+      ...kpis,
+      periodo: startDate && endDate
+        ? `${startDate} a ${endDate}`
+        : 'Todo o período',
+    };
+  }
+
+  /**
+   * Busca histórico completo do cliente
+   */
+  private async getClientHistory(phone: string): Promise<{
+    client: {
+      name: string | null;
+      phone: string;
+      technicalNotes: string | null;
+      preferences: string | null;
+    } | null;
+    lastAppointments: { date: string; service: string; price: number }[];
+    totalVisits: number;
+    message: string;
+  }> {
+    const client = await this.clientsService.findByPhone(phone);
+
+    if (!client) {
+      return {
+        client: null,
+        lastAppointments: [],
+        totalVisits: 0,
+        message: 'Cliente não encontrado no sistema.',
+      };
+    }
+
+    // Busca últimos agendamentos
+    const appointmentsList = await this.appointmentsService.findByClient(client.id);
+    const lastAppointments = appointmentsList.slice(0, 5).map(apt => ({
+      date: apt.date,
+      service: apt.service,
+      price: apt.price / 100,
+    }));
+
+    return {
+      client: {
+        name: client.name,
+        phone: client.phone,
+        technicalNotes: client.technicalNotes,
+        preferences: client.preferences,
+      },
+      lastAppointments,
+      totalVisits: appointmentsList.length,
+      message: client.technicalNotes || client.preferences
+        ? 'Cliente possui informacoes importantes no historico.'
+        : 'Cliente cadastrado sem notas especiais.',
     };
   }
 

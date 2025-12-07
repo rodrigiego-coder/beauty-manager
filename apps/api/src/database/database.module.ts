@@ -4,6 +4,9 @@ import { createDatabaseConnection, Database } from './index';
 
 export const DATABASE_CONNECTION = 'DATABASE_CONNECTION';
 
+// Re-exporta o tipo Database para uso em outros módulos
+export type { Database };
+
 @Global()
 @Module({
   providers: [
