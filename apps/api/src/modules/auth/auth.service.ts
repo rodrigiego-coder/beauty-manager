@@ -1,14 +1,19 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Inject } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { eq } from 'drizzle-orm';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { UsersService } from '../users/users.service';
 import { JwtPayload } from './jwt.strategy';
+import * as schema from '../../database/schema';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
+    @Inject('DATABASE_CONNECTION')
+    private readonly db: NodePgDatabase<typeof schema>,
   ) {}
 
   /**
@@ -63,6 +68,12 @@ export class AuthService {
         throw new UnauthorizedException('Token inválido');
       }
 
+      // Verifica se o token está na blacklist
+      const isBlacklisted = await this.isTokenBlacklisted(refreshToken);
+      if (isBlacklisted) {
+        throw new UnauthorizedException('Token foi invalidado (logout realizado)');
+      }
+
       // Verifica se o usuário ainda existe e está ativo
       const user = await this.usersService.findById(payload.sub);
 
@@ -78,8 +89,55 @@ export class AuthService {
         message: 'Token renovado com sucesso',
       };
     } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
       throw new UnauthorizedException('Refresh token inválido ou expirado');
     }
+  }
+
+  /**
+   * Realiza o logout invalidando o refresh token
+   */
+  async logout(refreshToken: string, userId: string) {
+    try {
+      // Verifica se o token é válido antes de invalidar
+      const payload = this.jwtService.verify<JwtPayload>(refreshToken, {
+        secret: process.env.REFRESH_TOKEN_SECRET || 'SEGREDO_REFRESH_FORTE_AQUI',
+      });
+
+      // Calcula quando o token expira
+      const expiresAt = new Date(payload.exp! * 1000);
+
+      // Adiciona o token na blacklist
+      await this.db.insert(schema.refreshTokenBlacklist).values({
+        token: refreshToken,
+        userId: userId,
+        expiresAt: expiresAt,
+      });
+
+      return {
+        message: 'Logout realizado com sucesso',
+      };
+    } catch (error) {
+      // Mesmo se o token for inválido, consideramos logout bem-sucedido
+      return {
+        message: 'Logout realizado com sucesso',
+      };
+    }
+  }
+
+  /**
+   * Verifica se um token está na blacklist
+   */
+  private async isTokenBlacklisted(token: string): Promise<boolean> {
+    const result = await this.db
+      .select()
+      .from(schema.refreshTokenBlacklist)
+      .where(eq(schema.refreshTokenBlacklist.token, token))
+      .limit(1);
+
+    return result.length > 0;
   }
 
   /**

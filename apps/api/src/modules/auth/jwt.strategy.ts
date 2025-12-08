@@ -9,6 +9,8 @@ export interface JwtPayload {
   role: string;
   salonId: string;
   type: 'access' | 'refresh';
+  exp?: number;     // Data de expiração (adicionado automaticamente pelo JWT)
+  iat?: number;     // Data de criação (adicionado automaticamente pelo JWT)
 }
 
 @Injectable()
@@ -36,7 +38,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     // Retorna os dados que serão adicionados ao request.user
     return {
-      id: payload.sub,
+      sub: payload.sub,
       email: payload.email,
       role: payload.role,
       salonId: payload.salonId,

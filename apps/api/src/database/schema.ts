@@ -372,6 +372,17 @@ export const auditLogs = pgTable('audit_logs', {
   timestamp: timestamp('timestamp').defaultNow().notNull(),
 });
 
+/**
+ * Tabela de Refresh Tokens Invalidados (Blacklist para Logout)
+ */
+export const refreshTokenBlacklist = pgTable('refresh_token_blacklist', {
+  id: serial('id').primaryKey(),
+  token: text('token').notNull(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // Types inferidos do schema
 export type Salon = typeof salons.$inferSelect;
 export type NewSalon = typeof salons.$inferInsert;
@@ -409,3 +420,7 @@ export type Subscription = typeof subscriptions.$inferSelect;
 export type NewSubscription = typeof subscriptions.$inferInsert;
 export type SubscriptionPayment = typeof subscriptionPayments.$inferSelect;
 export type NewSubscriptionPayment = typeof subscriptionPayments.$inferInsert;
+
+// Types para Blacklist
+export type RefreshTokenBlacklist = typeof refreshTokenBlacklist.$inferSelect;
+export type NewRefreshTokenBlacklist = typeof refreshTokenBlacklist.$inferInsert;

@@ -1,7 +1,9 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
-import { LoginDto, RefreshTokenDto } from './dto';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { LoginDto, RefreshTokenDto, LogoutDto } from './dto';
+import { JwtPayload } from './jwt.strategy';
 
 @Controller('auth')
 export class AuthController {
@@ -29,5 +31,16 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async refresh(@Body() refreshDto: RefreshTokenDto) {
     return this.authService.refreshToken(refreshDto.refreshToken);
+  }
+
+  /**
+   * POST /auth/logout
+   * Invalida o refresh token (adiciona na blacklist)
+   * Requer autenticação - precisa estar logado
+   */
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  async logout(@Body() logoutDto: LogoutDto, @CurrentUser() user: JwtPayload) {
+    return this.authService.logout(logoutDto.refreshToken, user.sub);
   }
 }

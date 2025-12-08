@@ -31,6 +31,20 @@ describe('AuthService', () => {
     verify: jest.fn(),
   };
 
+  // Mock do Database Connection
+  const mockDb = {
+    insert: jest.fn().mockReturnValue({
+      values: jest.fn().mockResolvedValue({}),
+    }),
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue([]),
+        }),
+      }),
+    }),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -42,6 +56,10 @@ describe('AuthService', () => {
         {
           provide: JwtService,
           useValue: mockJwtService,
+        },
+        {
+          provide: 'DATABASE_CONNECTION',
+          useValue: mockDb,
         },
       ],
     }).compile();
@@ -99,7 +117,7 @@ describe('AuthService', () => {
 
       // Assert
       expect(mockJwtService.signAsync).toHaveBeenCalledTimes(2);
-      
+
       expect(mockJwtService.signAsync).toHaveBeenCalledWith(
         expect.objectContaining({
           sub: mockUser.id,
@@ -201,6 +219,7 @@ describe('AuthService', () => {
       role: mockUser.role,
       salonId: mockUser.salonId,
       type: 'refresh',
+      exp: Math.floor(Date.now() / 1000) + 604800, // 7 dias
     };
 
     it('deve retornar novos tokens quando refresh token é válido', async () => {
@@ -274,6 +293,55 @@ describe('AuthService', () => {
       await expect(
         authService.refreshToken('valid-refresh-token'),
       ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  // ========================================
+  // TESTES DO MÉTODO LOGOUT
+  // ========================================
+  describe('logout', () => {
+    const validRefreshPayload = {
+      sub: mockUser.id,
+      email: mockUser.email,
+      role: mockUser.role,
+      salonId: mockUser.salonId,
+      type: 'refresh',
+      exp: Math.floor(Date.now() / 1000) + 604800,
+    };
+
+    it('deve retornar mensagem de sucesso ao fazer logout', async () => {
+      // Arrange
+      mockJwtService.verify.mockReturnValue(validRefreshPayload);
+
+      // Act
+      const result = await authService.logout('valid-refresh-token', mockUser.id);
+
+      // Assert
+      expect(result.message).toBe('Logout realizado com sucesso');
+    });
+
+    it('deve adicionar token na blacklist', async () => {
+      // Arrange
+      mockJwtService.verify.mockReturnValue(validRefreshPayload);
+
+      // Act
+      await authService.logout('valid-refresh-token', mockUser.id);
+
+      // Assert
+      expect(mockDb.insert).toHaveBeenCalled();
+    });
+
+    it('deve retornar sucesso mesmo com token inválido', async () => {
+      // Arrange
+      mockJwtService.verify.mockImplementation(() => {
+        throw new Error('Invalid token');
+      });
+
+      // Act
+      const result = await authService.logout('invalid-token', mockUser.id);
+
+      // Assert
+      expect(result.message).toBe('Logout realizado com sucesso');
     });
   });
 });
