@@ -50,6 +50,9 @@ export function AppointmentsPage() {
   const [showModal, setShowModal] = useState(false);
   const [filterStatus, setFilterStatus] = useState<'all' | 'confirmed' | 'pending' | 'completed'>('all');
 
+  // LÓGICA DE ROTEAMENTO: Verifica se a URL é /novo
+  const isNewAppointmentRoute = window.location.pathname.endsWith('/novo');
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -104,6 +107,115 @@ export function AppointmentsPage() {
 
   const pendingCount = mockAppointments.filter((apt) => apt.status === 'pending').length;
 
+  // Função temporária de Agendamento
+  const handleSaveAppointment = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    alert('Novo Agendamento registrado com sucesso!');
+    window.location.href = '/agenda'; // CORRIGIDO: era /agendamento
+  }
+
+  // ------------------------------------------------------------------
+  // >>>>>> LÓGICA DE RENDERIZAÇÃO DE FORMULÁRIO (NOVA) <<<<
+  // ------------------------------------------------------------------
+
+  if (isNewAppointmentRoute) {
+    return (
+      <div className="p-6">
+        <a href="/agenda" className="text-primary-600 mb-4 flex items-center gap-2">
+          <ChevronLeft className="w-5 h-5" />
+          Voltar para Agenda
+        </a>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">Novo Agendamento</h1>
+
+        <div className="bg-white p-6 rounded-xl shadow-md max-w-lg mx-auto">
+          <form className="space-y-4" onSubmit={handleSaveAppointment}>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
+              <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                <option value="">Selecione um cliente</option>
+                <option value="1">Maria Silva - (11) 99999-8888</option>
+                <option value="2">Ana Costa - (11) 99999-7777</option>
+                <option value="3">Julia Santos - (11) 99999-6666</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Servico</label>
+              <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                <option value="">Selecione um servico</option>
+                <option value="1">Corte Feminino - R$ 80,00 (45 min)</option>
+                <option value="2">Corte + Escova - R$ 120,00 (60 min)</option>
+                <option value="3">Coloracao - R$ 280,00 (120 min)</option>
+                <option value="4">Manicure + Pedicure - R$ 80,00 (90 min)</option>
+                <option value="5">Hidratacao - R$ 150,00 (60 min)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Profissional</label>
+              <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                <option value="">Selecione um profissional</option>
+                <option value="1">Ana Costa</option>
+                <option value="2">Patricia Souza</option>
+                <option value="3">Roberto Silva</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
+                <input
+                  type="date"
+                  defaultValue={format(selectedDate, 'yyyy-MM-dd')}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Horario</label>
+                <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                  {timeSlots.map((time) => (
+                    <option key={time} value={time}>
+                      {time}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Observacoes (opcional)
+              </label>
+              <textarea
+                rows={3}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none"
+                placeholder="Adicione observacoes sobre o atendimento..."
+              />
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <a href="/agenda"
+                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors text-center"
+              >
+                Cancelar
+              </a>
+              <button
+                type="submit"
+                className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium transition-colors"
+              >
+                Agendar
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // >>>>>> LÓGICA DE RENDERIZAÇÃO DE LISTA (ORIGINAL) <<<<
+  // ------------------------------------------------------------------
+
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -112,13 +224,12 @@ export function AppointmentsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Agenda</h1>
           <p className="text-gray-500 mt-1">Gerencie seus agendamentos</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
+        <a href="/agenda/novo"
           className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
         >
           <Plus className="w-5 h-5" />
           Novo Agendamento
-        </button>
+        </a>
       </div>
 
       {/* Stats cards */}
@@ -336,117 +447,14 @@ export function AppointmentsPage() {
           <div className="text-center py-12">
             <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-500">Nenhum agendamento para este dia</p>
-            <button
-              onClick={() => setShowModal(true)}
+            <a href="/agenda/novo"
               className="mt-4 text-primary-600 font-medium hover:text-primary-700"
             >
               + Criar agendamento
-            </button>
+            </a>
           </div>
         )}
       </div>
-
-      {/* Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/50" onClick={() => setShowModal(false)} />
-            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">Novo Agendamento</h3>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
-                  <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
-                    <option value="">Selecione um cliente</option>
-                    <option value="1">Maria Silva - (11) 99999-8888</option>
-                    <option value="2">Ana Costa - (11) 99999-7777</option>
-                    <option value="3">Julia Santos - (11) 99999-6666</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Servico</label>
-                  <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
-                    <option value="">Selecione um servico</option>
-                    <option value="1">Corte Feminino - R$ 80,00 (45 min)</option>
-                    <option value="2">Corte + Escova - R$ 120,00 (60 min)</option>
-                    <option value="3">Coloracao - R$ 280,00 (120 min)</option>
-                    <option value="4">Manicure + Pedicure - R$ 80,00 (90 min)</option>
-                    <option value="5">Hidratacao - R$ 150,00 (60 min)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Profissional</label>
-                  <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
-                    <option value="">Selecione um profissional</option>
-                    <option value="1">Ana Costa</option>
-                    <option value="2">Patricia Souza</option>
-                    <option value="3">Roberto Silva</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
-                    <input
-                      type="date"
-                      defaultValue={format(selectedDate, 'yyyy-MM-dd')}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Horario</label>
-                    <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
-                      {timeSlots.map((time) => (
-                        <option key={time} value={time}>
-                          {time}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Observacoes (opcional)
-                  </label>
-                  <textarea
-                    rows={3}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none"
-                    placeholder="Adicione observacoes sobre o atendimento..."
-                  />
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium transition-colors"
-                  >
-                    Agendar
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

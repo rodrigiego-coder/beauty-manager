@@ -1,0 +1,72 @@
+name: CI - Testes Automatizados
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  test:
+    name: Rodar Testes
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: beauty_admin
+          POSTGRES_PASSWORD: beauty_secret_2025
+          POSTGRES_DB: beauty_manager
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Rodar testes da API
+        run: npm test --workspace=apps/api
+        env:
+          DATABASE_URL: postgresql://beauty_admin:beauty_secret_2025@localhost:5432/beauty_manager
+          ACCESS_TOKEN_SECRET: test-secret-access
+          REFRESH_TOKEN_SECRET: test-secret-refresh
+          NODE_ENV: test
+
+      - name: Build da API
+        run: npm run build --workspace=apps/api
+
+  lint:
+    name: Verificar Código
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Rodar ESLint (se disponível)
+        run: npm run lint --workspace=apps/api --if-present
+        continue-on-error: true

@@ -9,16 +9,19 @@ import {
   AlertTriangle,
   ArrowUpRight,
 } from 'lucide-react';
+
+import { Link } from 'react-router-dom';
+
 import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
+    AreaChart,
+    Area,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer,
+    BarChart,
+    Bar,
 } from 'recharts';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -239,25 +242,34 @@ export function DashboardPage() {
 
       {/* Quick actions */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Acoes Rapidas</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <button className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
-            <Calendar className="w-8 h-8 text-primary-600" />
-            <span className="text-sm font-medium text-gray-700">Novo Agendamento</span>
-          </button>
-          <button className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
-            <Users className="w-8 h-8 text-primary-600" />
-            <span className="text-sm font-medium text-gray-700">Novo Cliente</span>
-          </button>
-          <button className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
-            <DollarSign className="w-8 h-8 text-primary-600" />
-            <span className="text-sm font-medium text-gray-700">Lancar Receita</span>
-          </button>
-          <button className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
-            <Package className="w-8 h-8 text-primary-600" />
-            <span className="text-sm font-medium text-gray-700">Entrada Estoque</span>
-          </button>
-        </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Ações Rápidas</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              
+              {/* NOVO AGENDAMENTO */}
+              <Link to="/agenda/novo" className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
+                  <Calendar className="w-8 h-8 text-primary-600" />
+                  <span className="text-sm font-medium text-gray-700">Novo Agendamento</span>
+              </Link>
+
+              {/* NOVO CLIENTE */}
+              <Link to="/clientes/novo" className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
+                  <Users className="w-8 h-8 text-primary-600" />
+                  <span className="text-sm font-medium text-gray-700">Novo Cliente</span>
+              </Link>
+
+              {/* LANÇAR RECEITA */}
+              <Link to="/financeiro/receita" className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
+                  <DollarSign className="w-8 h-8 text-primary-600" />
+                  <span className="text-sm font-medium text-gray-700">Lançar Receita</span>
+              </Link>
+
+              {/* ENTRADA ESTOQUE */}
+              <Link to="/estoque/entrada" className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
+                  <Package className="w-8 h-8 text-primary-600" />
+                  <span className="text-sm font-medium text-gray-700">Entrada Estoque</span>
+              </Link>
+              
+          </div>
       </div>
     </div>
   );

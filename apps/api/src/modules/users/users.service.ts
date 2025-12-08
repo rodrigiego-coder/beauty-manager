@@ -34,6 +34,19 @@ export class UsersService {
   }
 
   /**
+   * Busca usuário por email
+   */
+  async findByEmail(email: string): Promise<User | null> {
+    const result = await this.db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    return result[0] || null;
+  }
+
+  /**
    * Busca profissionais ativos
    */
   async findProfessionals(): Promise<User[]> {
@@ -92,7 +105,7 @@ export class UsersService {
    */
   isWithinWorkSchedule(user: User, date: string, time: string): { valid: boolean; message?: string } {
     if (!user.workSchedule) {
-      return { valid: true }; // Se não tem schedule definido, aceita qualquer horário
+      return { valid: true };
     }
 
     const dateObj = new Date(date);
@@ -117,7 +130,6 @@ export class UsersService {
       };
     }
 
-    // Parse do horário de trabalho (ex: "09:00-18:00")
     const [startTime, endTime] = schedule.split('-');
     const [startHour, startMin] = startTime.split(':').map(Number);
     const [endHour, endMin] = endTime.split(':').map(Number);

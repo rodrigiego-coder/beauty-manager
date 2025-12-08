@@ -8,6 +8,7 @@ import {
   Edit,
   Trash2,
   X,
+  ChevronLeft, // ADICIONADO PARA O BOTÃO VOLTAR
 } from 'lucide-react';
 
 interface Product {
@@ -39,6 +40,9 @@ export function ProductsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
+  // LÓGICA DO ROTEAMENTO
+  const isNewEntryRoute = window.location.pathname.endsWith('/entrada');
+
   const formatCurrency = (value: string | number) => {
     const num = typeof value === 'string' ? parseFloat(value) : value;
     return new Intl.NumberFormat('pt-BR', {
@@ -62,6 +66,80 @@ export function ProductsPage() {
       setProducts(products.filter((p) => p.id !== id));
     }
   };
+  
+  // Funcao temporaria para simular a entrada de estoque
+  const handleSaveEntry = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    alert('Entrada de estoque registrada com sucesso!');
+    window.location.href = '/estoque'; // Volta para a lista de produtos
+  }
+
+  // ------------------------------------------------------------------
+  // >>>>>> LÓGICA DE RENDERIZAÇÃO DE FORMULÁRIO (NOVA) <<<<<<
+  // ------------------------------------------------------------------
+  
+  if (isNewEntryRoute) {
+    return (
+      <div className="p-6">
+        <a href="/estoque" className="text-primary-600 mb-4 flex items-center gap-2">
+          <ChevronLeft className="w-5 h-5" />
+          Voltar para Estoque
+        </a>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">Nova Entrada de Estoque</h1>
+        
+        <div className="bg-white p-6 rounded-xl shadow-md max-w-lg mx-auto">
+          <form className="space-y-4" onSubmit={handleSaveEntry}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nome do Produto
+                </label>
+                {/* Aqui, no sistema completo, seria um dropdown de produtos existentes */}
+                <input
+                  type="text"
+                  required
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                  placeholder="Ex: Kit Mega Nutrição Revelarium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantidade</label>
+                  <input
+                    type="number"
+                    required
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:focus:ring-primary-500 outline-none"
+                    placeholder="Unidades"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Valor Unitário Pago</label>
+                  <input
+                    type="number"
+                    required
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:focus:ring-primary-500 outline-none"
+                    placeholder="R$ 0,00"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4">
+                <button
+                  type="submit"
+                  className="w-full px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors"
+                >
+                  Registrar Entrada
+                </button>
+              </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // >>>>>> LÓGICA DE RENDERIZAÇÃO DE LISTA (ORIGINAL) <<<<<<
+  // ------------------------------------------------------------------
 
   return (
     <div className="space-y-6">
@@ -109,7 +187,7 @@ export function ProductsPage() {
               placeholder="Buscar produtos..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+              className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:focus:ring-primary-500 outline-none"
             />
           </div>
 
@@ -266,7 +344,7 @@ export function ProductsPage() {
                   <input
                     type="text"
                     defaultValue={editingProduct?.name || ''}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:focus:ring-primary-500 outline-none"
                     placeholder="Ex: Shampoo Profissional"
                   />
                 </div>
@@ -279,7 +357,7 @@ export function ProductsPage() {
                     <input
                       type="text"
                       defaultValue={editingProduct?.costPrice || ''}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:focus:ring-primary-500 outline-none"
                       placeholder="0,00"
                     />
                   </div>
@@ -290,7 +368,7 @@ export function ProductsPage() {
                     <input
                       type="text"
                       defaultValue={editingProduct?.salePrice || ''}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:focus:ring-primary-500 outline-none"
                       placeholder="0,00"
                     />
                   </div>
@@ -304,7 +382,7 @@ export function ProductsPage() {
                     <input
                       type="number"
                       defaultValue={editingProduct?.currentStock || 0}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:focus:ring-primary-500 outline-none"
                     />
                   </div>
                   <div>
@@ -314,7 +392,7 @@ export function ProductsPage() {
                     <input
                       type="number"
                       defaultValue={editingProduct?.minStock || 0}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:focus:ring-primary-500 outline-none"
                     />
                   </div>
                 </div>
@@ -325,7 +403,7 @@ export function ProductsPage() {
                   </label>
                   <select
                     defaultValue={editingProduct?.unit || 'UN'}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:focus:ring-primary-500 outline-none"
                   >
                     <option value="UN">Unidade (UN)</option>
                     <option value="ML">Mililitros (ML)</option>

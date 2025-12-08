@@ -13,6 +13,9 @@
     "dev:mobile": "npm run dev -w @beauty-manager/mobile",
     "build:api": "npm run build -w @beauty-manager/api",
     "build:web": "npm run build -w @beauty-manager/web",
+    
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "docker:up": "docker-compose up -d",
@@ -31,5 +34,8 @@
     "monorepo"
   ],
   "author": "",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "dependencies": {
+    "concurrently": "^9.2.1"
+  }
 }

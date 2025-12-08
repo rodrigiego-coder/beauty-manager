@@ -85,6 +85,7 @@ export const users = pgTable('users', {
   salonId: uuid('salon_id').references(() => salons.id),
   name: varchar('name', { length: 255 }).notNull(),
   email: varchar('email', { length: 255 }),
+  passwordHash: varchar('password_hash', { length: 255 }),
   phone: varchar('phone', { length: 20 }),
   role: userRoleEnum('role').default('STYLIST').notNull(),
   commissionRate: decimal('commission_rate', { precision: 5, scale: 2 }).default('0.50'),
@@ -140,7 +141,7 @@ export const appointments = pgTable('appointments', {
   price: integer('price').notNull(),
   status: varchar('status', { length: 20 }).default('confirmed').notNull(),
   notes: text('notes'),
-  clientPackageId: integer('client_package_id'), // Referência ao pacote usado
+  clientPackageId: integer('client_package_id'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -253,8 +254,8 @@ export const packages = pgTable('packages', {
   description: text('description'),
   price: decimal('price', { precision: 10, scale: 2 }).notNull(),
   servicesIncluded: json('services_included').$type<PackageServices>().notNull(),
-  totalSessions: integer('total_sessions').notNull(), // Total de sessões no pacote
-  expirationDays: integer('expiration_days').notNull(), // Dias para expirar após compra
+  totalSessions: integer('total_sessions').notNull(),
+  expirationDays: integer('expiration_days').notNull(),
   active: boolean('active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -285,14 +286,14 @@ export const clientPackages = pgTable('client_packages', {
 export const auditLogs = pgTable('audit_logs', {
   id: serial('id').primaryKey(),
   salonId: uuid('salon_id').references(() => salons.id),
-  userId: uuid('user_id').references(() => users.id), // Quem executou a ação
-  action: auditActionEnum('action').notNull(), // CREATE, UPDATE, DELETE
-  entity: varchar('entity', { length: 100 }).notNull(), // Nome da tabela/entidade
-  entityId: varchar('entity_id', { length: 100 }).notNull(), // ID do registro afetado
-  oldValues: json('old_values').$type<Record<string, unknown>>(), // Valores anteriores (para UPDATE/DELETE)
-  newValues: json('new_values').$type<Record<string, unknown>>(), // Novos valores (para CREATE/UPDATE)
-  ipAddress: varchar('ip_address', { length: 45 }), // IPv4 ou IPv6
-  userAgent: text('user_agent'), // Browser/Client info
+  userId: uuid('user_id').references(() => users.id),
+  action: auditActionEnum('action').notNull(),
+  entity: varchar('entity', { length: 100 }).notNull(),
+  entityId: varchar('entity_id', { length: 100 }).notNull(),
+  oldValues: json('old_values').$type<Record<string, unknown>>(),
+  newValues: json('new_values').$type<Record<string, unknown>>(),
+  ipAddress: varchar('ip_address', { length: 45 }),
+  userAgent: text('user_agent'),
   timestamp: timestamp('timestamp').defaultNow().notNull(),
 });
 

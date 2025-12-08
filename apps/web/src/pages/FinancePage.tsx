@@ -9,6 +9,7 @@ import {
   ArrowDownRight,
   Download,
   X,
+  ChevronLeft, // ADICIONADO PARA O BOTÃO VOLTAR
 } from 'lucide-react';
 import {
   AreaChart,
@@ -64,10 +65,16 @@ const categoryData = [
 ];
 
 export function FinancePage() {
+  // VARIÁVEIS DE ESTADO ORIGINAIS (Linhas 67-69)
   const [filterType, setFilterType] = useState<'all' | 'INCOME' | 'EXPENSE'>('all');
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState<'INCOME' | 'EXPENSE'>('INCOME');
+  
+  // LÓGICA DO ROTEAMENTO
+  const isNewRevenueRoute = window.location.pathname.endsWith('/receita');
+  const isNewExpenseRoute = window.location.pathname.endsWith('/despesa'); 
 
+  // FUNÇÕES ORIGINAIS
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -94,7 +101,70 @@ export function FinancePage() {
     setModalType(type);
     setShowModal(true);
   };
+  
+  // Funcao temporaria para simular o lancamento
+  const handleSaveTransaction = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    alert('Transacao registrada com sucesso!');
+    window.location.href = '/financeiro'; 
+  }
 
+
+  // ------------------------------------------------------------------
+  // >>>>>> LÓGICA DE RENDERIZAÇÃO DE FORMULÁRIO (NOVA) <<<<<<
+  // ------------------------------------------------------------------
+  
+  if (isNewRevenueRoute) {
+    return (
+      <div className="p-6">
+        <a href="/financeiro" className="text-primary-600 mb-4 flex items-center gap-2">
+          <ChevronLeft className="w-5 h-5" />
+          Voltar para Finaceiro
+        </a>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">Lançar Nova Receita</h1>
+        
+        <div className="bg-white p-6 rounded-xl shadow-md max-w-lg mx-auto">
+          <form className="space-y-4" onSubmit={handleSaveTransaction}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Descricao
+                </label>
+                <input
+                  type="text"
+                  required
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                  placeholder="Ex: Venda de Kit Mega Nutricao"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Valor</label>
+                <input
+                  type="number"
+                  required
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                  placeholder="R$ 0,00"
+                />
+              </div>
+              
+              <div className="pt-4">
+                <button
+                  type="submit"
+                  className="w-full px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition-colors"
+                >
+                  Registrar Receita
+                </button>
+              </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // >>>>>> LÓGICA DE RENDERIZAÇÃO DE LISTA (ORIGINAL) <<<<<<
+  // ------------------------------------------------------------------
+  
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -240,6 +310,7 @@ export function FinancePage() {
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
+                <Tooltip formatter={(value: number) => formatCurrency(value)} />
                 <Pie
                   data={categoryData}
                   cx="50%"
@@ -253,7 +324,6 @@ export function FinancePage() {
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: number) => formatCurrency(value)} />
               </PieChart>
             </ResponsiveContainer>
           </div>

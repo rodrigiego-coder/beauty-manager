@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { JwtModule } from '@nestjs/jwt';
 import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { DatabaseModule } from './database/database.module';
@@ -18,7 +19,8 @@ import { AutomationsModule } from './modules/automations';
 import { AuditModule } from './modules/audit';
 import { ReportsModule } from './modules/reports';
 import { AuditInterceptor } from './common/interceptors';
-import { RolesGuard, SalonAccessGuard } from './common/guards';
+import { AuthGuard, RolesGuard, SalonAccessGuard } from './common/guards';
+import { AuthModule } from './modules/auth';
 
 @Module({
   imports: [
@@ -27,10 +29,17 @@ import { RolesGuard, SalonAccessGuard } from './common/guards';
       envFilePath: ['.env.local', '.env'],
     }),
     ScheduleModule.forRoot(),
+    JwtModule.register({
+      global: true,
+      secret: process.env.ACCESS_TOKEN_SECRET || 'SEGREDO_ACESSO_FORTE_AQUI',
+      signOptions: { expiresIn: '30m' },
+    }),
     DatabaseModule,
     // Módulos de segurança e compliance (ordem importa - AuditModule deve vir antes)
     AuditModule,
     ReportsModule,
+    // Módulo de autenticação
+    AuthModule,
     // Módulos de negócio
     GoogleCalendarModule,
     UsersModule,
@@ -50,6 +59,11 @@ import { RolesGuard, SalonAccessGuard } from './common/guards';
     {
       provide: APP_INTERCEPTOR,
       useClass: AuditInterceptor,
+    },
+    // Guard global de autenticação (deve vir primeiro!)
+    {
+      provide: APP_GUARD,
+      useClass: AuthGuard,
     },
     // Guard global de permissões por role
     {

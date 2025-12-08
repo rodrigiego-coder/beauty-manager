@@ -12,8 +12,12 @@ import {
   Trash2,
   AlertTriangle,
   X,
+  UserPlus,      // Adicionado
+  ChevronLeft,   // Adicionado
 } from 'lucide-react';
 import { format } from 'date-fns';
+// Se o seu projeto usa ptBR, você pode adicionar esta linha:
+// import ptBR from 'date-fns/locale/pt-BR'; 
 
 interface Client {
   id: string;
@@ -37,12 +41,23 @@ const mockClients: Client[] = [
   { id: '8', name: 'Beatriz Almeida', phone: '11999991111', email: 'beatriz@email.com', aiActive: true, lastVisitDate: '2023-10-10', churnRisk: true, totalAppointments: 2 },
 ];
 
+
 export function ClientsPage() {
   const [clients, setClients] = useState<Client[]>(mockClients);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterChurnRisk, setFilterChurnRisk] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  
+  // A rota /clientes/novo é que define a view 'new'
+  const isNewClientRoute = window.location.pathname.endsWith('/novo');
+  
+  // Se estiver em modo edição (para futuras implementações)
+  const isEditRoute = window.location.pathname.match(/\/clientes\/[a-zA-Z0-9]+$/);
+  
+  // Encontra o cliente a ser editado se estiver na rota /clientes/ID
+  const editingClientId = isEditRoute ? window.location.pathname.split('/').pop() : null;
+  const [editingClient, setEditingClient] = useState<Client | null>(
+    clients.find(c => c.id === editingClientId) || null
+  );
 
   const formatPhone = (phone: string) => {
     const cleaned = phone.replace(/\D/g, '');
@@ -77,6 +92,91 @@ export function ClientsPage() {
     }
   };
 
+  // Funcao temporaria para simular o cadastro
+  const handleSaveClient = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    alert('Cliente cadastrado/editado com sucesso (Funcionalidade completa sera adicionada depois!)');
+    window.location.href = '/clientes'; // Volta para a lista de clientes
+  }
+
+  // >>>>>> LÓGICA DE RENDERIZAÇÃO: NOVO CADASTRO / EDIÇÃO <<<<<<
+  if (isNewClientRoute || editingClient) {
+    return (
+      <div className="p-6">
+        <a href="/clientes" className="text-primary-600 mb-4 flex items-center gap-2">
+          <ChevronLeft className="w-5 h-5" />
+          Voltar para Lista
+        </a>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">{editingClient ? 'Editar Cliente' : 'Novo Cliente'}</h1>
+        
+        <div className="bg-white p-6 rounded-xl shadow-md max-w-lg mx-auto">
+          <form className="space-y-4" onSubmit={handleSaveClient}>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nome Completo
+                </label>
+                <input
+                  type="text"
+                  required
+                  defaultValue={editingClient?.name || ''}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                  placeholder="Ex: Maria Silva"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
+                <input
+                  type="tel"
+                  required
+                  defaultValue={editingClient?.phone || ''}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                  placeholder="(11) 99999-9999"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email (opcional)
+                </label>
+                <input
+                  type="email"
+                  defaultValue={editingClient?.email || ''}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                  placeholder="email@exemplo.com"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="aiActive"
+                  defaultChecked={editingClient?.aiActive ?? true}
+                  className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                />
+                <label htmlFor="aiActive" className="text-sm text-gray-700">
+                  <span className="font-medium">Ativar Atendimento por IA</span>
+                  <p className="text-gray-500 text-xs mt-0.5">
+                    O cliente podera ser atendido automaticamente pelo robo
+                  </p>
+                </label>
+              </div>
+
+              <div className="pt-4">
+                <button
+                  type="submit"
+                  className="w-full px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium transition-colors"
+                >
+                  {editingClient ? 'Salvar Alterações' : 'Cadastrar Cliente'}
+                </button>
+              </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // >>>>>> LÓGICA DE RENDERIZAÇÃO: LISTA DE CLIENTES (RESTANTE DO CÓDIGO) <<<<<<
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -85,16 +185,12 @@ export function ClientsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Clientes</h1>
           <p className="text-gray-500 mt-1">Gerencie sua base de clientes</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingClient(null);
-            setShowModal(true);
-          }}
+        <a href="/clientes/novo"
           className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
         >
-          <Plus className="w-5 h-5" />
+          <UserPlus className="w-5 h-5" />
           Novo Cliente
-        </button>
+        </a>
       </div>
 
       {/* Stats cards */}
@@ -302,8 +398,9 @@ export function ClientsPage() {
                     <div className="flex items-center justify-end gap-2">
                       <button
                         onClick={() => {
-                          setEditingClient(client);
-                          setShowModal(true);
+                          setEditingClient(clients.find(c => c.id === client.id) || null);
+                          // Para esta nova estrutura, mudaremos a rota para o modo edição
+                          window.location.href = `/clientes/${client.id}`;
                         }}
                         className="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
                       >
@@ -330,95 +427,6 @@ export function ClientsPage() {
           </div>
         )}
       </div>
-
-      {/* Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/50" onClick={() => setShowModal(false)} />
-            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {editingClient ? 'Editar Cliente' : 'Novo Cliente'}
-                </h3>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nome Completo
-                  </label>
-                  <input
-                    type="text"
-                    defaultValue={editingClient?.name || ''}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-                    placeholder="Ex: Maria Silva"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
-                  <input
-                    type="tel"
-                    defaultValue={editingClient?.phone || ''}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-                    placeholder="(11) 99999-9999"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email (opcional)
-                  </label>
-                  <input
-                    type="email"
-                    defaultValue={editingClient?.email || ''}
-                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-                    placeholder="email@exemplo.com"
-                  />
-                </div>
-
-                <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
-                  <input
-                    type="checkbox"
-                    id="aiActive"
-                    defaultChecked={editingClient?.aiActive ?? true}
-                    className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                  />
-                  <label htmlFor="aiActive" className="text-sm text-gray-700">
-                    <span className="font-medium">Ativar Atendimento por IA</span>
-                    <p className="text-gray-500 text-xs mt-0.5">
-                      O cliente podera ser atendido automaticamente pelo robo
-                    </p>
-                  </label>
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium transition-colors"
-                  >
-                    {editingClient ? 'Salvar' : 'Cadastrar'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

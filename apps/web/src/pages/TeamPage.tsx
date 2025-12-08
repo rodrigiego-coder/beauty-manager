@@ -11,6 +11,7 @@ import {
   Star,
   Phone,
   Mail,
+  ChevronLeft, // ADICIONADO PARA O BOTÃO VOLTAR
 } from 'lucide-react';
 
 type UserRole = 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST';
@@ -160,6 +161,9 @@ export function TeamPage() {
     workSchedule: {} as WorkSchedule,
   });
 
+  // LÓGICA DE ROTEAMENTO: Verifica se a URL é /novo
+  const isNewMemberRoute = window.location.pathname.endsWith('/novo');
+
   const filteredTeam = team.filter((member) =>
     member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     member.email?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -221,6 +225,193 @@ export function TeamPage() {
       setTeam(team.filter((m) => m.id !== id));
     }
   };
+  
+  // Função temporária de salvamento
+  const handleSaveMember = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    alert(editingMember ? 'Membro editado com sucesso!' : 'Novo membro adicionado com sucesso!');
+    window.location.href = '/equipe'; // Volta para a lista principal
+  }
+
+
+  // ------------------------------------------------------------------
+  // >>>>>> LÓGICA DE RENDERIZAÇÃO DE FORMULÁRIO (NOVA) <<<<<<
+  // ------------------------------------------------------------------
+
+  if (isNewMemberRoute || showModal) { // Usa showModal para manter o fluxo original do botão "Novo Membro"
+    return (
+      <div className="p-6">
+        {/* Usamos a rota direta para voltar, se estiver em /equipe/novo */}
+        {isNewMemberRoute && (
+          <a href="/equipe" className="text-primary-600 mb-4 flex items-center gap-2">
+            <ChevronLeft className="w-5 h-5" />
+            Voltar para Lista
+          </a>
+        )}
+        <div className={`bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 ${isNewMemberRoute ? '' : 'fixed inset-0 z-50 overflow-y-auto'}`}>
+          
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold text-gray-900">
+              {editingMember ? 'Editar Membro' : 'Novo Membro'}
+            </h3>
+            {/* Se não for rota direta, mantém o X para fechar o Modal */}
+            {!isNewMemberRoute && (
+              <button
+                onClick={() => setShowModal(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+          
+          <form className="space-y-6" onSubmit={handleSaveMember}>
+            {/* Basic info */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nome Completo
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                  placeholder="Nome do profissional"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Funcao
+                </label>
+                <select
+                  value={formData.role}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                >
+                  <option value="STYLIST">Profissional</option>
+                  <option value="RECEPTIONIST">Recepcionista</option>
+                  <option value="MANAGER">Gerente</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                  placeholder="email@exemplo.com"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Telefone
+                </label>
+                <input
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                  placeholder="(11) 99999-9999"
+                />
+              </div>
+            </div>
+
+            {/* Commission (only for stylists) */}
+            {formData.role === 'STYLIST' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Taxa de Comissao (%)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={formData.commissionRate}
+                    onChange={(e) => setFormData({ ...formData, commissionRate: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                    placeholder="50"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">%</span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Porcentagem do valor do servico que o profissional recebe
+                </p>
+              </div>
+            )}
+
+            {/* Specialties (only for stylists) */}
+            {formData.role === 'STYLIST' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Especialidades
+                </label>
+                <input
+                  type="text"
+                  value={formData.specialties}
+                  onChange={(e) => setFormData({ ...formData, specialties: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                  placeholder="Corte, Coloracao, Hidratacao (separados por virgula)"
+                />
+              </div>
+            )}
+
+            {/* Work schedule */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-3">
+                Horario de Trabalho
+              </label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {weekDays.map((day) => (
+                  <div key={day.key} className="flex items-center gap-3">
+                    <span className="w-20 text-sm text-gray-600">{day.label}</span>
+                    <input
+                      type="text"
+                      value={formData.workSchedule[day.key] || ''}
+                      onChange={(e) => handleScheduleChange(day.key, e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
+                      placeholder="09:00-18:00 ou Folga"
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Formato: HH:MM-HH:MM. Deixe vazio para dias de folga.
+              </p>
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium transition-colors"
+              >
+                {editingMember ? 'Salvar Alteracoes' : 'Adicionar Membro'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // >>>>>> LÓGICA DE RENDERIZAÇÃO DE LISTA (ORIGINAL) <<<<<<
+  // ------------------------------------------------------------------
 
   return (
     <div className="space-y-6">
@@ -230,13 +421,12 @@ export function TeamPage() {
           <h1 className="text-2xl font-bold text-gray-900">Equipe</h1>
           <p className="text-gray-500 mt-1">Gerencie profissionais e comissoes</p>
         </div>
-        <button
-          onClick={openNewModal}
+        <a href="/equipe/novo" // Mudamos o onClick para a rota direta
           className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium"
         >
           <Plus className="w-5 h-5" />
           Novo Membro
-        </button>
+        </a>
       </div>
 
       {/* Stats cards */}
@@ -425,168 +615,6 @@ export function TeamPage() {
           </div>
         )}
       </div>
-
-      {/* Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="fixed inset-0 bg-black/50" onClick={() => setShowModal(false)} />
-            <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {editingMember ? 'Editar Membro' : 'Novo Membro'}
-                </h3>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form className="space-y-6">
-                {/* Basic info */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Nome Completo
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-                      placeholder="Nome do profissional"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Funcao
-                    </label>
-                    <select
-                      value={formData.role}
-                      onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-                    >
-                      <option value="STYLIST">Profissional</option>
-                      <option value="RECEPTIONIST">Recepcionista</option>
-                      <option value="MANAGER">Gerente</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-                      placeholder="email@exemplo.com"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Telefone
-                    </label>
-                    <input
-                      type="tel"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-                      placeholder="(11) 99999-9999"
-                    />
-                  </div>
-                </div>
-
-                {/* Commission (only for stylists) */}
-                {formData.role === 'STYLIST' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Taxa de Comissao (%)
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.5"
-                        value={formData.commissionRate}
-                        onChange={(e) => setFormData({ ...formData, commissionRate: e.target.value })}
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-                        placeholder="50"
-                      />
-                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">%</span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Porcentagem do valor do servico que o profissional recebe
-                    </p>
-                  </div>
-                )}
-
-                {/* Specialties (only for stylists) */}
-                {formData.role === 'STYLIST' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Especialidades
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.specialties}
-                      onChange={(e) => setFormData({ ...formData, specialties: e.target.value })}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-                      placeholder="Corte, Coloracao, Hidratacao (separados por virgula)"
-                    />
-                  </div>
-                )}
-
-                {/* Work schedule */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
-                    Horario de Trabalho
-                  </label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {weekDays.map((day) => (
-                      <div key={day.key} className="flex items-center gap-3">
-                        <span className="w-20 text-sm text-gray-600">{day.label}</span>
-                        <input
-                          type="text"
-                          value={formData.workSchedule[day.key] || ''}
-                          onChange={(e) => handleScheduleChange(day.key, e.target.value)}
-                          className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
-                          placeholder="09:00-18:00 ou Folga"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Formato: HH:MM-HH:MM. Deixe vazio para dias de folga.
-                  </p>
-                </div>
-
-                <div className="flex gap-3 pt-4 border-t border-gray-200">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium transition-colors"
-                  >
-                    {editingMember ? 'Salvar Alteracoes' : 'Adicionar Membro'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
