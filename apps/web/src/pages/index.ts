@@ -6,3 +6,5 @@ export { ClientsPage } from './ClientsPage';
 export { AppointmentsPage } from './AppointmentsPage';
 export { LoginPage } from './LoginPage';
 export { TeamPage } from './TeamPage';
+export { SettingsPage } from './SettingsPage';
+export { SubscriptionPage } from './SubscriptionPage';

@@ -10,6 +10,7 @@ import {
   Sparkles,
   Settings,
   LogOut,
+  Crown,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -59,7 +60,6 @@ export function Sidebar() {
 
   return (
     <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 text-white flex flex-col">
-      {/* Logo */}
       <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-800">
         <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center">
           <Sparkles className="w-6 h-6 text-white" />
@@ -70,7 +70,6 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {navigation.map((item) => (
           <NavLink
@@ -90,12 +89,33 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom section */}
       <div className="px-3 py-4 border-t border-gray-800 space-y-1">
-        <button className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors w-full">
+        <NavLink
+          to="/assinatura"
+          className={({ isActive }) =>
+            `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full ${
+              isActive
+                ? 'bg-primary-600 text-white'
+                : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+            }`
+          }
+        >
+          <Crown className="w-5 h-5" />
+          Assinatura
+        </NavLink>
+        <NavLink
+          to="/configuracoes"
+          className={({ isActive }) =>
+            `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full ${
+              isActive
+                ? 'bg-primary-600 text-white'
+                : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+            }`
+          }
+        >
           <Settings className="w-5 h-5" />
           Configuracoes
-        </button>
+        </NavLink>
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors w-full"
@@ -105,7 +125,6 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* User info */}
       <div className="px-4 py-4 border-t border-gray-800">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-primary-600 rounded-full flex items-center justify-center text-sm font-bold">

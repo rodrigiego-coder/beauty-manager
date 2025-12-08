@@ -11,6 +11,8 @@ import {
   AppointmentsPage,
   LoginPage,
   TeamPage,
+  SettingsPage,
+  SubscriptionPage,
 } from './pages';
 
 function App() {
@@ -31,12 +33,14 @@ function App() {
             }
           >
             <Route index element={<DashboardPage />} />
-            <Route path="/agenda/*" element={<AppointmentsPage />} />  {/* CORRIGIDO! */}
-            <Route path="/financeiro/*" element={<FinancePage />} />  {/* CORRIGIDO! */}
-            <Route path="/estoque/*" element={<ProductsPage />} />  {/* CORRIGIDO! */}
-            <Route path="/clientes/*" element={<ClientsPage />} />  {/* CORREÇÃO FINAL */}
-            <Route path="/equipe/*" element={<TeamPage />} />  {/* CORRIGIDO! */}
-            <Route path="relatorios" element={<ReportsPage />} />
+            <Route path="/agenda/*" element={<AppointmentsPage />} />
+            <Route path="/financeiro/*" element={<FinancePage />} />
+            <Route path="/estoque/*" element={<ProductsPage />} />
+            <Route path="/clientes/*" element={<ClientsPage />} />
+            <Route path="/equipe/*" element={<TeamPage />} />
+            <Route path="/relatorios" element={<ReportsPage />} />
+            <Route path="/configuracoes" element={<SettingsPage />} />
+            <Route path="/assinatura" element={<SubscriptionPage />} />
           </Route>
         </Routes>
       </AuthProvider>
