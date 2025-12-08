@@ -10,69 +10,86 @@ export interface AuthUser {
 
 export interface LoginResponse {
   user: AuthUser;
-  token: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  message: string;
 }
 
-const TOKEN_KEY = 'beauty_manager_token';
+const ACCESS_TOKEN_KEY = 'beauty_manager_access_token';
+const REFRESH_TOKEN_KEY = 'beauty_manager_refresh_token';
 const USER_KEY = 'beauty_manager_user';
-
-// Credenciais de demo para desenvolvimento
-const DEMO_CREDENTIALS = {
-  email: 'admin@beautymanager.com',
-  password: 'admin123',
-};
-
-const DEMO_USER: AuthUser = {
-  id: '1',
-  name: 'Rodrigo Viana',
-  email: 'admin@beautymanager.com',
-  role: 'OWNER',
-  salonId: 'salon-1',
-};
 
 export const authService = {
   /**
-   * Realiza login do usuario
+   * Realiza login do usuario via API
    */
   async login(email: string, password: string): Promise<LoginResponse> {
-    // Em producao, isso chamaria a API real
-    // Por enquanto, valida credenciais de demo
-    if (email === DEMO_CREDENTIALS.email && password === DEMO_CREDENTIALS.password) {
-      const token = 'demo_token_' + Date.now();
-      const response: LoginResponse = {
-        user: DEMO_USER,
-        token,
-      };
+    const { data } = await api.post<LoginResponse>('/auth/login', { email, password });
 
-      // Salva no localStorage
-      localStorage.setItem(TOKEN_KEY, token);
-      localStorage.setItem(USER_KEY, JSON.stringify(response.user));
+    // Salva no localStorage
+    localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
+    localStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
+    localStorage.setItem(USER_KEY, JSON.stringify(data.user));
 
-      // Configura o header de autorizacao para futuras requisicoes
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    // Configura o header de autorizacao para futuras requisicoes
+    api.defaults.headers.common['Authorization'] = `Bearer ${data.accessToken}`;
 
-      return response;
+    return data;
+  },
+
+  /**
+   * Realiza logout do usuario - invalida o token no backend
+   */
+  async logout(): Promise<void> {
+    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+    
+    // Tenta invalidar o token no backend
+    if (refreshToken) {
+      try {
+        await api.post('/auth/logout', { refreshToken });
+      } catch (error) {
+        // Mesmo se falhar, continua com logout local
+        console.warn('Erro ao invalidar token no servidor:', error);
+      }
     }
 
-    // Tenta autenticar via API (quando backend estiver pronto)
+    // Limpa dados locais
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    delete api.defaults.headers.common['Authorization'];
+  },
+
+  /**
+   * Renova o access token usando o refresh token
+   */
+  async refreshToken(): Promise<string | null> {
+    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+    
+    if (!refreshToken) return null;
+
     try {
-      const { data } = await api.post<LoginResponse>('/auth/login', { email, password });
-
-      localStorage.setItem(TOKEN_KEY, data.token);
-      localStorage.setItem(USER_KEY, JSON.stringify(data.user));
-      api.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
-
-      return data;
+      const { data } = await api.post<LoginResponse>('/auth/refresh', { refreshToken });
+      
+      localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
+      localStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
+      api.defaults.headers.common['Authorization'] = `Bearer ${data.accessToken}`;
+      
+      return data.accessToken;
     } catch {
-      throw new Error('Credenciais invalidas');
+      // Token expirado ou inválido - faz logout
+      this.logoutLocal();
+      return null;
     }
   },
 
   /**
-   * Realiza logout do usuario
+   * Logout apenas local (sem chamar API)
    */
-  logout(): void {
-    localStorage.removeItem(TOKEN_KEY);
+  logoutLocal(): void {
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     delete api.defaults.headers.common['Authorization'];
   },
@@ -88,7 +105,7 @@ export const authService = {
       const user = JSON.parse(userStr) as AuthUser;
 
       // Restaura o token no header
-      const token = localStorage.getItem(TOKEN_KEY);
+      const token = localStorage.getItem(ACCESS_TOKEN_KEY);
       if (token) {
         api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       }
@@ -100,16 +117,23 @@ export const authService = {
   },
 
   /**
-   * Retorna o token armazenado
+   * Retorna o access token armazenado
    */
-  getToken(): string | null {
-    return localStorage.getItem(TOKEN_KEY);
+  getAccessToken(): string | null {
+    return localStorage.getItem(ACCESS_TOKEN_KEY);
+  },
+
+  /**
+   * Retorna o refresh token armazenado
+   */
+  getRefreshToken(): string | null {
+    return localStorage.getItem(REFRESH_TOKEN_KEY);
   },
 
   /**
    * Verifica se o usuario esta autenticado
    */
   isAuthenticated(): boolean {
-    return !!this.getToken() && !!this.getStoredUser();
+    return !!this.getAccessToken() && !!this.getStoredUser();
   },
 };
