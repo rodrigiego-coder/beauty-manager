@@ -10,7 +10,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
-import { NewAppointment } from '../../database';
+import { CreateAppointmentDto, UpdateAppointmentDto } from './dto';
 
 @Controller('appointments')
 export class AppointmentsController {
@@ -84,8 +84,8 @@ export class AppointmentsController {
    * Cria um novo agendamento (com validação de work_schedule)
    */
   @Post()
-  async create(@Body() data: NewAppointment) {
-    return this.appointmentsService.create(data);
+  async create(@Body() data: CreateAppointmentDto) {
+    return this.appointmentsService.create(data as any);
   }
 
   /**
@@ -95,9 +95,9 @@ export class AppointmentsController {
   @Patch(':id')
   async update(
     @Param('id') id: string,
-    @Body() data: Partial<NewAppointment>,
+    @Body() data: UpdateAppointmentDto,
   ) {
-    const appointment = await this.appointmentsService.update(id, data);
+    const appointment = await this.appointmentsService.update(id, data as any);
 
     if (!appointment) {
       throw new NotFoundException('Agendamento nao encontrado');

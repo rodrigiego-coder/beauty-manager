@@ -10,7 +10,7 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
-import { NewProduct } from '../../database';
+import { CreateProductDto, UpdateProductDto, StockEntryDto } from './dto';
 
 @Controller('products')
 export class ProductsController {
@@ -54,8 +54,8 @@ export class ProductsController {
    * Cria um novo produto
    */
   @Post()
-  async create(@Body() data: NewProduct) {
-    return this.productsService.create(data);
+  async create(@Body() data: CreateProductDto) {
+    return this.productsService.create(data as any);
   }
 
   /**
@@ -65,9 +65,9 @@ export class ProductsController {
   @Patch(':id')
   async update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() data: Partial<NewProduct>,
+    @Body() data: UpdateProductDto,
   ) {
-    const product = await this.productsService.update(id, data);
+    const product = await this.productsService.update(id, data as any);
 
     if (!product) {
       throw new NotFoundException('Produto nao encontrado');
@@ -83,9 +83,9 @@ export class ProductsController {
   @Patch(':id/stock')
   async updateStock(
     @Param('id', ParseIntPipe) id: number,
-    @Body('quantity', ParseIntPipe) quantity: number,
+    @Body() data: StockEntryDto,
   ) {
-    const product = await this.productsService.updateStock(id, quantity);
+    const product = await this.productsService.updateStock(id, data.quantity);
 
     if (!product) {
       throw new NotFoundException('Produto nao encontrado');

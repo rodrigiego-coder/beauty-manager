@@ -9,7 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
-import { NewUser, WorkSchedule } from '../../database';
+import { CreateUserDto, UpdateUserDto, UpdateWorkScheduleDto } from './dto';
 
 @Controller('users')
 export class UsersController {
@@ -53,8 +53,8 @@ export class UsersController {
    * Cria um novo usuário
    */
   @Post()
-  async create(@Body() data: NewUser) {
-    return this.usersService.create(data);
+  async create(@Body() data: CreateUserDto) {
+    return this.usersService.create(data as any);
   }
 
   /**
@@ -64,9 +64,9 @@ export class UsersController {
   @Patch(':id')
   async update(
     @Param('id') id: string,
-    @Body() data: Partial<NewUser>,
+    @Body() data: UpdateUserDto,
   ) {
-    const user = await this.usersService.update(id, data);
+    const user = await this.usersService.update(id, data as any);
 
     if (!user) {
       throw new NotFoundException('Usuario nao encontrado');
@@ -82,9 +82,9 @@ export class UsersController {
   @Patch(':id/schedule')
   async updateSchedule(
     @Param('id') id: string,
-    @Body() schedule: WorkSchedule,
+    @Body() schedule: UpdateWorkScheduleDto,
   ) {
-    const user = await this.usersService.updateWorkSchedule(id, schedule);
+    const user = await this.usersService.updateWorkSchedule(id, schedule as any);
 
     if (!user) {
       throw new NotFoundException('Usuario nao encontrado');
