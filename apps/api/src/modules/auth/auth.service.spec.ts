@@ -8,7 +8,7 @@ import * as bcrypt from 'bcryptjs';
 describe('AuthService', () => {
   let authService: AuthService;
 
-  // Mock do usuário
+  // Mock do usuário base
   const mockUser = {
     id: '11111111-1111-1111-1111-111111111111',
     email: 'owner@salao.com',
@@ -52,6 +52,9 @@ describe('AuthService', () => {
     jest.clearAllMocks();
   });
 
+  // ========================================
+  // TESTES DO MÉTODO LOGIN
+  // ========================================
   describe('login', () => {
     it('deve retornar tokens quando credenciais são válidas', async () => {
       // Arrange
@@ -65,12 +68,66 @@ describe('AuthService', () => {
       // Assert
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
+      expect(result).toHaveProperty('expiresIn', 1800);
       expect(result).toHaveProperty('user');
       expect(result.user.email).toBe('owner@salao.com');
       expect(result.message).toBe('Login realizado com sucesso');
     });
 
-    it('deve lançar erro quando usuário não existe', async () => {
+    it('deve chamar findByEmail com o email correto', async () => {
+      // Arrange
+      const hashedPassword = await bcrypt.hash('senhaforte', 10);
+      const userWithHash = { ...mockUser, passwordHash: hashedPassword };
+      mockUsersService.findByEmail.mockResolvedValue(userWithHash);
+
+      // Act
+      await authService.login('owner@salao.com', 'senhaforte');
+
+      // Assert
+      expect(mockUsersService.findByEmail).toHaveBeenCalledWith('owner@salao.com');
+      expect(mockUsersService.findByEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('deve gerar tokens com os payloads corretos', async () => {
+      // Arrange
+      const hashedPassword = await bcrypt.hash('senhaforte', 10);
+      const userWithHash = { ...mockUser, passwordHash: hashedPassword };
+      mockUsersService.findByEmail.mockResolvedValue(userWithHash);
+
+      // Act
+      await authService.login('owner@salao.com', 'senhaforte');
+
+      // Assert
+      expect(mockJwtService.signAsync).toHaveBeenCalledTimes(2);
+      
+      expect(mockJwtService.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: mockUser.id,
+          email: mockUser.email,
+          role: mockUser.role,
+          salonId: mockUser.salonId,
+          type: 'access',
+        }),
+        expect.objectContaining({
+          expiresIn: '30m',
+        }),
+      );
+
+      expect(mockJwtService.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: mockUser.id,
+          email: mockUser.email,
+          role: mockUser.role,
+          salonId: mockUser.salonId,
+          type: 'refresh',
+        }),
+        expect.objectContaining({
+          expiresIn: '7d',
+        }),
+      );
+    });
+
+    it('deve lançar UnauthorizedException quando usuário não existe', async () => {
       // Arrange
       mockUsersService.findByEmail.mockResolvedValue(null);
 
@@ -80,7 +137,7 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('deve lançar erro quando senha está incorreta', async () => {
+    it('deve lançar UnauthorizedException quando senha está incorreta', async () => {
       // Arrange
       const hashedPassword = await bcrypt.hash('senhaforte', 10);
       const userWithHash = { ...mockUser, passwordHash: hashedPassword };
@@ -92,9 +149,10 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('deve lançar erro quando usuário está inativo', async () => {
+    it('deve lançar UnauthorizedException quando usuário está inativo', async () => {
       // Arrange
-      const inactiveUser = { ...mockUser, active: false };
+      const hashedPassword = await bcrypt.hash('senhaforte', 10);
+      const inactiveUser = { ...mockUser, passwordHash: hashedPassword, active: false };
       mockUsersService.findByEmail.mockResolvedValue(inactiveUser);
 
       // Act & Assert
@@ -103,7 +161,7 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('deve lançar erro quando usuário não tem senha configurada', async () => {
+    it('deve lançar UnauthorizedException quando usuário não tem senha configurada', async () => {
       // Arrange
       const userWithoutPassword = { ...mockUser, passwordHash: null };
       mockUsersService.findByEmail.mockResolvedValue(userWithoutPassword);
@@ -114,7 +172,7 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
 
-    it('não deve retornar passwordHash no objeto user', async () => {
+    it('não deve retornar passwordHash no objeto user da resposta', async () => {
       // Arrange
       const hashedPassword = await bcrypt.hash('senhaforte', 10);
       const userWithHash = { ...mockUser, passwordHash: hashedPassword };
@@ -125,11 +183,54 @@ describe('AuthService', () => {
 
       // Assert
       expect(result.user).not.toHaveProperty('passwordHash');
+      expect(result.user).toHaveProperty('id');
+      expect(result.user).toHaveProperty('email');
+      expect(result.user).toHaveProperty('name');
+      expect(result.user).toHaveProperty('role');
+      expect(result.user).toHaveProperty('salonId');
     });
   });
 
+  // ========================================
+  // TESTES DO MÉTODO REFRESH TOKEN
+  // ========================================
   describe('refreshToken', () => {
-    it('deve lançar erro quando refresh token é inválido', async () => {
+    const validRefreshPayload = {
+      sub: mockUser.id,
+      email: mockUser.email,
+      role: mockUser.role,
+      salonId: mockUser.salonId,
+      type: 'refresh',
+    };
+
+    it('deve retornar novos tokens quando refresh token é válido', async () => {
+      // Arrange
+      mockJwtService.verify.mockReturnValue(validRefreshPayload);
+      mockUsersService.findById.mockResolvedValue(mockUser);
+
+      // Act
+      const result = await authService.refreshToken('valid-refresh-token');
+
+      // Assert
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+      expect(result).toHaveProperty('expiresIn', 1800);
+      expect(result.message).toBe('Token renovado com sucesso');
+    });
+
+    it('deve buscar usuário pelo ID do payload', async () => {
+      // Arrange
+      mockJwtService.verify.mockReturnValue(validRefreshPayload);
+      mockUsersService.findById.mockResolvedValue(mockUser);
+
+      // Act
+      await authService.refreshToken('valid-refresh-token');
+
+      // Assert
+      expect(mockUsersService.findById).toHaveBeenCalledWith(mockUser.id);
+    });
+
+    it('deve lançar UnauthorizedException quando refresh token é inválido', async () => {
       // Arrange
       mockJwtService.verify.mockImplementation(() => {
         throw new Error('Invalid token');
@@ -138,6 +239,40 @@ describe('AuthService', () => {
       // Act & Assert
       await expect(
         authService.refreshToken('invalid-token'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('deve lançar UnauthorizedException quando tipo do token não é refresh', async () => {
+      // Arrange
+      const accessTokenPayload = { ...validRefreshPayload, type: 'access' };
+      mockJwtService.verify.mockReturnValue(accessTokenPayload);
+
+      // Act & Assert
+      await expect(
+        authService.refreshToken('access-token-instead'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('deve lançar UnauthorizedException quando usuário não existe mais', async () => {
+      // Arrange
+      mockJwtService.verify.mockReturnValue(validRefreshPayload);
+      mockUsersService.findById.mockResolvedValue(null);
+
+      // Act & Assert
+      await expect(
+        authService.refreshToken('valid-refresh-token'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('deve lançar UnauthorizedException quando usuário foi desativado', async () => {
+      // Arrange
+      mockJwtService.verify.mockReturnValue(validRefreshPayload);
+      const inactiveUser = { ...mockUser, active: false };
+      mockUsersService.findById.mockResolvedValue(inactiveUser);
+
+      // Act & Assert
+      await expect(
+        authService.refreshToken('valid-refresh-token'),
       ).rejects.toThrow(UnauthorizedException);
     });
   });
