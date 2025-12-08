@@ -30,6 +30,21 @@ export const notificationTypeEnum = pgEnum('notification_type', [
 
 export const auditActionEnum = pgEnum('audit_action', ['CREATE', 'UPDATE', 'DELETE']);
 
+// Enums para Sistema de Assinaturas
+export const subscriptionStatusEnum = pgEnum('subscription_status', [
+  'ACTIVE',
+  'PAST_DUE',
+  'CANCELED',
+  'TRIAL',
+  'SUSPENDED',
+]);
+
+export const subscriptionPlanEnum = pgEnum('subscription_plan', [
+  'BASIC',
+  'PRO',
+  'PREMIUM',
+]);
+
 /**
  * Interface para tipagem do work_schedule
  */
@@ -38,14 +53,42 @@ export interface WorkSchedule {
 }
 
 /**
- * Interface para tipagem dos serviços incluídos no pacote
+ * Interface para tipagem dos servicos incluidos no pacote
  */
 export interface PackageServices {
   services: { name: string; quantity: number }[];
 }
 
 /**
- * Tabela de salões (Multi-localidade)
+ * Interface para recursos do plano
+ */
+export interface PlanFeatures {
+  maxUsers: number;
+  maxClients: number;
+  hasReports: boolean;
+  hasAI: boolean;
+  hasApi: boolean;
+}
+
+/**
+ * Tabela de Planos de Assinatura
+ */
+export const subscriptionPlans = pgTable('subscription_plans', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 100 }).notNull(),
+  code: subscriptionPlanEnum('code').notNull(),
+  description: text('description'),
+  monthlyPrice: decimal('monthly_price', { precision: 10, scale: 2 }).notNull(),
+  yearlyPrice: decimal('yearly_price', { precision: 10, scale: 2 }),
+  features: json('features').$type<PlanFeatures>().notNull(),
+  trialDays: integer('trial_days').default(7),
+  active: boolean('active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Tabela de saloes (Multi-localidade)
  */
 export const salons = pgTable('salons', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -57,6 +100,38 @@ export const salons = pgTable('salons', {
   active: boolean('active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Tabela de Assinaturas dos Saloes
+ */
+export const subscriptions = pgTable('subscriptions', {
+  id: serial('id').primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  planId: integer('plan_id').references(() => subscriptionPlans.id).notNull(),
+  status: subscriptionStatusEnum('status').default('TRIAL').notNull(),
+  currentPeriodStart: timestamp('current_period_start').notNull(),
+  currentPeriodEnd: timestamp('current_period_end').notNull(),
+  canceledAt: timestamp('canceled_at'),
+  trialEndsAt: timestamp('trial_ends_at'),
+  gracePeriodEndsAt: timestamp('grace_period_ends_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Tabela de Pagamentos de Assinatura
+ */
+export const subscriptionPayments = pgTable('subscription_payments', {
+  id: serial('id').primaryKey(),
+  subscriptionId: integer('subscription_id').references(() => subscriptions.id).notNull(),
+  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
+  dueDate: date('due_date').notNull(),
+  paidAt: timestamp('paid_at'),
+  paymentMethod: varchar('payment_method', { length: 50 }),
+  transactionId: varchar('transaction_id', { length: 255 }),
+  status: accountStatusEnum('status').default('PENDING').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 /**
@@ -78,7 +153,7 @@ export const clients = pgTable('clients', {
 });
 
 /**
- * Tabela de usuários/profissionais do salão
+ * Tabela de usuarios/profissionais do salao
  */
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -164,7 +239,7 @@ export const products = pgTable('products', {
 });
 
 /**
- * Tabela de transações (Fluxo de Caixa)
+ * Tabela de transacoes (Fluxo de Caixa)
  */
 export const transactions = pgTable('transactions', {
   id: serial('id').primaryKey(),
@@ -230,7 +305,7 @@ export const consumedProducts = pgTable('consumed_products', {
 });
 
 /**
- * Tabela de notificações do sistema
+ * Tabela de notificacoes do sistema
  */
 export const notifications = pgTable('notifications', {
   id: serial('id').primaryKey(),
@@ -326,3 +401,11 @@ export type ClientPackage = typeof clientPackages.$inferSelect;
 export type NewClientPackage = typeof clientPackages.$inferInsert;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type NewAuditLog = typeof auditLogs.$inferInsert;
+
+// Types para Sistema de Assinaturas
+export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
+export type NewSubscriptionPlan = typeof subscriptionPlans.$inferInsert;
+export type Subscription = typeof subscriptions.$inferSelect;
+export type NewSubscription = typeof subscriptions.$inferInsert;
+export type SubscriptionPayment = typeof subscriptionPayments.$inferSelect;
+export type NewSubscriptionPayment = typeof subscriptionPayments.$inferInsert;

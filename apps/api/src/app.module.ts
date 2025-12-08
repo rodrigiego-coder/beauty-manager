@@ -21,6 +21,7 @@ import { ReportsModule } from './modules/reports';
 import { AuditInterceptor } from './common/interceptors';
 import { AuthGuard, RolesGuard, SalonAccessGuard } from './common/guards';
 import { AuthModule } from './modules/auth';
+import { SubscriptionsModule } from './modules/subscriptions';
 
 @Module({
   imports: [
@@ -35,12 +36,14 @@ import { AuthModule } from './modules/auth';
       signOptions: { expiresIn: '30m' },
     }),
     DatabaseModule,
-    // Módulos de segurança e compliance (ordem importa - AuditModule deve vir antes)
+    // Modulos de seguranca e compliance
     AuditModule,
     ReportsModule,
-    // Módulo de autenticação
+    // Modulo de autenticacao
     AuthModule,
-    // Módulos de negócio
+    // Modulo de assinaturas (disponivel para uso nos controllers)
+    SubscriptionsModule,
+    // Modulos de negocio
     GoogleCalendarModule,
     UsersModule,
     AppointmentsModule,
@@ -55,26 +58,27 @@ import { AuthModule } from './modules/auth';
   ],
   controllers: [AppController],
   providers: [
-    // Interceptor global de auditoria - registra todas as operações de escrita
+    // Interceptor global de auditoria
     {
       provide: APP_INTERCEPTOR,
       useClass: AuditInterceptor,
     },
-    // Guard global de autenticação (deve vir primeiro!)
+    // Guard global de autenticacao
     {
       provide: APP_GUARD,
       useClass: AuthGuard,
     },
-    // Guard global de permissões por role
+    // Guard global de permissoes por role
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
     },
-    // Guard global de acesso ao salão (multi-tenancy)
+    // Guard global de acesso ao salao (multi-tenancy)
     {
       provide: APP_GUARD,
       useClass: SalonAccessGuard,
     },
+    // NOTA: SubscriptionGuard sera aplicado manualmente nos controllers que precisam
   ],
 })
 export class AppModule {}
