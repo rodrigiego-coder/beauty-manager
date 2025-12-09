@@ -7,17 +7,86 @@ import {
   Param,
   Body,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
-import { CreateUserDto, UpdateUserDto, UpdateWorkScheduleDto } from './dto';
+import { CreateUserDto, UpdateUserDto, UpdateWorkScheduleDto, UpdateProfileDto, ChangePasswordDto } from './dto';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { JwtPayload } from '../auth/jwt.strategy';
 
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   /**
+   * GET /users/me
+   * Retorna o perfil do usuario logado
+   */
+  @Get('me')
+  async getProfile(@CurrentUser() user: JwtPayload) {
+    if (!user || !user.sub) {
+      throw new UnauthorizedException('Usuario nao autenticado');
+    }
+
+    const userData = await this.usersService.findById(user.sub);
+
+    if (!userData) {
+      throw new NotFoundException('Usuario nao encontrado');
+    }
+
+    const { passwordHash, ...profile } = userData;
+    return profile;
+  }
+
+  /**
+   * PATCH /users/me
+   * Atualiza o perfil do usuario logado
+   */
+  @Patch('me')
+  async updateProfile(
+    @CurrentUser() user: JwtPayload,
+    @Body() data: UpdateProfileDto,
+  ) {
+    if (!user || !user.sub) {
+      throw new UnauthorizedException('Usuario nao autenticado');
+    }
+
+    const updatedUser = await this.usersService.updateProfile(user.sub, data);
+
+    if (!updatedUser) {
+      throw new NotFoundException('Usuario nao encontrado');
+    }
+
+    const { passwordHash, ...profile } = updatedUser;
+    return {
+      ...profile,
+      message: 'Perfil atualizado com sucesso',
+    };
+  }
+
+  /**
+   * POST /users/me/change-password
+   * Altera a senha do usuario logado
+   */
+  @Post('me/change-password')
+  async changePassword(
+    @CurrentUser() user: JwtPayload,
+    @Body() data: ChangePasswordDto,
+  ) {
+    if (!user || !user.sub) {
+      throw new UnauthorizedException('Usuario nao autenticado');
+    }
+
+    return this.usersService.changePassword(
+      user.sub,
+      data.currentPassword,
+      data.newPassword,
+    );
+  }
+
+  /**
    * GET /users
-   * Lista todos os usuários ativos
+   * Lista todos os usuarios ativos
    */
   @Get()
   async findAll() {
@@ -35,7 +104,7 @@ export class UsersController {
 
   /**
    * GET /users/:id
-   * Busca usuário por ID
+   * Busca usuario por ID
    */
   @Get(':id')
   async findById(@Param('id') id: string) {
@@ -50,7 +119,7 @@ export class UsersController {
 
   /**
    * POST /users
-   * Cria um novo usuário
+   * Cria um novo usuario
    */
   @Post()
   async create(@Body() data: CreateUserDto) {
@@ -59,7 +128,7 @@ export class UsersController {
 
   /**
    * PATCH /users/:id
-   * Atualiza um usuário
+   * Atualiza um usuario
    */
   @Patch(':id')
   async update(
@@ -77,7 +146,7 @@ export class UsersController {
 
   /**
    * PATCH /users/:id/schedule
-   * Atualiza o horário de trabalho do profissional
+   * Atualiza o horario de trabalho do profissional
    */
   @Patch(':id/schedule')
   async updateSchedule(
@@ -95,7 +164,7 @@ export class UsersController {
 
   /**
    * DELETE /users/:id
-   * Desativa um usuário (soft delete)
+   * Desativa um usuario (soft delete)
    */
   @Delete(':id')
   async deactivate(@Param('id') id: string) {

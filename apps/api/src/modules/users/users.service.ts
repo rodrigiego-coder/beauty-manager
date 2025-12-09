@@ -1,5 +1,6 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
+import * as bcrypt from 'bcryptjs';
 import { DATABASE_CONNECTION } from '../../database/database.module';
 import { Database, users, User, NewUser, WorkSchedule } from '../../database';
 
@@ -11,7 +12,7 @@ export class UsersService {
   ) {}
 
   /**
-   * Lista todos os usuários ativos
+   * Lista todos os usuarios ativos
    */
   async findAll(): Promise<User[]> {
     return this.db
@@ -21,7 +22,7 @@ export class UsersService {
   }
 
   /**
-   * Busca usuário por ID
+   * Busca usuario por ID
    */
   async findById(id: string): Promise<User | null> {
     const result = await this.db
@@ -34,7 +35,7 @@ export class UsersService {
   }
 
   /**
-   * Busca usuário por email
+   * Busca usuario por email
    */
   async findByEmail(email: string): Promise<User | null> {
     const result = await this.db
@@ -59,7 +60,7 @@ export class UsersService {
   }
 
   /**
-   * Cria um novo usuário
+   * Cria um novo usuario
    */
   async create(data: NewUser): Promise<User> {
     const result = await this.db
@@ -71,7 +72,7 @@ export class UsersService {
   }
 
   /**
-   * Atualiza um usuário
+   * Atualiza um usuario
    */
   async update(id: string, data: Partial<NewUser>): Promise<User | null> {
     const result = await this.db
@@ -87,7 +88,70 @@ export class UsersService {
   }
 
   /**
-   * Desativa um usuário (soft delete)
+   * Atualiza o perfil do usuario logado
+   */
+  async updateProfile(
+    id: string,
+    data: { name?: string; email?: string; phone?: string },
+  ): Promise<User | null> {
+    if (data.email) {
+      const existingUser = await this.findByEmail(data.email);
+      if (existingUser && existingUser.id !== id) {
+        throw new BadRequestException('Este email ja esta em uso');
+      }
+    }
+
+    const result = await this.db
+      .update(users)
+      .set({
+        ...data,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, id))
+      .returning();
+
+    return result[0] || null;
+  }
+
+  /**
+   * Altera a senha do usuario
+   */
+  async changePassword(
+    id: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const user = await this.findById(id);
+    
+    if (!user) {
+      throw new BadRequestException('Usuario nao encontrado');
+    }
+
+    if (!user.passwordHash) {
+      throw new BadRequestException('Usuario sem senha configurada');
+    }
+
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    
+    if (!isPasswordValid) {
+      throw new BadRequestException('Senha atual incorreta');
+    }
+
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+
+    await this.db
+      .update(users)
+      .set({
+        passwordHash: newPasswordHash,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, id));
+
+    return { success: true, message: 'Senha alterada com sucesso' };
+  }
+
+  /**
+   * Desativa um usuario (soft delete)
    */
   async deactivate(id: string): Promise<User | null> {
     return this.update(id, { active: false });
@@ -101,7 +165,7 @@ export class UsersService {
   }
 
   /**
-   * Verifica se um horário está dentro do work_schedule do profissional
+   * Verifica se um horario esta dentro do work_schedule do profissional
    */
   isWithinWorkSchedule(user: User, date: string, time: string): { valid: boolean; message?: string } {
     if (!user.workSchedule) {
@@ -126,7 +190,7 @@ export class UsersService {
     if (!schedule) {
       return {
         valid: false,
-        message: `Profissional não trabalha neste dia (${dayKey})`,
+        message: `Profissional nao trabalha neste dia (${dayKey})`,
       };
     }
 
@@ -142,7 +206,7 @@ export class UsersService {
     if (appointmentMinutes < startMinutes || appointmentMinutes >= endMinutes) {
       return {
         valid: false,
-        message: `Horário fora do expediente do profissional (${schedule})`,
+        message: `Horario fora do expediente do profissional (${schedule})`,
       };
     }
 
@@ -150,7 +214,7 @@ export class UsersService {
   }
 
   /**
-   * Calcula comissão de um profissional
+   * Calcula comissao de um profissional
    */
   calculateCommission(user: User, totalValue: number): number {
     const rate = user.commissionRate ? parseFloat(user.commissionRate) : 0.5;

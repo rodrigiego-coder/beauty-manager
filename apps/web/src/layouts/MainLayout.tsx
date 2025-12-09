@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
 import { Bell, LogOut, User, Settings, ChevronDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export function MainLayout() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -38,6 +39,11 @@ export function MainLayout() {
     return roles[role] || role;
   };
 
+  const handleNavigate = (path: string) => {
+    setShowMenu(false);
+    navigate(path);
+  };
+
   const userInitials = user ? getInitials(user.name) : 'RV';
   const userName = user?.name || 'Usuario';
   const userRole = user ? getRoleLabel(user.role) : 'Administrador';
@@ -56,7 +62,6 @@ export function MainLayout() {
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
 
-              {/* User menu com dropdown */}
               <div className="relative">
                 <button
                   onClick={() => setShowMenu(!showMenu)}
@@ -88,14 +93,14 @@ export function MainLayout() {
                       <div className="py-1">
                         <button
                           className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
-                          onClick={() => setShowMenu(false)}
+                          onClick={() => handleNavigate('/perfil')}
                         >
                           <User className="w-4 h-4 text-gray-400" />
                           Meu Perfil
                         </button>
                         <button
                           className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3"
-                          onClick={() => setShowMenu(false)}
+                          onClick={() => handleNavigate('/configuracoes')}
                         >
                           <Settings className="w-4 h-4 text-gray-400" />
                           Configuracoes

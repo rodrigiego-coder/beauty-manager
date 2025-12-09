@@ -13,6 +13,7 @@ import {
   TeamPage,
   SettingsPage,
   SubscriptionPage,
+  ProfilePage,
 } from './pages';
 
 function App() {
@@ -41,6 +42,7 @@ function App() {
             <Route path="/relatorios" element={<ReportsPage />} />
             <Route path="/configuracoes" element={<SettingsPage />} />
             <Route path="/assinatura" element={<SubscriptionPage />} />
+            <Route path="/perfil" element={<ProfilePage />} />
           </Route>
         </Routes>
       </AuthProvider>
