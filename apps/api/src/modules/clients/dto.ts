@@ -4,10 +4,11 @@ import {
   IsNotEmpty,
   IsOptional,
   IsBoolean,
-  IsUUID,
 } from 'class-validator';
 
-// DTO para criar cliente
+/**
+ * DTO para criar cliente
+ */
 export class CreateClientDto {
   @IsString({ message: 'Nome deve ser uma string' })
   @IsNotEmpty({ message: 'Nome é obrigatório' })
@@ -21,20 +22,22 @@ export class CreateClientDto {
   @IsOptional()
   email?: string;
 
-  @IsUUID('4', { message: 'SalonId deve ser um UUID válido' })
-  @IsNotEmpty({ message: 'SalonId é obrigatório' })
-  salonId!: string;
+  @IsString({ message: 'Notas técnicas deve ser uma string' })
+  @IsOptional()
+  technicalNotes?: string;
+
+  @IsString({ message: 'Preferências deve ser uma string' })
+  @IsOptional()
+  preferences?: string;
 
   @IsBoolean({ message: 'aiActive deve ser um booleano' })
   @IsOptional()
   aiActive?: boolean;
-
-  @IsString({ message: 'Notas deve ser uma string' })
-  @IsOptional()
-  notes?: string;
 }
 
-// DTO para atualizar cliente
+/**
+ * DTO para atualizar cliente
+ */
 export class UpdateClientDto {
   @IsString({ message: 'Nome deve ser uma string' })
   @IsOptional()
@@ -48,15 +51,15 @@ export class UpdateClientDto {
   @IsOptional()
   email?: string;
 
+  @IsString({ message: 'Notas técnicas deve ser uma string' })
+  @IsOptional()
+  technicalNotes?: string;
+
+  @IsString({ message: 'Preferências deve ser uma string' })
+  @IsOptional()
+  preferences?: string;
+
   @IsBoolean({ message: 'aiActive deve ser um booleano' })
   @IsOptional()
   aiActive?: boolean;
-
-  @IsString({ message: 'Notas deve ser uma string' })
-  @IsOptional()
-  notes?: string;
-
-  @IsBoolean({ message: 'Active deve ser um booleano' })
-  @IsOptional()
-  active?: boolean;
 }

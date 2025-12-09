@@ -1,30 +1,34 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Users,
   Calendar,
   DollarSign,
-  TrendingUp,
-  TrendingDown,
   Package,
   AlertTriangle,
   ArrowUpRight,
+  TrendingDown,
+  TrendingUp,
+  Loader2,
+  Search,
+  CreditCard,
 } from 'lucide-react';
 
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 import {
-    AreaChart,
-    Area,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
-    BarChart,
-    Bar,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
 } from 'recharts';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import api from '../services/api';
 
 interface DashboardStats {
   appointmentsToday: number;
@@ -33,40 +37,86 @@ interface DashboardStats {
   lowStockProducts: number;
   pendingPayables: number;
   pendingReceivables: number;
+  revenueChart: { name: string; receitas: number; despesas: number }[];
+  topServices: { name: string; value: number }[];
 }
-
-interface ChartData {
-  name: string;
-  receitas: number;
-  despesas: number;
-}
-
-const mockChartData: ChartData[] = [
-  { name: 'Jan', receitas: 4000, despesas: 2400 },
-  { name: 'Fev', receitas: 3000, despesas: 1398 },
-  { name: 'Mar', receitas: 5000, despesas: 2800 },
-  { name: 'Abr', receitas: 4780, despesas: 3908 },
-  { name: 'Mai', receitas: 5890, despesas: 4800 },
-  { name: 'Jun', receitas: 6390, despesas: 3800 },
-];
-
-const mockServiceData = [
-  { name: 'Corte', value: 45 },
-  { name: 'Coloracao', value: 30 },
-  { name: 'Manicure', value: 20 },
-  { name: 'Hidratacao', value: 15 },
-  { name: 'Outros', value: 10 },
-];
 
 export function DashboardPage() {
-  const [stats] = useState<DashboardStats>({
-    appointmentsToday: 12,
-    activeClients: 248,
-    monthlyRevenue: 15890,
-    lowStockProducts: 3,
-    pendingPayables: 2500,
-    pendingReceivables: 1800,
-  });
+  const navigate = useNavigate();
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  const [commandSearch, setCommandSearch] = useState('');
+  const [commandLoading, setCommandLoading] = useState(false);
+  const [commandError, setCommandError] = useState<string | null>(null);
+  const [commandSuccess, setCommandSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadStats();
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const loadStats = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await api.get('/dashboard/stats');
+      setStats(response.data);
+    } catch (err: any) {
+      console.error('Erro ao carregar dashboard:', err);
+      setError(err.response?.data?.message || 'Erro ao carregar dados do dashboard');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCommandSearch = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const code = commandSearch.trim();
+    if (!code) return;
+
+    try {
+      setCommandLoading(true);
+      setCommandError(null);
+      setCommandSuccess(null);
+
+      const response = await api.get(`/commands/quick-access/${code}`);
+      const data = response.data;
+
+      if (data.action === 'OPEN_EXISTING') {
+        setCommandSuccess(`Comanda ${code} encontrada!`);
+      } else {
+        setCommandSuccess(data.message || `Comanda ${code} criada!`);
+      }
+
+      setCommandSearch('');
+
+      setTimeout(() => {
+        navigate(`/comandas/${data.commandId}`);
+      }, 500);
+
+    } catch (err: any) {
+      console.error('Erro ao buscar comanda:', err);
+      setCommandError(err.response?.data?.message || 'Erro ao buscar comanda');
+    } finally {
+      setCommandLoading(false);
+    }
+  }, [commandSearch, navigate]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -75,21 +125,47 @@ export function DashboardPage() {
     }).format(value);
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+        <span className="ml-2 text-gray-600">Carregando dashboard...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96">
+        <AlertTriangle className="w-12 h-12 text-red-500 mb-4" />
+        <p className="text-red-600 mb-4">{error}</p>
+        <button
+          onClick={loadStats}
+          className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
+
+  if (!stats) return null;
+
   const statCards = [
     {
       title: 'Agendamentos Hoje',
       value: stats.appointmentsToday.toString(),
-      change: '+12%',
-      changeType: 'positive' as const,
+      change: 'Hoje',
+      changeType: 'neutral' as const,
       icon: Calendar,
       iconBg: 'bg-blue-100',
       iconColor: 'text-blue-600',
     },
     {
-      title: 'Clientes Ativos',
+      title: 'Clientes Cadastrados',
       value: stats.activeClients.toString(),
-      change: '+5%',
-      changeType: 'positive' as const,
+      change: 'Total',
+      changeType: 'neutral' as const,
       icon: Users,
       iconBg: 'bg-emerald-100',
       iconColor: 'text-emerald-600',
@@ -97,7 +173,7 @@ export function DashboardPage() {
     {
       title: 'Receita do Mes',
       value: formatCurrency(stats.monthlyRevenue),
-      change: '+18%',
+      change: format(new Date(), 'MMMM', { locale: ptBR }),
       changeType: 'positive' as const,
       icon: DollarSign,
       iconBg: 'bg-primary-100',
@@ -106,17 +182,16 @@ export function DashboardPage() {
     {
       title: 'Estoque Baixo',
       value: stats.lowStockProducts.toString(),
-      change: 'Atencao',
-      changeType: 'negative' as const,
+      change: stats.lowStockProducts > 0 ? 'Atencao' : 'OK',
+      changeType: stats.lowStockProducts > 0 ? 'negative' as const : 'positive' as const,
       icon: Package,
-      iconBg: 'bg-amber-100',
-      iconColor: 'text-amber-600',
+      iconBg: stats.lowStockProducts > 0 ? 'bg-amber-100' : 'bg-emerald-100',
+      iconColor: stats.lowStockProducts > 0 ? 'text-amber-600' : 'text-emerald-600',
     },
   ];
 
   return (
     <div className="space-y-6">
-      {/* Page header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <p className="text-gray-500 mt-1">
@@ -124,7 +199,61 @@ export function DashboardPage() {
         </p>
       </div>
 
-      {/* Stats cards */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <CreditCard className="w-6 h-6 text-primary-600" />
+          <h2 className="text-lg font-semibold text-primary-600">Acesso Rápido - Comanda</h2>
+          <span className="text-xs bg-primary-100 text-primary-600 px-2 py-1 rounded font-medium">Ctrl+K</span>
+        </div>
+        
+        <form onSubmit={handleCommandSearch} className="flex gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={commandSearch}
+              onChange={(e) => setCommandSearch(e.target.value)}
+              placeholder="Digite o número da comanda..."
+              className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-300 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              disabled={commandLoading}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={commandLoading || !commandSearch.trim()}
+            className="px-6 py-3 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {commandLoading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Buscando...
+              </>
+            ) : (
+              <>
+                <Search className="w-5 h-5" />
+                Buscar
+              </>
+            )}
+          </button>
+        </form>
+
+        {commandError && (
+          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600">
+            {commandError}
+          </div>
+        )}
+        {commandSuccess && (
+          <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-green-600">
+            {commandSuccess}
+          </div>
+        )}
+
+        <p className="text-sm text-gray-500 mt-3">
+          Digite o número e pressione Enter. Se a comanda não existir, será criada automaticamente.
+        </p>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statCards.map((stat) => (
           <div key={stat.title} className="bg-white rounded-xl border border-gray-200 p-6">
@@ -154,7 +283,6 @@ export function DashboardPage() {
         ))}
       </div>
 
-      {/* Financial summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-4">
@@ -163,7 +291,7 @@ export function DashboardPage() {
           </div>
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <TrendingDown className="w-4 h-4 text-red-500" />
-            <span>3 contas vencem esta semana</span>
+            <span>Pendentes de pagamento</span>
           </div>
         </div>
 
@@ -174,102 +302,104 @@ export function DashboardPage() {
           </div>
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <TrendingUp className="w-4 h-4 text-emerald-500" />
-            <span>5 clientes com pagamento pendente</span>
+            <span>Pendentes de recebimento</span>
           </div>
         </div>
       </div>
 
-      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Revenue chart */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-6">Receitas vs Despesas</h3>
           <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={mockChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
-                <YAxis stroke="#9ca3af" fontSize={12} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                  }}
-                  formatter={(value: number) => formatCurrency(value)}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="receitas"
-                  stroke="#10b981"
-                  fill="#d1fae5"
-                  strokeWidth={2}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="despesas"
-                  stroke="#ef4444"
-                  fill="#fee2e2"
-                  strokeWidth={2}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            {stats.revenueChart.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={stats.revenueChart}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
+                  <YAxis stroke="#9ca3af" fontSize={12} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#fff',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                    }}
+                    formatter={(value: number) => formatCurrency(value)}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="receitas"
+                    stroke="#10b981"
+                    fill="#d1fae5"
+                    strokeWidth={2}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="despesas"
+                    stroke="#ef4444"
+                    fill="#fee2e2"
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                Nenhum dado financeiro encontrado
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Services chart */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-6">Servicos Mais Realizados</h3>
           <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={mockServiceData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis type="number" stroke="#9ca3af" fontSize={12} />
-                <YAxis dataKey="name" type="category" stroke="#9ca3af" fontSize={12} width={80} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                  }}
-                />
-                <Bar dataKey="value" fill="#ec4899" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {stats.topServices.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stats.topServices} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis type="number" stroke="#9ca3af" fontSize={12} />
+                  <YAxis dataKey="name" type="category" stroke="#9ca3af" fontSize={12} width={80} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#fff',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                    }}
+                  />
+                  <Bar dataKey="value" fill="#ec4899" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                Nenhum servico realizado ainda
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Quick actions */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Ações Rápidas</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              
-              {/* NOVO AGENDAMENTO */}
-              <Link to="/agenda/novo" className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
-                  <Calendar className="w-8 h-8 text-primary-600" />
-                  <span className="text-sm font-medium text-gray-700">Novo Agendamento</span>
-              </Link>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Acoes Rapidas</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Link to="/agenda/novo" className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
+            <Calendar className="w-8 h-8 text-primary-600" />
+            <span className="text-sm font-medium text-gray-700">Novo Agendamento</span>
+          </Link>
 
-              {/* NOVO CLIENTE */}
-              <Link to="/clientes/novo" className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
-                  <Users className="w-8 h-8 text-primary-600" />
-                  <span className="text-sm font-medium text-gray-700">Novo Cliente</span>
-              </Link>
+          <Link to="/clientes/novo" className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
+            <Users className="w-8 h-8 text-primary-600" />
+            <span className="text-sm font-medium text-gray-700">Novo Cliente</span>
+          </Link>
 
-              {/* LANÇAR RECEITA */}
-              <Link to="/financeiro/receita" className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
-                  <DollarSign className="w-8 h-8 text-primary-600" />
-                  <span className="text-sm font-medium text-gray-700">Lançar Receita</span>
-              </Link>
+          <Link to="/financeiro/receita" className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
+            <DollarSign className="w-8 h-8 text-primary-600" />
+            <span className="text-sm font-medium text-gray-700">Lancar Receita</span>
+          </Link>
 
-              {/* ENTRADA ESTOQUE */}
-              <Link to="/estoque/entrada" className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
-                  <Package className="w-8 h-8 text-primary-600" />
-                  <span className="text-sm font-medium text-gray-700">Entrada Estoque</span>
-              </Link>
-              
-          </div>
+          <Link to="/estoque/entrada" className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-200 hover:border-primary-500 hover:bg-primary-50 transition-colors">
+            <Package className="w-8 h-8 text-primary-600" />
+            <span className="text-sm font-medium text-gray-700">Entrada Estoque</span>
+          </Link>
+        </div>
       </div>
     </div>
   );

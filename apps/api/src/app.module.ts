@@ -24,7 +24,8 @@ import { AuditInterceptor } from './common/interceptors';
 import { AuthGuard, RolesGuard, SalonAccessGuard } from './common/guards';
 import { AuthModule } from './modules/auth';
 import { SubscriptionsModule } from './modules/subscriptions';
-
+import { DashboardModule } from './modules/dashboard';
+import { CommandsModule } from './modules/commands';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -67,6 +68,10 @@ import { SubscriptionsModule } from './modules/subscriptions';
     NotificationsModule,
     ConsumedProductsModule,
     AutomationsModule,
+    // Modulo de dashboard
+    DashboardModule,
+    // Modulo de comandas
+    CommandsModule,
   ],
   controllers: [AppController],
   providers: [

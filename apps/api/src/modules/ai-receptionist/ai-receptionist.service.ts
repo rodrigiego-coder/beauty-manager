@@ -91,7 +91,6 @@ Regras importantes:
 
     // 3. Verifica se IA esta ativa para este cliente
     const isActive = await this.clientsService.isAiActive(phone);
-
     if (!isActive) {
       // IA pausada - nao responde (humano assume)
       return {

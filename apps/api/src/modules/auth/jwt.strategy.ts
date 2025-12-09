@@ -4,13 +4,14 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { UsersService } from '../users/users.service';
 
 export interface JwtPayload {
-  sub: string;      // userId
+  sub: string;
+  id: string;
   email: string;
   role: string;
   salonId: string;
   type: 'access' | 'refresh';
-  exp?: number;     // Data de expiração (adicionado automaticamente pelo JWT)
-  iat?: number;     // Data de criação (adicionado automaticamente pelo JWT)
+  exp?: number;
+  iat?: number;
 }
 
 @Injectable()
@@ -24,21 +25,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
-    // Verifica se é um access token
     if (payload.type !== 'access') {
-      throw new UnauthorizedException('Token inválido');
+      throw new UnauthorizedException('Token invalido');
     }
 
-    // Busca o usuário para garantir que ainda existe e está ativo
     const user = await this.usersService.findById(payload.sub);
 
     if (!user || !user.active) {
-      throw new UnauthorizedException('Usuário não encontrado ou inativo');
+      throw new UnauthorizedException('Usuario nao encontrado ou inativo');
     }
 
-    // Retorna os dados que serão adicionados ao request.user
     return {
       sub: payload.sub,
+      id: payload.sub,
       email: payload.email,
       role: payload.role,
       salonId: payload.salonId,

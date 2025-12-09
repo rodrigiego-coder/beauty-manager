@@ -1,25 +1,53 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
+  Delete,
   Param,
   Body,
+  Query,
   NotFoundException,
 } from '@nestjs/common';
 import { ClientsService } from './clients.service';
-import { UpdateClientDto } from './dto';
+import { CreateClientDto, UpdateClientDto } from './dto';
+import { CurrentUser } from '../../common/decorators';
 
 @Controller('clients')
 export class ClientsController {
   constructor(private readonly clientsService: ClientsService) {}
 
   /**
-   * GET /clients/:phone
-   * Busca cliente pelo telefone
+   * GET /clients
+   * Lista todos os clientes do salão
    */
-  @Get(':phone')
-  async getClient(@Param('phone') phone: string) {
-    const client = await this.clientsService.findByPhone(phone);
+  @Get()
+  async findAll(@CurrentUser() user: { salonId: string }) {
+    return this.clientsService.findAll(user.salonId);
+  }
+
+  /**
+   * GET /clients/search?term=xxx
+   * Busca clientes por termo
+   */
+  @Get('search')
+  async search(
+    @CurrentUser() user: { salonId: string },
+    @Query('term') term: string,
+  ) {
+    if (!term || term.length < 2) {
+      return [];
+    }
+    return this.clientsService.search(user.salonId, term);
+  }
+
+  /**
+   * GET /clients/:id
+   * Busca cliente por ID
+   */
+  @Get(':id')
+  async findById(@Param('id') id: string) {
+    const client = await this.clientsService.findById(id);
 
     if (!client) {
       throw new NotFoundException('Cliente nao encontrado');
@@ -29,31 +57,66 @@ export class ClientsController {
   }
 
   /**
-   * PATCH /clients/:phone
+   * POST /clients
+   * Cria um novo cliente
+   */
+  @Post()
+  async create(
+    @CurrentUser() user: { salonId: string },
+    @Body() data: CreateClientDto,
+  ) {
+    return this.clientsService.create({
+      ...data,
+      salonId: user.salonId,
+    });
+  }
+
+  /**
+   * PATCH /clients/:id
    * Atualiza um cliente
    */
-  @Patch(':phone')
+  @Patch(':id')
   async update(
-    @Param('phone') phone: string,
+    @Param('id') id: string,
     @Body() data: UpdateClientDto,
   ) {
-    const client = await this.clientsService.findByPhone(phone);
+    const client = await this.clientsService.update(id, data);
 
     if (!client) {
       throw new NotFoundException('Cliente nao encontrado');
     }
 
-    return this.clientsService.update(client.id, data as any);
+    return client;
   }
 
   /**
-   * PATCH /clients/:phone/toggle-ai
+   * DELETE /clients/:id
+   * Remove um cliente
+   */
+  @Delete(':id')
+  async delete(@Param('id') id: string) {
+    const deleted = await this.clientsService.delete(id);
+
+    if (!deleted) {
+      throw new NotFoundException('Cliente nao encontrado');
+    }
+
+    return { message: 'Cliente removido com sucesso' };
+  }
+
+  /**
+   * PATCH /clients/:id/toggle-ai
    * Alterna o status da IA para o cliente
    */
-  @Patch(':phone/toggle-ai')
-  async toggleAi(@Param('phone') phone: string) {
-    const client = await this.clientsService.findOrCreate(phone);
-    const updated = await this.clientsService.setAiActive(phone, !client.aiActive);
+  @Patch(':id/toggle-ai')
+  async toggleAi(@Param('id') id: string) {
+    const client = await this.clientsService.findById(id);
+    
+    if (!client) {
+      throw new NotFoundException('Cliente nao encontrado');
+    }
+
+    const updated = await this.clientsService.setAiActive(id, !client.aiActive);
     return updated;
   }
 }

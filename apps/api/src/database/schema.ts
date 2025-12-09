@@ -421,6 +421,147 @@ export type NewSubscription = typeof subscriptions.$inferInsert;
 export type SubscriptionPayment = typeof subscriptionPayments.$inferSelect;
 export type NewSubscriptionPayment = typeof subscriptionPayments.$inferInsert;
 
+/**
+ * Enums para Comandas
+ */
+export const commandStatusEnum = pgEnum('command_status', [
+  'OPEN',
+  'IN_SERVICE', 
+  'WAITING_PAYMENT',
+  'CLOSED',
+  'CANCELED'
+]);
+
+export const commandItemTypeEnum = pgEnum('command_item_type', ['SERVICE', 'PRODUCT']);
+
+export const commandPaymentMethodEnum = pgEnum('command_payment_method', [
+  'CASH',
+  'CARD_CREDIT',
+  'CARD_DEBIT',
+  'PIX',
+  'VOUCHER',
+  'TRANSFER',
+  'OTHER'
+]);
+
+export const commandEventTypeEnum = pgEnum('command_event_type', [
+  'OPENED',
+  'ITEM_ADDED',
+  'ITEM_UPDATED',
+  'ITEM_REMOVED',
+  'DISCOUNT_APPLIED',
+  'STATUS_CHANGED',
+  'SERVICE_CLOSED',
+  'CASHIER_CLOSED',
+  'NOTE_ADDED',
+  'PAYMENT_ADDED',
+  'PAYMENT_REMOVED'
+]);
+
+/**
+ * Tabela de Comandas
+ */
+export const commands = pgTable('commands', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  clientId: uuid('client_id').references(() => clients.id),
+  appointmentId: uuid('appointment_id').references(() => appointments.id),
+  
+  cardNumber: varchar('card_number', { length: 20 }).notNull(),
+  code: varchar('code', { length: 50 }),
+  
+  status: varchar('status', { length: 20 }).default('OPEN').notNull(),
+  
+  openedAt: timestamp('opened_at').defaultNow().notNull(),
+  openedById: uuid('opened_by_id').references(() => users.id).notNull(),
+  
+  serviceClosedAt: timestamp('service_closed_at'),
+  serviceClosedById: uuid('service_closed_by_id').references(() => users.id),
+  
+  cashierClosedAt: timestamp('cashier_closed_at'),
+  cashierClosedById: uuid('cashier_closed_by_id').references(() => users.id),
+  
+  totalGross: decimal('total_gross', { precision: 10, scale: 2 }).default('0'),
+  totalDiscounts: decimal('total_discounts', { precision: 10, scale: 2 }).default('0'),
+  totalNet: decimal('total_net', { precision: 10, scale: 2 }).default('0'),
+  
+  notes: text('notes'),
+  
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Tabela de Itens da Comanda
+ */
+export const commandItems = pgTable('command_items', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  commandId: uuid('command_id').references(() => commands.id).notNull(),
+  
+  type: varchar('type', { length: 20 }).notNull(),
+  referenceId: uuid('reference_id'),
+  description: text('description').notNull(),
+  
+  quantity: decimal('quantity', { precision: 10, scale: 2 }).default('1').notNull(),
+  unitPrice: decimal('unit_price', { precision: 10, scale: 2 }).notNull(),
+  discount: decimal('discount', { precision: 10, scale: 2 }).default('0'),
+  totalPrice: decimal('total_price', { precision: 10, scale: 2 }).notNull(),
+  
+  performerId: uuid('performer_id').references(() => users.id),
+  addedById: uuid('added_by_id').references(() => users.id).notNull(),
+  addedAt: timestamp('added_at').defaultNow().notNull(),
+  
+  canceledAt: timestamp('canceled_at'),
+  canceledById: uuid('canceled_by_id').references(() => users.id),
+  cancelReason: text('cancel_reason'),
+  
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Tabela de Pagamentos da Comanda
+ */
+export const commandPayments = pgTable('command_payments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  commandId: uuid('command_id').references(() => commands.id).notNull(),
+  
+  method: varchar('method', { length: 30 }).notNull(),
+  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
+  
+  receivedById: uuid('received_by_id').references(() => users.id).notNull(),
+  paidAt: timestamp('paid_at').defaultNow().notNull(),
+  
+  notes: text('notes'),
+  
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+/**
+ * Tabela de Eventos/Auditoria da Comanda
+ */
+export const commandEvents = pgTable('command_events', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  commandId: uuid('command_id').references(() => commands.id).notNull(),
+  
+  actorId: uuid('actor_id').references(() => users.id).notNull(),
+  eventType: varchar('event_type', { length: 30 }).notNull(),
+  
+  metadata: json('metadata').$type<Record<string, unknown>>().default({}),
+  
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Types para Comandas
+export type Command = typeof commands.$inferSelect;
+export type NewCommand = typeof commands.$inferInsert;
+export type CommandItem = typeof commandItems.$inferSelect;
+export type NewCommandItem = typeof commandItems.$inferInsert;
+export type CommandPayment = typeof commandPayments.$inferSelect;
+export type NewCommandPayment = typeof commandPayments.$inferInsert;
+export type CommandEvent = typeof commandEvents.$inferSelect;
+export type NewCommandEvent = typeof commandEvents.$inferInsert;
+
 // Types para Blacklist
 export type RefreshTokenBlacklist = typeof refreshTokenBlacklist.$inferSelect;
 export type NewRefreshTokenBlacklist = typeof refreshTokenBlacklist.$inferInsert;

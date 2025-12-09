@@ -62,10 +62,22 @@ export class UsersService {
   /**
    * Cria um novo usuario
    */
-  async create(data: NewUser): Promise<User> {
+  async create(data: NewUser & { password?: string }): Promise<User> {
+    // Se veio password, faz hash
+    let passwordHash: string | undefined;
+    if ((data as any).password) {
+      passwordHash = await bcrypt.hash((data as any).password, 10);
+    }
+
+    // Remove password do data e adiciona passwordHash
+    const { password, ...userData } = data as any;
+
     const result = await this.db
       .insert(users)
-      .values(data)
+      .values({
+        ...userData,
+        passwordHash: passwordHash || userData.passwordHash,
+      })
       .returning();
 
     return result[0];
@@ -74,11 +86,19 @@ export class UsersService {
   /**
    * Atualiza um usuario
    */
-  async update(id: string, data: Partial<NewUser>): Promise<User | null> {
+  async update(id: string, data: Partial<NewUser> & { password?: string }): Promise<User | null> {
+    // Se veio password, faz hash
+    let updateData: any = { ...data };
+    
+    if (data.password) {
+      updateData.passwordHash = await bcrypt.hash(data.password, 10);
+      delete updateData.password;
+    }
+
     const result = await this.db
       .update(users)
       .set({
-        ...data,
+        ...updateData,
         updatedAt: new Date(),
       })
       .where(eq(users.id, id))

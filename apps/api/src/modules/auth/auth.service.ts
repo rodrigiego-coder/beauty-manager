@@ -146,6 +146,7 @@ export class AuthService {
   private async generateTokens(userId: string, email: string, role: string, salonId: string) {
     const accessPayload: JwtPayload = {
       sub: userId,
+      id: userId,
       email,
       role,
       salonId,
@@ -154,6 +155,7 @@ export class AuthService {
 
     const refreshPayload: JwtPayload = {
       sub: userId,
+      id: userId,
       email,
       role,
       salonId,
@@ -167,7 +169,7 @@ export class AuthService {
       }),
       this.jwtService.signAsync(refreshPayload, {
         secret: process.env.REFRESH_TOKEN_SECRET || 'SEGREDO_REFRESH_FORTE_AQUI',
-        expiresIn: '7d', // Refresh token: 7 dias
+        expiresIn: '1d', // Refresh token: 7 dias
       }),
     ]);
 

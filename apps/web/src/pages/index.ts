@@ -9,3 +9,4 @@ export { TeamPage } from './TeamPage';
 export { SettingsPage } from './SettingsPage';
 export { SubscriptionPage } from './SubscriptionPage';
 export { ProfilePage } from './ProfilePage';
+export { CommandPage } from './CommandPage';
