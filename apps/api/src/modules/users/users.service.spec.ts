@@ -285,7 +285,7 @@ describe('UsersService', () => {
 
       // Assert
       expect(result.valid).toBe(false);
-      expect(result.message).toContain('não trabalha neste dia');
+      expect(result.message).toContain('nao trabalha neste dia');
     });
 
     it('deve retornar valid false quando horário está antes do expediente', () => {
