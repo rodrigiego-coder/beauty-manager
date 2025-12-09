@@ -12,6 +12,7 @@ import { TransactionsModule } from './modules/transactions';
 import { AccountsPayableModule } from './modules/accounts-payable';
 import { AccountsReceivableModule } from './modules/accounts-receivable';
 import { UsersModule } from './modules/users';
+import { SalonsModule } from './modules/salons';
 import { AppointmentsModule } from './modules/appointments';
 import { NotificationsModule } from './modules/notifications';
 import { ConsumedProductsModule } from './modules/consumed-products';
@@ -41,11 +42,12 @@ import { SubscriptionsModule } from './modules/subscriptions';
     ReportsModule,
     // Modulo de autenticacao
     AuthModule,
-    // Modulo de assinaturas (disponivel para uso nos controllers)
+    // Modulo de assinaturas
     SubscriptionsModule,
     // Modulos de negocio
     GoogleCalendarModule,
     UsersModule,
+    SalonsModule,
     AppointmentsModule,
     AiReceptionistModule,
     ProductsModule,
@@ -78,7 +80,6 @@ import { SubscriptionsModule } from './modules/subscriptions';
       provide: APP_GUARD,
       useClass: SalonAccessGuard,
     },
-    // NOTA: SubscriptionGuard sera aplicado manualmente nos controllers que precisam
   ],
 })
 export class AppModule {}
