@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtModule } from '@nestjs/jwt';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { DatabaseModule } from './database/database.module';
@@ -36,6 +37,15 @@ import { SubscriptionsModule } from './modules/subscriptions';
       secret: process.env.ACCESS_TOKEN_SECRET || 'SEGREDO_ACESSO_FORTE_AQUI',
       signOptions: { expiresIn: '30m' },
     }),
+    // Rate limiting global: 100 requests por minuto por IP
+    ThrottlerModule.forRoot({
+      throttlers: [
+        {
+          ttl: 60000, // 1 minuto
+          limit: 100, // max 100 requests por minuto
+        },
+      ],
+    }),
     DatabaseModule,
     // Modulos de seguranca e compliance
     AuditModule,
@@ -64,6 +74,11 @@ import { SubscriptionsModule } from './modules/subscriptions';
     {
       provide: APP_INTERCEPTOR,
       useClass: AuditInterceptor,
+    },
+    // Rate limiting global
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
     },
     // Guard global de autenticacao
     {

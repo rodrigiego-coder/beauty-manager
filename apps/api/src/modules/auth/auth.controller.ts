@@ -1,4 +1,5 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -11,12 +12,16 @@ export class AuthController {
 
   /**
    * POST /auth/login
-   * Realiza o login do usuário
-   * Rota pública - não requer autenticação
+   * Realiza o login do usuario
+   * Rota publica - nao requer autenticacao
+   * 
+   * RATE LIMIT: 5 tentativas por minuto
+   * Protege contra ataques de forca bruta
    */
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto.email, loginDto.password);
   }
@@ -24,11 +29,14 @@ export class AuthController {
   /**
    * POST /auth/refresh
    * Renova o access token usando o refresh token
-   * Rota pública - não requer autenticação (usa o refresh token)
+   * Rota publica - nao requer autenticacao (usa o refresh token)
+   * 
+   * RATE LIMIT: 10 por minuto
    */
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   async refresh(@Body() refreshDto: RefreshTokenDto) {
     return this.authService.refreshToken(refreshDto.refreshToken);
   }
@@ -36,7 +44,7 @@ export class AuthController {
   /**
    * POST /auth/logout
    * Invalida o refresh token (adiciona na blacklist)
-   * Requer autenticação - precisa estar logado
+   * Requer autenticacao - precisa estar logado
    */
   @Post('logout')
   @HttpCode(HttpStatus.OK)
