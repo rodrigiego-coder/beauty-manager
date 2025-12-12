@@ -15,9 +15,22 @@ import {
   SubscriptionPage,
   ProfilePage,
   CommandPage,
+  CashierPage,
+  ServicesPage,
+  CommissionsPage,
+  AdminPage,
+  IntegrationsPage,
+  AutomationPage,
+  RecommendationRulesPage,
+  RecommendationStatsPage,
+  LoyaltySettingsPage,
+  LoyaltyDashboardPage,
+  ProductSubscriptionPlansPage,
+  SubscriptionDeliveriesPage,
+  AvailableSubscriptionsPage,
 } from './pages';
 
-type UserRole = 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST';
+type UserRole = 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST' | 'SUPER_ADMIN';
 
 // Componente para proteger rotas por role
 function RoleGuard({ 
@@ -60,6 +73,14 @@ function App() {
             <Route path="/comandas/:id" element={<CommandPage />} />
 
             {/* Acesso: OWNER, MANAGER, RECEPTIONIST */}
+            <Route
+              path="/caixa"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER', 'RECEPTIONIST']}>
+                  <CashierPage />
+                </RoleGuard>
+              }
+            />
             <Route 
               path="/clientes/*" 
               element={
@@ -69,22 +90,40 @@ function App() {
               } 
             />
 
+            {/* Acesso: OWNER, MANAGER, RECEPTIONIST */}
+            <Route
+              path="/servicos"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER', 'RECEPTIONIST']}>
+                  <ServicesPage />
+                </RoleGuard>
+              }
+            />
+
             {/* Acesso: OWNER, MANAGER */}
-            <Route 
-              path="/financeiro/*" 
+            <Route
+              path="/comissoes"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <CommissionsPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/financeiro/*"
               element={
                 <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
                   <FinancePage />
                 </RoleGuard>
-              } 
+              }
             />
-            <Route 
-              path="/estoque/*" 
+            <Route
+              path="/produtos"
               element={
                 <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
                   <ProductsPage />
                 </RoleGuard>
-              } 
+              }
             />
             <Route 
               path="/equipe/*" 
@@ -102,23 +141,111 @@ function App() {
                 </RoleGuard>
               } 
             />
-            <Route 
-              path="/configuracoes" 
+            <Route
+              path="/configuracoes"
               element={
                 <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
                   <SettingsPage />
                 </RoleGuard>
-              } 
+              }
+            />
+            <Route
+              path="/integracoes"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER', 'STYLIST']}>
+                  <IntegrationsPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/automacao"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <AutomationPage />
+                </RoleGuard>
+              }
+            />
+
+            {/* Rotas de Recomendações de Produtos */}
+            <Route
+              path="/recomendacoes/regras"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <RecommendationRulesPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/recomendacoes/stats"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <RecommendationStatsPage />
+                </RoleGuard>
+              }
+            />
+
+            {/* Rotas de Fidelidade & Gamificação */}
+            <Route
+              path="/configuracoes/fidelidade"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <LoyaltySettingsPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/relatorios/fidelidade"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <LoyaltyDashboardPage />
+                </RoleGuard>
+              }
+            />
+
+            {/* Rotas de Assinaturas de Produtos */}
+            <Route
+              path="/assinaturas-produtos/planos"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <ProductSubscriptionPlansPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/assinaturas-produtos/entregas"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER', 'RECEPTIONIST']}>
+                  <SubscriptionDeliveriesPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/assinaturas-produtos"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST']}>
+                  <AvailableSubscriptionsPage />
+                </RoleGuard>
+              }
             />
 
             {/* Acesso: Apenas OWNER */}
-            <Route 
-              path="/assinatura" 
+            <Route
+              path="/assinatura"
               element={
                 <RoleGuard allowedRoles={['OWNER']}>
                   <SubscriptionPage />
                 </RoleGuard>
-              } 
+              }
+            />
+
+            {/* Acesso: Apenas SUPER_ADMIN */}
+            <Route
+              path="/admin"
+              element={
+                <RoleGuard allowedRoles={['SUPER_ADMIN']}>
+                  <AdminPage />
+                </RoleGuard>
+              }
             />
           </Route>
         </Routes>

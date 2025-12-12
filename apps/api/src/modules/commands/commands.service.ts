@@ -7,10 +7,11 @@ import {
   commandItems,
   commandPayments,
   commandEvents,
+  users,
+  services,
   Command,
   CommandItem,
   CommandPayment,
-  CommandEvent,
 } from '../../database';
 import {
   OpenCommandDto,
@@ -21,6 +22,10 @@ import {
   AddNoteDto,
   LinkClientDto,
 } from './dto';
+import { CashRegistersService } from '../cash-registers';
+import { ClientsService } from '../clients';
+import { CommissionsService } from '../commissions';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 
 interface CurrentUser {
   id: string;
@@ -33,6 +38,10 @@ export class CommandsService {
   constructor(
     @Inject(DATABASE_CONNECTION)
     private db: Database,
+    private cashRegistersService: CashRegistersService,
+    private clientsService: ClientsService,
+    private commissionsService: CommissionsService,
+    private loyaltyService: LoyaltyService,
   ) {}
 
   /**
@@ -112,7 +121,7 @@ export class CommandsService {
    */
   async quickAccess(salonId: string, code: string, currentUser: CurrentUser) {
     const openCommand = await this.findByCardNumber(salonId, code);
-    
+
     if (openCommand) {
       return {
         status: 'FOUND',
@@ -123,6 +132,12 @@ export class CommandsService {
       };
     }
 
+    // Verifica se existe caixa aberto antes de criar nova comanda
+    const cashRegister = await this.cashRegistersService.getCurrent(salonId);
+    if (!cashRegister) {
+      throw new BadRequestException('Abra o caixa antes de criar comandas');
+    }
+
     const closedCommand = await this.db
       .select()
       .from(commands)
@@ -131,7 +146,7 @@ export class CommandsService {
       .limit(1);
 
     if (closedCommand.length > 0 && (closedCommand[0].status === 'CLOSED' || closedCommand[0].status === 'CANCELED')) {
-      const newCommand = await this.open(salonId, { cardNumber: code }, currentUser);
+      const newCommand = await this.open(salonId, { cardNumber: code }, currentUser, true);
       return {
         status: 'CREATED',
         action: 'CREATED_NEW',
@@ -142,7 +157,7 @@ export class CommandsService {
       };
     }
 
-    const newCommand = await this.open(salonId, { cardNumber: code }, currentUser);
+    const newCommand = await this.open(salonId, { cardNumber: code }, currentUser, true);
     return {
       status: 'CREATED',
       action: 'CREATED_NEW',
@@ -155,7 +170,15 @@ export class CommandsService {
   /**
    * Abre uma nova comanda
    */
-  async open(salonId: string, data: OpenCommandDto, currentUser: CurrentUser): Promise<Command> {
+  async open(salonId: string, data: OpenCommandDto, currentUser: CurrentUser, skipCashCheck = false): Promise<Command> {
+    // Verifica se existe caixa aberto (a menos que já foi verificado)
+    if (!skipCashCheck) {
+      const cashRegister = await this.cashRegistersService.getCurrent(salonId);
+      if (!cashRegister) {
+        throw new BadRequestException('Abra o caixa antes de criar comandas');
+      }
+    }
+
     // Verifica se já existe comanda aberta com este cartão
     const existing = await this.findByCardNumber(salonId, data.cardNumber);
     if (existing) {
@@ -531,14 +554,113 @@ export class CommandsService {
       .where(eq(commands.id, commandId))
       .returning();
 
+    // Atualiza totais do caixa por método de pagamento
+    for (const payment of payments) {
+      await this.cashRegistersService.addSale(
+        command.salonId,
+        payment.method,
+        parseFloat(payment.amount),
+      );
+    }
+
+    // Se a comanda tem cliente vinculado, atualiza totalVisits e lastVisitDate
+    if (command.clientId) {
+      await this.clientsService.updateLastVisit(command.clientId);
+    }
+
+    // Cria comissoes para itens de servico com profissional
+    await this.createCommissionsForCommand(command.salonId, commandId);
+
+    // Processa pontos de fidelidade se cliente vinculado
+    let loyaltyPointsEarned = 0;
+    let tierUpgraded = false;
+    let newTierName: string | undefined;
+
+    if (command.clientId) {
+      try {
+        const loyaltyResult = await this.loyaltyService.processCommandPoints(
+          command.salonId,
+          commandId,
+          command.clientId,
+          currentUser.id
+        );
+        loyaltyPointsEarned = loyaltyResult.pointsEarned;
+        tierUpgraded = loyaltyResult.tierUpgraded;
+        newTierName = loyaltyResult.newTierName;
+      } catch (err) {
+        // Se houver erro no processamento de fidelidade, não impede o fechamento
+        console.error('Erro ao processar pontos de fidelidade:', err);
+      }
+    }
+
     // Registra evento
     await this.addEvent(commandId, currentUser.id, 'CASHIER_CLOSED', {
       totalNet,
       totalPaid,
       change: totalPaid - totalNet,
+      clientId: command.clientId,
+      loyaltyPointsEarned,
+      tierUpgraded,
+      newTierName,
     });
 
     return closedCommand;
+  }
+
+  /**
+   * Cria comissoes para itens de servico da comanda
+   */
+  private async createCommissionsForCommand(salonId: string, commandId: string): Promise<void> {
+    // Busca todos os itens da comanda
+    const items = await this.getItems(commandId);
+
+    // Filtra apenas itens de servico nao cancelados e com profissional
+    const serviceItems = items.filter(
+      item => item.type === 'SERVICE' && !item.canceledAt && item.performerId
+    );
+
+    for (const item of serviceItems) {
+      // Se o item tem referenceId (ID do servico), busca o commissionPercentage do servico
+      let commissionPercentage = 0;
+
+      if (item.referenceId) {
+        const [service] = await this.db
+          .select()
+          .from(services)
+          .where(eq(services.id, parseInt(item.referenceId)))
+          .limit(1);
+
+        if (service && parseFloat(service.commissionPercentage) > 0) {
+          commissionPercentage = parseFloat(service.commissionPercentage);
+        }
+      }
+
+      // Se nao tem servico vinculado ou servico nao tem comissao, usa a comissao do profissional
+      if (commissionPercentage === 0 && item.performerId) {
+        const [professional] = await this.db
+          .select()
+          .from(users)
+          .where(eq(users.id, item.performerId))
+          .limit(1);
+
+        if (professional && professional.commissionRate) {
+          commissionPercentage = parseFloat(professional.commissionRate) * 100;
+        }
+      }
+
+      // Cria comissao se houver percentual
+      if (commissionPercentage > 0) {
+        await this.commissionsService.createFromCommandItem(
+          salonId,
+          commandId,
+          item.id,
+          item.performerId!,
+          item.description,
+          parseFloat(item.totalPrice),
+          commissionPercentage,
+        );
+      }
+    }
   }
 
   /**
@@ -587,6 +709,16 @@ export class CommandsService {
       throw new NotFoundException('Comanda nao encontrada');
     }
 
+    if (command.status === 'CLOSED' || command.status === 'CANCELED') {
+      throw new BadRequestException('Comanda ja encerrada ou cancelada');
+    }
+
+    // Busca dados do cliente para registrar nome no evento
+    const client = await this.clientsService.findById(data.clientId);
+    if (!client) {
+      throw new NotFoundException('Cliente nao encontrado');
+    }
+
     const [updatedCommand] = await this.db
       .update(commands)
       .set({
@@ -596,10 +728,50 @@ export class CommandsService {
       .where(eq(commands.id, commandId))
       .returning();
 
-    // Registra evento
-    await this.addEvent(commandId, currentUser.id, 'STATUS_CHANGED', {
-      action: 'CLIENT_LINKED',
+    // Registra evento CLIENT_LINKED
+    await this.addEvent(commandId, currentUser.id, 'CLIENT_LINKED', {
       clientId: data.clientId,
+      clientName: client.name || 'Cliente',
+      clientPhone: client.phone,
+    });
+
+    return updatedCommand;
+  }
+
+  /**
+   * Remove vínculo do cliente com a comanda
+   */
+  async unlinkClient(commandId: string, currentUser: CurrentUser): Promise<Command> {
+    const command = await this.findById(commandId);
+    if (!command) {
+      throw new NotFoundException('Comanda nao encontrada');
+    }
+
+    if (command.status === 'CLOSED' || command.status === 'CANCELED') {
+      throw new BadRequestException('Comanda ja encerrada ou cancelada');
+    }
+
+    if (!command.clientId) {
+      throw new BadRequestException('Comanda nao possui cliente vinculado');
+    }
+
+    // Busca dados do cliente para registrar nome no evento
+    const client = await this.clientsService.findById(command.clientId);
+    const clientName = client?.name || 'Cliente';
+
+    const [updatedCommand] = await this.db
+      .update(commands)
+      .set({
+        clientId: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(commands.id, commandId))
+      .returning();
+
+    // Registra evento CLIENT_UNLINKED
+    await this.addEvent(commandId, currentUser.id, 'CLIENT_UNLINKED', {
+      clientId: command.clientId,
+      clientName,
     });
 
     return updatedCommand;
@@ -658,14 +830,25 @@ export class CommandsService {
   }
 
   /**
-   * Busca eventos/timeline da comanda
+   * Busca eventos/timeline da comanda com nome do usuário
    */
-  async getEvents(commandId: string): Promise<CommandEvent[]> {
-    return this.db
-      .select()
+  async getEvents(commandId: string) {
+    const events = await this.db
+      .select({
+        id: commandEvents.id,
+        commandId: commandEvents.commandId,
+        actorId: commandEvents.actorId,
+        actorName: users.name,
+        eventType: commandEvents.eventType,
+        metadata: commandEvents.metadata,
+        createdAt: commandEvents.createdAt,
+      })
       .from(commandEvents)
+      .leftJoin(users, eq(commandEvents.actorId, users.id))
       .where(eq(commandEvents.commandId, commandId))
       .orderBy(desc(commandEvents.createdAt));
+
+    return events;
   }
 
   /**

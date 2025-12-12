@@ -157,7 +157,7 @@ export class ConsumedProductsService {
       throw new BadRequestException('Agendamento nao encontrado');
     }
 
-    const revenue = appointment.price / 100; // centavos para reais
+    const revenue = Number(appointment.price || 0) / 100; // centavos para reais
     const costData = await this.calculateAppointmentCost(appointmentId);
     const productCost = costData.totalCost;
     const profit = revenue - productCost;

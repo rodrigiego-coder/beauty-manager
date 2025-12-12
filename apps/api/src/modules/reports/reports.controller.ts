@@ -1,24 +1,143 @@
-import { Controller, Get, Query, Res } from '@nestjs/common';
+import { Controller, Get, Query, Param, Res, UseGuards } from '@nestjs/common';
 import { FastifyReply } from 'fastify';
 import { ReportsService, ExportFormat } from './reports.service';
+import { AuthGuard } from '../../common/guards/auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('reports')
+@UseGuards(AuthGuard, RolesGuard)
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   /**
-   * GET /reports/export/transactions
-   * Exporta todas as transações (entrada/saída) como JSON ou CSV
-   *
-   * Query params:
-   * - salonId: string (obrigatório)
-   * - startDate: string ISO (opcional)
-   * - endDate: string ISO (opcional)
-   * - format: 'json' | 'csv' (default: json)
+   * GET /reports/sales
+   * Relatorio de vendas por periodo
    */
-  @Get('export/transactions')
+  @Get('sales')
+  @Roles('OWNER', 'MANAGER')
+  async getSalesReport(
+    @CurrentUser() user: any,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('groupBy') groupBy: 'day' | 'week' | 'month' = 'day',
+  ) {
+    return this.reportsService.getSalesReport(
+      user.salonId,
+      new Date(startDate),
+      new Date(endDate),
+      groupBy,
+    );
+  }
+
+  /**
+   * GET /reports/services
+   * Relatorio de servicos
+   */
+  @Get('services')
+  @Roles('OWNER', 'MANAGER')
+  async getServicesReport(
+    @CurrentUser() user: any,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    return this.reportsService.getServicesReport(
+      user.salonId,
+      new Date(startDate),
+      new Date(endDate),
+    );
+  }
+
+  /**
+   * GET /reports/products
+   * Relatorio de produtos
+   */
+  @Get('products')
+  @Roles('OWNER', 'MANAGER')
+  async getProductsReport(
+    @CurrentUser() user: any,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    return this.reportsService.getProductsReport(
+      user.salonId,
+      new Date(startDate),
+      new Date(endDate),
+    );
+  }
+
+  /**
+   * GET /reports/professionals
+   * Relatorio de profissionais
+   */
+  @Get('professionals')
+  @Roles('OWNER', 'MANAGER')
+  async getProfessionalsReport(
+    @CurrentUser() user: any,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    return this.reportsService.getProfessionalsReport(
+      user.salonId,
+      new Date(startDate),
+      new Date(endDate),
+    );
+  }
+
+  /**
+   * GET /reports/clients
+   * Relatorio de clientes
+   */
+  @Get('clients')
+  @Roles('OWNER', 'MANAGER')
+  async getClientsReport(
+    @CurrentUser() user: any,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+  ) {
+    return this.reportsService.getClientsReport(
+      user.salonId,
+      new Date(startDate),
+      new Date(endDate),
+    );
+  }
+
+  /**
+   * GET /reports/export/:type
+   * Exporta relatorio em CSV
+   */
+  @Get('export/:type')
+  @Roles('OWNER', 'MANAGER')
+  async exportReport(
+    @CurrentUser() user: any,
+    @Param('type') type: 'sales' | 'services' | 'products' | 'professionals' | 'clients',
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Res() reply: FastifyReply,
+  ) {
+    const csv = await this.reportsService.exportReport(
+      user.salonId,
+      type,
+      new Date(startDate),
+      new Date(endDate),
+    );
+
+    const filename = `relatorio_${type}_${new Date().toISOString().split('T')[0]}.csv`;
+    return reply
+      .header('Content-Type', 'text/csv; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="${filename}"`)
+      .send(csv);
+  }
+
+  /**
+   * GET /reports/export/transactions
+   * Exporta todas as transacoes como JSON ou CSV
+   */
+  @Get('export-transactions')
+  @Roles('OWNER', 'MANAGER')
   async exportTransactions(
-    @Query('salonId') salonId: string,
+    @CurrentUser() user: any,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('format') format: ExportFormat = 'json',
@@ -27,10 +146,10 @@ export class ReportsController {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
 
-    const data = await this.reportsService.exportTransactions(salonId, start, end, format);
+    const data = await this.reportsService.exportTransactions(user.salonId, start, end, format);
 
     if (format === 'csv' && reply) {
-      const filename = `transactions_${salonId}_${new Date().toISOString().split('T')[0]}.csv`;
+      const filename = `transactions_${new Date().toISOString().split('T')[0]}.csv`;
       return reply
         .header('Content-Type', 'text/csv; charset=utf-8')
         .header('Content-Disposition', `attachment; filename="${filename}"`)
@@ -45,19 +164,13 @@ export class ReportsController {
   }
 
   /**
-   * GET /reports/export/invoices
-   * Exporta dados fiscais (tax_data) para contabilidade
-   * Inclui informações do salão (CNPJ, endereço) para fins fiscais
-   *
-   * Query params:
-   * - salonId: string (obrigatório)
-   * - startDate: string ISO (opcional)
-   * - endDate: string ISO (opcional)
-   * - format: 'json' | 'csv' (default: json)
+   * GET /reports/export-invoices
+   * Exporta dados fiscais para contabilidade
    */
-  @Get('export/invoices')
+  @Get('export-invoices')
+  @Roles('OWNER', 'MANAGER')
   async exportInvoices(
-    @Query('salonId') salonId: string,
+    @CurrentUser() user: any,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
     @Query('format') format: ExportFormat = 'json',
@@ -66,10 +179,10 @@ export class ReportsController {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
 
-    const data = await this.reportsService.exportInvoices(salonId, start, end, format);
+    const data = await this.reportsService.exportInvoices(user.salonId, start, end, format);
 
     if (format === 'csv' && reply) {
-      const filename = `invoices_${salonId}_${new Date().toISOString().split('T')[0]}.csv`;
+      const filename = `invoices_${new Date().toISOString().split('T')[0]}.csv`;
       return reply
         .header('Content-Type', 'text/csv; charset=utf-8')
         .header('Content-Disposition', `attachment; filename="${filename}"`)
@@ -85,22 +198,17 @@ export class ReportsController {
 
   /**
    * GET /reports/financial-summary
-   * Gera resumo financeiro completo para um período
-   * Útil para dashboards e relatórios gerenciais
-   *
-   * Query params:
-   * - salonId: string (obrigatório)
-   * - startDate: string ISO (obrigatório)
-   * - endDate: string ISO (obrigatório)
+   * Gera resumo financeiro completo para um periodo
    */
   @Get('financial-summary')
+  @Roles('OWNER', 'MANAGER')
   async getFinancialSummary(
-    @Query('salonId') salonId: string,
+    @CurrentUser() user: any,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
     return this.reportsService.getFinancialSummary(
-      salonId,
+      user.salonId,
       new Date(startDate),
       new Date(endDate),
     );

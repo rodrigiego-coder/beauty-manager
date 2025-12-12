@@ -6,23 +6,56 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   NotFoundException,
   ParseIntPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
-import { CreateProductDto, UpdateProductDto, StockEntryDto } from './dto';
+import { CreateProductDto, UpdateProductDto, AdjustStockDto } from './dto';
+import { AuthGuard } from '../../common/guards/auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+
+interface CurrentUserPayload {
+  id: string;
+  salonId: string;
+  role: string;
+}
 
 @Controller('products')
+@UseGuards(AuthGuard)
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   /**
    * GET /products
-   * Lista todos os produtos ativos
+   * Lista todos os produtos do salão com filtros opcionais
    */
   @Get()
-  async findAll() {
-    return this.productsService.findAll();
+  @Roles('OWNER', 'MANAGER')
+  async findAll(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query('search') search?: string,
+    @Query('includeInactive') includeInactive?: string,
+    @Query('lowStockOnly') lowStockOnly?: string,
+  ) {
+    return this.productsService.findAll({
+      salonId: user.salonId,
+      search,
+      includeInactive: includeInactive === 'true',
+      lowStockOnly: lowStockOnly === 'true',
+    });
+  }
+
+  /**
+   * GET /products/stats
+   * Retorna estatísticas do estoque
+   */
+  @Get('stats')
+  @Roles('OWNER', 'MANAGER')
+  async getStats(@CurrentUser() user: CurrentUserPayload) {
+    return this.productsService.getStats(user.salonId);
   }
 
   /**
@@ -30,8 +63,9 @@ export class ProductsController {
    * Lista produtos com estoque baixo
    */
   @Get('low-stock')
-  async findLowStock() {
-    return this.productsService.findLowStock();
+  @Roles('OWNER', 'MANAGER')
+  async findLowStock(@CurrentUser() user: CurrentUserPayload) {
+    return this.productsService.findLowStock(user.salonId);
   }
 
   /**
@@ -39,10 +73,14 @@ export class ProductsController {
    * Busca produto por ID
    */
   @Get(':id')
-  async findById(@Param('id', ParseIntPipe) id: number) {
+  @Roles('OWNER', 'MANAGER')
+  async findById(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
     const product = await this.productsService.findById(id);
 
-    if (!product) {
+    if (!product || product.salonId !== user.salonId) {
       throw new NotFoundException('Produto nao encontrado');
     }
 
@@ -54,8 +92,12 @@ export class ProductsController {
    * Cria um novo produto
    */
   @Post()
-  async create(@Body() data: CreateProductDto) {
-    return this.productsService.create(data as any);
+  @Roles('OWNER', 'MANAGER')
+  async create(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() data: CreateProductDto,
+  ) {
+    return this.productsService.create(user.salonId, data as any);
   }
 
   /**
@@ -63,34 +105,58 @@ export class ProductsController {
    * Atualiza um produto
    */
   @Patch(':id')
+  @Roles('OWNER', 'MANAGER')
   async update(
     @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: CurrentUserPayload,
     @Body() data: UpdateProductDto,
   ) {
-    const product = await this.productsService.update(id, data as any);
-
-    if (!product) {
+    // Verificar se produto pertence ao salão
+    const existing = await this.productsService.findById(id);
+    if (!existing || existing.salonId !== user.salonId) {
       throw new NotFoundException('Produto nao encontrado');
     }
 
+    const product = await this.productsService.update(id, data as any);
     return product;
   }
 
   /**
-   * PATCH /products/:id/stock
-   * Atualiza o estoque (adiciona ou remove quantidade)
+   * POST /products/:id/adjust-stock
+   * Ajusta o estoque (entrada ou saída manual)
    */
-  @Patch(':id/stock')
-  async updateStock(
+  @Post(':id/adjust-stock')
+  @Roles('OWNER', 'MANAGER')
+  async adjustStock(
     @Param('id', ParseIntPipe) id: number,
-    @Body() data: StockEntryDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() data: AdjustStockDto,
   ) {
-    const product = await this.productsService.updateStock(id, data.quantity);
+    return this.productsService.adjustStock(
+      id,
+      user.salonId,
+      user.id,
+      data,
+    );
+  }
 
-    if (!product) {
+  /**
+   * PATCH /products/:id/reactivate
+   * Reativa um produto desativado
+   */
+  @Patch(':id/reactivate')
+  @Roles('OWNER', 'MANAGER')
+  async reactivate(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    // Verificar se produto pertence ao salão
+    const existing = await this.productsService.findById(id);
+    if (!existing || existing.salonId !== user.salonId) {
       throw new NotFoundException('Produto nao encontrado');
     }
 
+    const product = await this.productsService.reactivate(id);
     return product;
   }
 
@@ -99,13 +165,18 @@ export class ProductsController {
    * Desativa um produto (soft delete)
    */
   @Delete(':id')
-  async deactivate(@Param('id', ParseIntPipe) id: number) {
-    const product = await this.productsService.deactivate(id);
-
-    if (!product) {
+  @Roles('OWNER', 'MANAGER')
+  async delete(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    // Verificar se produto pertence ao salão
+    const existing = await this.productsService.findById(id);
+    if (!existing || existing.salonId !== user.salonId) {
       throw new NotFoundException('Produto nao encontrado');
     }
 
+    await this.productsService.delete(id);
     return { message: 'Produto desativado com sucesso' };
   }
 }

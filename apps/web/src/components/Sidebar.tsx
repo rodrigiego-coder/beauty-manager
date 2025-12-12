@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Calendar,
@@ -7,12 +8,21 @@ import {
   Users,
   UserCog,
   FileText,
-  Sparkles,
   Settings,
   LogOut,
   Crown,
+  CreditCard,
+  Scissors,
+  Percent,
+  Link2,
+  MessageSquare,
+  Sparkles,
+  Lightbulb,
+  Repeat,
+  Truck,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import api from '../services/api';
 
 type UserRole = 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST';
 
@@ -25,22 +35,48 @@ interface NavItem {
 
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST'] },
+  { name: 'Caixa', href: '/caixa', icon: CreditCard, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
   { name: 'Agenda', href: '/agenda', icon: Calendar, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST'] },
+  { name: 'Servicos', href: '/servicos', icon: Scissors, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
+  { name: 'Comissoes', href: '/comissoes', icon: Percent, roles: ['OWNER', 'MANAGER'] },
   { name: 'Financeiro', href: '/financeiro', icon: DollarSign, roles: ['OWNER', 'MANAGER'] },
-  { name: 'Estoque', href: '/estoque', icon: Package, roles: ['OWNER', 'MANAGER'] },
+  { name: 'Produtos', href: '/produtos', icon: Package, roles: ['OWNER', 'MANAGER'] },
+  { name: 'Assinaturas', href: '/assinaturas-produtos', icon: Repeat, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST'] },
+  { name: 'Entregas', href: '/assinaturas-produtos/entregas', icon: Truck, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
+  { name: 'Recomendacoes', href: '/recomendacoes/regras', icon: Lightbulb, roles: ['OWNER', 'MANAGER'] },
   { name: 'Clientes', href: '/clientes', icon: Users, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
   { name: 'Equipe', href: '/equipe', icon: UserCog, roles: ['OWNER', 'MANAGER'] },
   { name: 'Relatorios', href: '/relatorios', icon: FileText, roles: ['OWNER', 'MANAGER'] },
 ];
 
 const bottomNavigation: NavItem[] = [
-  { name: 'Assinatura', href: '/assinatura', icon: Crown, roles: ['OWNER'] },
+  { name: 'Fidelidade', href: '/configuracoes/fidelidade', icon: Crown, roles: ['OWNER', 'MANAGER'] },
+  { name: 'Integracoes', href: '/integracoes', icon: Link2, roles: ['OWNER', 'MANAGER', 'STYLIST'] },
+  { name: 'Automacao', href: '/automacao', icon: MessageSquare, roles: ['OWNER', 'MANAGER'] },
+  { name: 'Assinatura', href: '/assinatura', icon: CreditCard, roles: ['OWNER'] },
   { name: 'Configuracoes', href: '/configuracoes', icon: Settings, roles: ['OWNER', 'MANAGER'] },
 ];
 
 export function Sidebar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [cashOpen, setCashOpen] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const checkCashStatus = async () => {
+      try {
+        const response = await api.get('/cash-registers/current');
+        setCashOpen(response.data !== null && response.data !== '');
+      } catch {
+        setCashOpen(false);
+      }
+    };
+
+    checkCashStatus();
+    // Verificar a cada 30 segundos
+    const interval = setInterval(checkCashStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -104,6 +140,14 @@ export function Sidebar() {
           >
             <item.icon className="w-5 h-5" />
             {item.name}
+            {item.name === 'Caixa' && cashOpen !== null && (
+              <span
+                className={`ml-auto w-2.5 h-2.5 rounded-full ${
+                  cashOpen ? 'bg-green-500' : 'bg-red-500'
+                }`}
+                title={cashOpen ? 'Caixa aberto' : 'Caixa fechado'}
+              />
+            )}
           </NavLink>
         ))}
       </nav>

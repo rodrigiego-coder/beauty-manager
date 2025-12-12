@@ -123,7 +123,7 @@ export class AutomationsService {
     for (const client of allClients) {
       // Busca o último agendamento do cliente
       const clientAppointments = allAppointments
-        .filter(apt => apt.clientId === client.id && apt.status === 'confirmed')
+        .filter(apt => apt.clientId === client.id && apt.status === 'CONFIRMED')
         .sort((a, b) => b.date.localeCompare(a.date));
 
       const lastAppointment = clientAppointments[0];

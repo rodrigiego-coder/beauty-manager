@@ -291,6 +291,22 @@ export class CommandsController {
   }
 
   /**
+   * DELETE /commands/:id/client
+   * Remove vínculo do cliente com a comanda
+   */
+  @Delete(':id/client')
+  async unlinkClient(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    return this.commandsService.unlinkClient(id, {
+      id: user.id,
+      salonId: user.salonId,
+      role: user.role,
+    });
+  }
+
+  /**
    * POST /commands/:id/notes
    * Adiciona nota à comanda
    */

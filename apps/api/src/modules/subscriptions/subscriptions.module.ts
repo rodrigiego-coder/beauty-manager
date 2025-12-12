@@ -1,11 +1,14 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
-import { SubscriptionsService } from './subscriptions.service';
+import { SalonSubscriptionsService } from './salon-subscriptions.service';
+import { SubscriptionsController } from './subscriptions.controller';
 import { SubscriptionGuard } from './subscription.guard';
+import { PlansModule } from '../plans';
 
 @Module({
-  imports: [DatabaseModule],
-  providers: [SubscriptionsService, SubscriptionGuard],
-  exports: [SubscriptionsService, SubscriptionGuard],
+  imports: [DatabaseModule, forwardRef(() => PlansModule)],
+  controllers: [SubscriptionsController],
+  providers: [SalonSubscriptionsService, SubscriptionGuard],
+  exports: [SalonSubscriptionsService, SubscriptionGuard],
 })
 export class SubscriptionsModule {}

@@ -6,7 +6,6 @@ import {
   FunctionCallingMode,
 } from '@google/generative-ai';
 import { ClientsService } from '../clients';
-import { ProductsService } from '../products';
 import { AppointmentsService } from '../appointments';
 import { GEMINI_TOOLS, MOCK_DATA } from './ai-receptionist.tools';
 
@@ -51,7 +50,6 @@ Regras importantes:
   constructor(
     private configService: ConfigService,
     private clientsService: ClientsService,
-    private productsService: ProductsService,
     private appointmentsService: AppointmentsService,
   ) {
     this.genAI = new GoogleGenerativeAI(
@@ -297,20 +295,18 @@ Regras importantes:
     count: number;
     message: string;
   }> {
-    const lowStockProducts = await this.productsService.findLowStock();
+    // Dados mockados para o AI Receptionist (sem contexto de salonId)
+    const mockLowStockProducts = [
+      { id: 1, name: 'Shampoo Profissional', currentStock: 3, minStock: 10, unit: 'UN' },
+      { id: 2, name: 'Tinta Loiro', currentStock: 2, minStock: 5, unit: 'UN' },
+    ];
 
     return {
-      products: lowStockProducts.map((p) => ({
-        id: p.id,
-        name: p.name,
-        currentStock: p.currentStock,
-        minStock: p.minStock,
-        unit: p.unit,
-      })),
-      count: lowStockProducts.length,
+      products: mockLowStockProducts,
+      count: mockLowStockProducts.length,
       message:
-        lowStockProducts.length > 0
-          ? `Existem ${lowStockProducts.length} produto(s) com estoque baixo que precisam ser repostos.`
+        mockLowStockProducts.length > 0
+          ? `Existem ${mockLowStockProducts.length} produto(s) com estoque baixo que precisam ser repostos.`
           : 'Todos os produtos estao com estoque adequado.',
     };
   }
@@ -327,7 +323,7 @@ Regras importantes:
     top3Servicos: { service: string; count: number; revenue: number }[];
     periodo: string;
   }> {
-    const kpis = await this.appointmentsService.calculateKPIs(startDate, endDate);
+    const kpis = await this.appointmentsService.calculateKPIs(startDate || '', endDate || '');
 
     return {
       ...kpis,
@@ -363,11 +359,13 @@ Regras importantes:
     }
 
     // Busca últimos agendamentos
-    const appointmentsList = await this.appointmentsService.findByClient(client.id);
+    const appointmentsList = client.salonId
+      ? await this.appointmentsService.findByClient(client.id, client.salonId)
+      : [];
     const lastAppointments = appointmentsList.slice(0, 5).map(apt => ({
       date: apt.date,
       service: apt.service,
-      price: apt.price / 100,
+      price: Number(apt.price || 0) / 100,
     }));
 
     return {

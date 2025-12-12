@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   DollarSign,
   TrendingUp,
@@ -9,7 +9,11 @@ import {
   ArrowDownRight,
   Download,
   X,
-  ChevronLeft, // ADICIONADO PARA O BOTÃO VOLTAR
+  Loader2,
+  Calendar,
+  ChevronDown,
+  AlertCircle,
+  CheckCircle,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -22,149 +26,321 @@ import {
   PieChart,
   Pie,
   Cell,
+  BarChart,
+  Bar,
 } from 'recharts';
-import { format } from 'date-fns';
+import api from '../services/api';
 
 interface Transaction {
   id: number;
-  date: string;
+  salonId: string;
+  type: 'INCOME' | 'EXPENSE';
+  amount: string;
   description: string;
   category: string;
-  amount: number;
-  type: 'INCOME' | 'EXPENSE';
   paymentMethod: string;
+  reference?: string;
+  clientId?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-const mockTransactions: Transaction[] = [
-  { id: 1, date: '2024-01-15', description: 'Corte + Escova - Maria Silva', category: 'Servicos', amount: 120, type: 'INCOME', paymentMethod: 'PIX' },
-  { id: 2, date: '2024-01-15', description: 'Compra de Produtos - Fornecedor X', category: 'Estoque', amount: 450, type: 'EXPENSE', paymentMethod: 'Boleto' },
-  { id: 3, date: '2024-01-14', description: 'Coloracao Completa - Ana Costa', category: 'Servicos', amount: 280, type: 'INCOME', paymentMethod: 'Cartao Credito' },
-  { id: 4, date: '2024-01-14', description: 'Conta de Luz', category: 'Despesas Fixas', amount: 350, type: 'EXPENSE', paymentMethod: 'Debito Automatico' },
-  { id: 5, date: '2024-01-13', description: 'Manicure + Pedicure - Julia Santos', category: 'Servicos', amount: 80, type: 'INCOME', paymentMethod: 'Dinheiro' },
-  { id: 6, date: '2024-01-13', description: 'Aluguel do Espaco', category: 'Despesas Fixas', amount: 2500, type: 'EXPENSE', paymentMethod: 'Transferencia' },
-  { id: 7, date: '2024-01-12', description: 'Hidratacao Premium - Carla Lima', category: 'Servicos', amount: 150, type: 'INCOME', paymentMethod: 'PIX' },
-  { id: 8, date: '2024-01-12', description: 'Venda de Produto - Shampoo', category: 'Produtos', amount: 45, type: 'INCOME', paymentMethod: 'Cartao Debito' },
-];
+interface TransactionSummary {
+  totalIncome: number;
+  totalExpense: number;
+  balance: number;
+  incomeCount: number;
+  expenseCount: number;
+}
 
-const chartData = [
-  { name: 'Seg', receitas: 850, despesas: 200 },
-  { name: 'Ter', receitas: 1200, despesas: 450 },
-  { name: 'Qua', receitas: 980, despesas: 350 },
-  { name: 'Qui', receitas: 1500, despesas: 2500 },
-  { name: 'Sex', receitas: 1800, despesas: 300 },
-  { name: 'Sab', receitas: 2200, despesas: 150 },
-  { name: 'Dom', receitas: 400, despesas: 0 },
-];
+interface AccountSummary {
+  total: number;
+  count: number;
+}
 
-const categoryData = [
-  { name: 'Servicos', value: 4500, color: '#10b981' },
-  { name: 'Produtos', value: 800, color: '#3b82f6' },
-  { name: 'Estoque', value: 1200, color: '#ef4444' },
-  { name: 'Despesas Fixas', value: 2850, color: '#f59e0b' },
-  { name: 'Outros', value: 350, color: '#8b5cf6' },
-];
+interface ChartDataPoint {
+  name: string;
+  receitas: number;
+  despesas: number;
+}
+
+interface CategoryData {
+  name: string;
+  value: number;
+  color: string;
+}
+
+const CATEGORY_COLORS: Record<string, string> = {
+  'Servicos': '#10b981',
+  'Produtos': '#3b82f6',
+  'Estoque': '#ef4444',
+  'Despesas Fixas': '#f59e0b',
+  'Funcionarios': '#8b5cf6',
+  'Outros': '#6b7280',
+  'Venda de Produtos': '#06b6d4',
+  'Compra de Estoque': '#f43f5e',
+};
 
 export function FinancePage() {
-  // VARIÁVEIS DE ESTADO ORIGINAIS (Linhas 67-69)
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [summary, setSummary] = useState<TransactionSummary | null>(null);
+  const [accountsPayable, setAccountsPayable] = useState<AccountSummary>({ total: 0, count: 0 });
+  const [accountsReceivable, setAccountsReceivable] = useState<AccountSummary>({ total: 0, count: 0 });
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [categoryData, setCategoryData] = useState<CategoryData[]>([]);
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   const [filterType, setFilterType] = useState<'all' | 'INCOME' | 'EXPENSE'>('all');
+  const [filterPeriod, setFilterPeriod] = useState<string>('month');
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState<'INCOME' | 'EXPENSE'>('INCOME');
-  
-  // LÓGICA DO ROTEAMENTO
-  const isNewRevenueRoute = window.location.pathname.endsWith('/receita');
-  const isNewExpenseRoute = window.location.pathname.endsWith('/despesa'); 
 
-  // FUNÇÕES ORIGINAIS
-  const formatCurrency = (value: number) => {
+  // Form state
+  const [formData, setFormData] = useState({
+    description: '',
+    amount: '',
+    category: '',
+    paymentMethod: 'PIX',
+    date: new Date().toISOString().split('T')[0],
+  });
+
+  useEffect(() => {
+    loadData();
+  }, [filterPeriod]);
+
+  useEffect(() => {
+    loadTransactions();
+  }, [filterType]);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      // Calculate period dates
+      const now = new Date();
+      let startDate: string;
+      let endDate = now.toISOString().split('T')[0];
+
+      if (filterPeriod === 'week') {
+        const weekAgo = new Date(now);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        startDate = weekAgo.toISOString().split('T')[0];
+      } else if (filterPeriod === 'month') {
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        startDate = monthStart.toISOString().split('T')[0];
+      } else {
+        const yearStart = new Date(now.getFullYear(), 0, 1);
+        startDate = yearStart.toISOString().split('T')[0];
+      }
+
+      const [summaryRes, payableRes, receivableRes, transactionsRes] = await Promise.all([
+        api.get(`/transactions/summary?startDate=${startDate}&endDate=${endDate}`),
+        api.get('/accounts-payable/total-pending'),
+        api.get('/accounts-receivable/total-pending'),
+        api.get('/transactions'),
+      ]);
+
+      setSummary(summaryRes.data);
+      setAccountsPayable({
+        total: parseFloat(payableRes.data?.total || '0') || 0,
+        count: payableRes.data?.count || 0,
+      });
+      setAccountsReceivable({
+        total: parseFloat(receivableRes.data?.total || '0') || 0,
+        count: receivableRes.data?.count || 0,
+      });
+      setTransactions(transactionsRes.data || []);
+
+      // Process chart data
+      processChartData(transactionsRes.data);
+      processCategoryData(transactionsRes.data);
+    } catch (error) {
+      console.error('Erro ao carregar dados financeiros:', error);
+      setMessage({ type: 'error', text: 'Erro ao carregar dados financeiros' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadTransactions = async () => {
+    try {
+      let url = '/transactions';
+      if (filterType !== 'all') {
+        url = `/transactions/type/${filterType}`;
+      }
+      const { data } = await api.get(url);
+      setTransactions(data);
+    } catch (error) {
+      console.error('Erro ao carregar transacoes:', error);
+    }
+  };
+
+  const processChartData = (transactions: Transaction[]) => {
+    const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
+    const weekData: Record<string, { receitas: number; despesas: number }> = {};
+
+    // Initialize week data
+    days.forEach(day => {
+      weekData[day] = { receitas: 0, despesas: 0 };
+    });
+
+    // Get last 7 days of transactions
+    const now = new Date();
+    const weekAgo = new Date(now);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+
+    transactions.forEach(t => {
+      const date = new Date(t.createdAt);
+      if (date >= weekAgo) {
+        const dayName = days[date.getDay()];
+        const amount = parseFloat(t.amount);
+        if (t.type === 'INCOME') {
+          weekData[dayName].receitas += amount;
+        } else {
+          weekData[dayName].despesas += amount;
+        }
+      }
+    });
+
+    // Convert to chart format starting from current day
+    const todayIndex = now.getDay();
+    const orderedDays = [];
+    for (let i = 0; i < 7; i++) {
+      const dayIndex = (todayIndex - 6 + i + 7) % 7;
+      orderedDays.push(days[dayIndex]);
+    }
+
+    const data = orderedDays.map(day => ({
+      name: day,
+      receitas: Math.round(weekData[day].receitas * 100) / 100,
+      despesas: Math.round(weekData[day].despesas * 100) / 100,
+    }));
+
+    setChartData(data);
+  };
+
+  const processCategoryData = (transactions: Transaction[]) => {
+    const categories: Record<string, number> = {};
+
+    transactions.forEach(t => {
+      const amount = parseFloat(t.amount);
+      const category = t.category || 'Outros';
+      categories[category] = (categories[category] || 0) + amount;
+    });
+
+    const data = Object.entries(categories)
+      .map(([name, value]) => ({
+        name,
+        value: Math.round(value * 100) / 100,
+        color: CATEGORY_COLORS[name] || '#6b7280',
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+
+    setCategoryData(data);
+  };
+
+  const formatCurrency = (value: number | string | null | undefined) => {
+    let num = 0;
+    if (value !== null && value !== undefined) {
+      num = typeof value === 'string' ? parseFloat(value) : value;
+    }
+    if (isNaN(num)) num = 0;
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
-    }).format(value);
+    }).format(num);
   };
 
-  const totalIncome = mockTransactions
-    .filter((t) => t.type === 'INCOME')
-    .reduce((sum, t) => sum + t.amount, 0);
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
 
-  const totalExpense = mockTransactions
-    .filter((t) => t.type === 'EXPENSE')
-    .reduce((sum, t) => sum + t.amount, 0);
+  const openModal = (type: 'INCOME' | 'EXPENSE') => {
+    setModalType(type);
+    setFormData({
+      description: '',
+      amount: '',
+      category: type === 'INCOME' ? 'Servicos' : 'Despesas Fixas',
+      paymentMethod: 'PIX',
+      date: new Date().toISOString().split('T')[0],
+    });
+    setShowModal(true);
+  };
 
-  const balance = totalIncome - totalExpense;
+  const handleSaveTransaction = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSaving(true);
+    setMessage(null);
 
-  const filteredTransactions = mockTransactions.filter((t) => {
+    try {
+      const payload = {
+        type: modalType,
+        amount: parseFloat(formData.amount),
+        description: formData.description,
+        category: formData.category,
+        paymentMethod: formData.paymentMethod,
+      };
+
+      await api.post('/transactions', payload);
+
+      setMessage({
+        type: 'success',
+        text: `${modalType === 'INCOME' ? 'Receita' : 'Despesa'} registrada com sucesso!`
+      });
+      setShowModal(false);
+      loadData();
+    } catch (error: any) {
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.message || 'Erro ao registrar transacao'
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const response = await api.get('/reports/export/transactions', {
+        responseType: 'blob',
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `transacoes_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      setMessage({ type: 'error', text: 'Erro ao exportar transacoes' });
+    }
+  };
+
+  const totalIncome = summary?.totalIncome || 0;
+  const totalExpense = summary?.totalExpense || 0;
+  const balance = summary?.balance || 0;
+
+  const filteredTransactions = transactions.filter((t) => {
     if (filterType === 'all') return true;
     return t.type === filterType;
   });
 
-  const openModal = (type: 'INCOME' | 'EXPENSE') => {
-    setModalType(type);
-    setShowModal(true);
-  };
-  
-  // Funcao temporaria para simular o lancamento
-  const handleSaveTransaction = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    alert('Transacao registrada com sucesso!');
-    window.location.href = '/financeiro'; 
-  }
-
-
-  // ------------------------------------------------------------------
-  // >>>>>> LÓGICA DE RENDERIZAÇÃO DE FORMULÁRIO (NOVA) <<<<<<
-  // ------------------------------------------------------------------
-  
-  if (isNewRevenueRoute) {
+  if (isLoading) {
     return (
-      <div className="p-6">
-        <a href="/financeiro" className="text-primary-600 mb-4 flex items-center gap-2">
-          <ChevronLeft className="w-5 h-5" />
-          Voltar para Finaceiro
-        </a>
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Lançar Nova Receita</h1>
-        
-        <div className="bg-white p-6 rounded-xl shadow-md max-w-lg mx-auto">
-          <form className="space-y-4" onSubmit={handleSaveTransaction}>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Descricao
-                </label>
-                <input
-                  type="text"
-                  required
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-                  placeholder="Ex: Venda de Kit Mega Nutricao"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Valor</label>
-                <input
-                  type="number"
-                  required
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-                  placeholder="R$ 0,00"
-                />
-              </div>
-              
-              <div className="pt-4">
-                <button
-                  type="submit"
-                  className="w-full px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition-colors"
-                >
-                  Registrar Receita
-                </button>
-              </div>
-          </form>
-        </div>
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
       </div>
     );
   }
 
-  // ------------------------------------------------------------------
-  // >>>>>> LÓGICA DE RENDERIZAÇÃO DE LISTA (ORIGINAL) <<<<<<
-  // ------------------------------------------------------------------
-  
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -174,6 +350,15 @@ export function FinancePage() {
           <p className="text-gray-500 mt-1">Controle de receitas, despesas e fluxo de caixa</p>
         </div>
         <div className="flex gap-3">
+          <select
+            value={filterPeriod}
+            onChange={(e) => setFilterPeriod(e.target.value)}
+            className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+          >
+            <option value="week">Esta Semana</option>
+            <option value="month">Este Mes</option>
+            <option value="year">Este Ano</option>
+          </select>
           <button
             onClick={() => openModal('EXPENSE')}
             className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
@@ -191,6 +376,19 @@ export function FinancePage() {
         </div>
       </div>
 
+      {/* Message */}
+      {message && (
+        <div className={`p-4 rounded-xl flex items-center gap-3 ${
+          message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+        }`}>
+          {message.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+          {message.text}
+          <button onClick={() => setMessage(null)} className="ml-auto p-1 hover:bg-white/50 rounded">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white rounded-xl border border-gray-200 p-6">
@@ -198,7 +396,9 @@ export function FinancePage() {
             <div className="p-3 bg-emerald-100 rounded-xl">
               <TrendingUp className="w-6 h-6 text-emerald-600" />
             </div>
-            <span className="text-sm font-medium text-emerald-600">+12% vs mes anterior</span>
+            <span className="text-sm font-medium text-emerald-600">
+              {summary?.incomeCount || 0} transacoes
+            </span>
           </div>
           <div className="mt-4">
             <p className="text-sm text-gray-500">Total de Receitas</p>
@@ -211,7 +411,9 @@ export function FinancePage() {
             <div className="p-3 bg-red-100 rounded-xl">
               <TrendingDown className="w-6 h-6 text-red-600" />
             </div>
-            <span className="text-sm font-medium text-red-600">-5% vs mes anterior</span>
+            <span className="text-sm font-medium text-red-600">
+              {summary?.expenseCount || 0} transacoes
+            </span>
           </div>
           <div className="mt-4">
             <p className="text-sm text-gray-500">Total de Despesas</p>
@@ -244,9 +446,12 @@ export function FinancePage() {
             <h3 className="text-lg font-semibold">Contas a Pagar</h3>
             <CreditCard className="w-8 h-8 opacity-50" />
           </div>
-          <p className="text-3xl font-bold">R$ 2.500,00</p>
-          <p className="text-red-100 mt-2">3 contas pendentes</p>
-          <button className="mt-4 px-4 py-2 bg-white/20 rounded-lg text-sm font-medium hover:bg-white/30 transition-colors">
+          <p className="text-3xl font-bold">{formatCurrency(accountsPayable.total)}</p>
+          <p className="text-red-100 mt-2">{accountsPayable.count} contas pendentes</p>
+          <button
+            onClick={() => window.location.href = '/financeiro/contas-pagar'}
+            className="mt-4 px-4 py-2 bg-white/20 rounded-lg text-sm font-medium hover:bg-white/30 transition-colors"
+          >
             Ver detalhes
           </button>
         </div>
@@ -256,9 +461,12 @@ export function FinancePage() {
             <h3 className="text-lg font-semibold">Contas a Receber</h3>
             <DollarSign className="w-8 h-8 opacity-50" />
           </div>
-          <p className="text-3xl font-bold">R$ 1.800,00</p>
-          <p className="text-emerald-100 mt-2">5 clientes pendentes</p>
-          <button className="mt-4 px-4 py-2 bg-white/20 rounded-lg text-sm font-medium hover:bg-white/30 transition-colors">
+          <p className="text-3xl font-bold">{formatCurrency(accountsReceivable.total)}</p>
+          <p className="text-emerald-100 mt-2">{accountsReceivable.count} clientes pendentes</p>
+          <button
+            onClick={() => window.location.href = '/financeiro/contas-receber'}
+            className="mt-4 px-4 py-2 bg-white/20 rounded-lg text-sm font-medium hover:bg-white/30 transition-colors"
+          >
             Ver detalhes
           </button>
         </div>
@@ -266,41 +474,47 @@ export function FinancePage() {
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Line chart */}
+        {/* Area chart */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-6">Fluxo de Caixa Semanal</h3>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
-                <YAxis stroke="#9ca3af" fontSize={12} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                  }}
-                  formatter={(value: number) => formatCurrency(value)}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="receitas"
-                  stroke="#10b981"
-                  fill="#d1fae5"
-                  strokeWidth={2}
-                  name="Receitas"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="despesas"
-                  stroke="#ef4444"
-                  fill="#fee2e2"
-                  strokeWidth={2}
-                  name="Despesas"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            {chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="name" stroke="#9ca3af" fontSize={12} />
+                  <YAxis stroke="#9ca3af" fontSize={12} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#fff',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                    }}
+                    formatter={(value: number) => formatCurrency(value)}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="receitas"
+                    stroke="#10b981"
+                    fill="#d1fae5"
+                    strokeWidth={2}
+                    name="Receitas"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="despesas"
+                    stroke="#ef4444"
+                    fill="#fee2e2"
+                    strokeWidth={2}
+                    name="Despesas"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-400">
+                Sem dados para exibir
+              </div>
+            )}
           </div>
         </div>
 
@@ -308,24 +522,30 @@ export function FinancePage() {
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-6">Por Categoria</h3>
           <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                <Pie
-                  data={categoryData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={70}
-                  paddingAngle={2}
-                  dataKey="value"
-                >
-                  {categoryData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
+            {categoryData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Pie
+                    data={categoryData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={70}
+                    paddingAngle={2}
+                    dataKey="value"
+                  >
+                    {categoryData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-400">
+                Sem dados
+              </div>
+            )}
           </div>
           <div className="mt-4 space-y-2">
             {categoryData.map((cat) => (
@@ -372,7 +592,10 @@ export function FinancePage() {
                 Despesas
               </button>
             </div>
-            <button className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+            >
               <Download className="w-4 h-4" />
               Exportar
             </button>
@@ -401,10 +624,10 @@ export function FinancePage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredTransactions.map((transaction) => (
+              {filteredTransactions.slice(0, 20).map((transaction) => (
                 <tr key={transaction.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 text-sm text-gray-500">
-                    {format(new Date(transaction.date), 'dd/MM/yyyy')}
+                    {formatDate(transaction.createdAt)}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -443,6 +666,13 @@ export function FinancePage() {
             </tbody>
           </table>
         </div>
+
+        {filteredTransactions.length === 0 && (
+          <div className="text-center py-12">
+            <DollarSign className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500">Nenhuma transacao encontrada</p>
+          </div>
+        )}
       </div>
 
       {/* Modal */}
@@ -463,11 +693,14 @@ export function FinancePage() {
                 </button>
               </div>
 
-              <form className="space-y-4">
+              <form className="space-y-4" onSubmit={handleSaveTransaction}>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Descricao</label>
                   <input
                     type="text"
+                    required
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
                     placeholder="Ex: Corte de cabelo"
                   />
@@ -477,7 +710,12 @@ export function FinancePage() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Valor</label>
                     <input
-                      type="text"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      value={formData.amount}
+                      onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                       className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
                       placeholder="0,00"
                     />
@@ -486,7 +724,8 @@ export function FinancePage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
                     <input
                       type="date"
-                      defaultValue={format(new Date(), 'yyyy-MM-dd')}
+                      value={formData.date}
+                      onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                       className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
                     />
                   </div>
@@ -494,17 +733,21 @@ export function FinancePage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
-                  <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                  <select
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                  >
                     {modalType === 'INCOME' ? (
                       <>
                         <option value="Servicos">Servicos</option>
-                        <option value="Produtos">Venda de Produtos</option>
+                        <option value="Venda de Produtos">Venda de Produtos</option>
                         <option value="Outros">Outros</option>
                       </>
                     ) : (
                       <>
-                        <option value="Estoque">Compra de Estoque</option>
                         <option value="Despesas Fixas">Despesas Fixas</option>
+                        <option value="Compra de Estoque">Compra de Estoque</option>
                         <option value="Funcionarios">Funcionarios</option>
                         <option value="Outros">Outros</option>
                       </>
@@ -516,7 +759,11 @@ export function FinancePage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Forma de Pagamento
                   </label>
-                  <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none">
+                  <select
+                    value={formData.paymentMethod}
+                    onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                  >
                     <option value="Dinheiro">Dinheiro</option>
                     <option value="PIX">PIX</option>
                     <option value="Cartao Credito">Cartao de Credito</option>
@@ -536,12 +783,14 @@ export function FinancePage() {
                   </button>
                   <button
                     type="submit"
-                    className={`flex-1 px-4 py-2.5 text-white rounded-lg font-medium transition-colors ${
+                    disabled={isSaving}
+                    className={`flex-1 px-4 py-2.5 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2 ${
                       modalType === 'INCOME'
                         ? 'bg-emerald-600 hover:bg-emerald-700'
                         : 'bg-red-600 hover:bg-red-700'
                     }`}
                   >
+                    {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                     {modalType === 'INCOME' ? 'Lancar Receita' : 'Lancar Despesa'}
                   </button>
                 </div>

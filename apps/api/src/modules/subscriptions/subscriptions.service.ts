@@ -56,14 +56,14 @@ export class SubscriptionsService {
           message: 'Assinatura ativa',
         };
 
-      case 'TRIAL':
+      case 'TRIALING':
         const trialEnd = subscription.trialEndsAt ? new Date(subscription.trialEndsAt) : periodEnd;
         const trialDaysRemaining = Math.ceil((trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        
+
         if (trialDaysRemaining > 0) {
           return {
             valid: true,
-            status: 'TRIAL',
+            status: 'TRIALING',
             daysRemaining: trialDaysRemaining,
             message: `Período de teste: ${trialDaysRemaining} dias restantes`,
           };
@@ -149,7 +149,7 @@ export class SubscriptionsService {
       .values({
         salonId: data.salonId,
         planId: data.planId,
-        status: 'TRIAL',
+        status: 'TRIALING',
         currentPeriodStart: now,
         currentPeriodEnd: trialEnd,
         trialEndsAt: trialEnd,

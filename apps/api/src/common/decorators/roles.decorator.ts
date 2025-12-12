@@ -3,7 +3,7 @@ import { SetMetadata } from '@nestjs/common';
 /**
  * Roles disponíveis no sistema
  */
-export type UserRole = 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST';
+export type UserRole = 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST' | 'SUPER_ADMIN';
 
 /**
  * Chave para metadados de roles

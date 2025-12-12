@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcryptjs';
-import { salons, users } from './database/schema';
+import { salons, users, loyaltyPrograms, loyaltyTiers, loyaltyRewards } from './database/schema';
 
 /**
  * Script de Seed - Popula o banco com dados iniciais
@@ -119,6 +119,165 @@ async function seed() {
     console.log('✅ Usuário criado: recepcao@salao.com / recepcao123\n');
 
     // ========================================
+    // 6. CRIAR PROGRAMA DE FIDELIDADE
+    // ========================================
+    console.log('👑 Criando programa de fidelidade...');
+
+    const programId = 'bbbbbbb1-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+    await db.insert(loyaltyPrograms).values({
+      id: programId,
+      salonId: salonId,
+      name: 'Programa de Fidelidade',
+      isActive: true,
+      pointsPerRealService: '1',
+      pointsPerRealProduct: '1',
+      pointsExpireDays: 365,
+      minimumRedeemPoints: 100,
+      welcomePoints: 50,
+      birthdayPoints: 100,
+      referralPoints: 200,
+    }).onConflictDoNothing();
+
+    console.log('✅ Programa de fidelidade criado\n');
+
+    // ========================================
+    // 7. CRIAR NÍVEIS DO PROGRAMA
+    // ========================================
+    console.log('⭐ Criando níveis de fidelidade...');
+
+    const tiers = [
+      {
+        id: 'ccccccc1-cccc-cccc-cccc-cccccccccccc',
+        programId: programId,
+        name: 'Basic',
+        code: 'BASIC',
+        minPoints: 0,
+        color: '#6B7280',
+        icon: null,
+        benefits: { discountPercent: 0, priorityBooking: false },
+        pointsMultiplier: '1',
+        sortOrder: 0,
+      },
+      {
+        id: 'ccccccc2-cccc-cccc-cccc-cccccccccccc',
+        programId: programId,
+        name: 'Silver',
+        code: 'SILVER',
+        minPoints: 500,
+        color: '#9CA3AF',
+        icon: null,
+        benefits: { discountPercent: 5, priorityBooking: false },
+        pointsMultiplier: '1.2',
+        sortOrder: 1,
+      },
+      {
+        id: 'ccccccc3-cccc-cccc-cccc-cccccccccccc',
+        programId: programId,
+        name: 'Gold',
+        code: 'GOLD',
+        minPoints: 2000,
+        color: '#F59E0B',
+        icon: null,
+        benefits: { discountPercent: 10, priorityBooking: true },
+        pointsMultiplier: '1.5',
+        sortOrder: 2,
+      },
+      {
+        id: 'ccccccc4-cccc-cccc-cccc-cccccccccccc',
+        programId: programId,
+        name: 'VIP',
+        code: 'VIP',
+        minPoints: 5000,
+        color: '#8B5CF6',
+        icon: null,
+        benefits: { discountPercent: 15, priorityBooking: true, extraBenefits: 'Atendimento prioritário, brindes exclusivos' },
+        pointsMultiplier: '2',
+        sortOrder: 3,
+      },
+    ];
+
+    for (const tier of tiers) {
+      await db.insert(loyaltyTiers).values(tier).onConflictDoNothing();
+    }
+
+    console.log('✅ 4 níveis criados: Basic, Silver, Gold, VIP\n');
+
+    // ========================================
+    // 8. CRIAR RECOMPENSAS PADRÃO
+    // ========================================
+    console.log('🎁 Criando recompensas de fidelidade...');
+
+    const rewards = [
+      {
+        id: 'ddddddd1-dddd-dddd-dddd-dddddddddddd',
+        salonId: salonId,
+        programId: programId,
+        name: 'Desconto de R$20',
+        description: 'Desconto de R$20 em qualquer serviço ou produto',
+        type: 'DISCOUNT_VALUE',
+        pointsCost: 200,
+        value: '20',
+        minTier: null,
+        maxRedemptionsPerClient: null,
+        totalAvailable: null,
+        validDays: 30,
+        isActive: true,
+      },
+      {
+        id: 'ddddddd2-dddd-dddd-dddd-dddddddddddd',
+        salonId: salonId,
+        programId: programId,
+        name: '10% de desconto',
+        description: 'Desconto de 10% em qualquer serviço',
+        type: 'DISCOUNT_PERCENT',
+        pointsCost: 300,
+        value: '10',
+        minTier: null,
+        maxRedemptionsPerClient: null,
+        totalAvailable: null,
+        validDays: 30,
+        isActive: true,
+      },
+      {
+        id: 'ddddddd3-dddd-dddd-dddd-dddddddddddd',
+        salonId: salonId,
+        programId: programId,
+        name: 'Hidratação Grátis',
+        description: 'Uma sessão de hidratação capilar gratuita',
+        type: 'FREE_SERVICE',
+        pointsCost: 500,
+        value: '80',
+        minTier: 'SILVER',
+        maxRedemptionsPerClient: 2,
+        totalAvailable: null,
+        validDays: 60,
+        isActive: true,
+      },
+      {
+        id: 'ddddddd4-dddd-dddd-dddd-dddddddddddd',
+        salonId: salonId,
+        programId: programId,
+        name: 'Brinde Surpresa',
+        description: 'Um brinde especial do salão',
+        type: 'GIFT',
+        pointsCost: 400,
+        value: null,
+        minTier: null,
+        maxRedemptionsPerClient: 1,
+        totalAvailable: 50,
+        validDays: 30,
+        isActive: true,
+      },
+    ];
+
+    for (const reward of rewards) {
+      await db.insert(loyaltyRewards).values(reward).onConflictDoNothing();
+    }
+
+    console.log('✅ 4 recompensas criadas\n');
+
+    // ========================================
     // RESUMO
     // ========================================
     console.log('========================================');
@@ -129,6 +288,13 @@ async function seed() {
     console.log('   - gerente@salao.com / manager123 (MANAGER)');
     console.log('   - profissional@salao.com / stylist123 (STYLIST)');
     console.log('   - recepcao@salao.com / recepcao123 (RECEPTIONIST)');
+    console.log('');
+    console.log('👑 Programa de Fidelidade:');
+    console.log('   - 4 níveis: Basic, Silver (500pts), Gold (2000pts), VIP (5000pts)');
+    console.log('   - 4 recompensas: Desconto R$20, 10% off, Hidratação, Brinde');
+    console.log('   - Pontos de boas-vindas: 50 pts');
+    console.log('   - Pontos de aniversário: 100 pts');
+    console.log('   - Pontos por indicação: 200 pts');
     console.log('');
 
   } catch (error) {

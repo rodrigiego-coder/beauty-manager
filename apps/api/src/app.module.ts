@@ -26,6 +26,20 @@ import { AuthModule } from './modules/auth';
 import { SubscriptionsModule } from './modules/subscriptions';
 import { DashboardModule } from './modules/dashboard';
 import { CommandsModule } from './modules/commands';
+import { ServicesModule } from './modules/services';
+import { CashRegistersModule } from './modules/cash-registers';
+import { CommissionsModule } from './modules/commissions';
+import { TeamModule } from './modules/team';
+import { PlansModule } from './modules/plans';
+import { MercadoPagoModule } from './modules/mercado-pago';
+import { AdminModule } from './modules/admin';
+import { JobsModule } from './jobs';
+import { CalendarModule } from './modules/calendar';
+import { AutomationModule } from './modules/automation/automation.module';
+import { HairProfileModule } from './modules/hair-profile/hair-profile.module';
+import { RecommendationsModule } from './modules/recommendations/recommendations.module';
+import { LoyaltyModule } from './modules/loyalty/loyalty.module';
+import { ProductSubscriptionsModule } from './modules/product-subscriptions/product-subscriptions.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -72,6 +86,32 @@ import { CommandsModule } from './modules/commands';
     DashboardModule,
     // Modulo de comandas
     CommandsModule,
+    ServicesModule, // Modulo de servicos
+    // Modulo de caixa
+    CashRegistersModule,
+    // Modulo de comissoes
+    CommissionsModule,
+    // Modulo de equipe
+    TeamModule,
+    // Modulo de planos (assinaturas)
+    PlansModule,
+    // Modulo MercadoPago
+    MercadoPagoModule,
+    // Modulo Admin (SUPER_ADMIN)
+    AdminModule,
+    // Jobs agendados
+    JobsModule,
+    // Integração Google Calendar (completa)
+    CalendarModule,
+    // Módulo de Automação WhatsApp/SMS
+    AutomationModule,
+    // Módulo de Inteligência de Produto
+    HairProfileModule,
+    RecommendationsModule,
+    // Módulo de Fidelidade & Gamificação
+    LoyaltyModule,
+    // Módulo de Assinaturas de Produtos
+    ProductSubscriptionsModule,
   ],
   controllers: [AppController],
   providers: [
