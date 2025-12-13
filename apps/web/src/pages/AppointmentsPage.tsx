@@ -560,12 +560,29 @@ export function AppointmentsPage() {
 
       if (method === 'delete') {
         await api.delete(endpoint);
+        // Fechar o modal apenas quando for cancelamento (o agendamento não existe mais)
+        setShowDetailsModal(false);
+        setSelectedAppointment(null);
       } else {
-        await api.post(endpoint);
+        // Buscar os dados atualizados do agendamento
+        const response = await api.post(endpoint);
+        // Se a API retornar o agendamento atualizado, usar diretamente
+        if (response.data && response.data.id) {
+          setSelectedAppointment(response.data);
+        } else {
+          // Caso contrário, buscar o agendamento atualizado
+          try {
+            const updatedResponse = await api.get(`/appointments/${appointmentId}`);
+            if (updatedResponse.data) {
+              setSelectedAppointment(updatedResponse.data);
+            }
+          } catch {
+            // Se não conseguir buscar, tentar atualizar da lista após reload
+          }
+        }
       }
 
       setMessage({ type: 'success', text: 'Status atualizado com sucesso!' });
-      setShowDetailsModal(false);
       loadData();
     } catch (error: any) {
       setMessage({ type: 'error', text: error.response?.data?.message || 'Erro ao atualizar status' });
