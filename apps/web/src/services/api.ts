@@ -8,6 +8,22 @@ const api = axios.create({
 });
 
 // ============================================
+// INTERCEPTOR DE REQUEST - ADICIONA TOKEN AUTOMATICAMENTE
+// ============================================
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('beauty_manager_access_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// ============================================
 // INTERCEPTOR PARA RENOVAR TOKEN AUTOMATICAMENTE
 // ============================================
 

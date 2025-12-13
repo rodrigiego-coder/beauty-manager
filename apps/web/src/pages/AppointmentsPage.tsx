@@ -325,9 +325,17 @@ export function AppointmentsPage() {
       } catch (teamErr) {
         console.error('Error loading team:', teamErr);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading data:', error);
-      setMessage({ type: 'error', text: 'Erro ao carregar agenda' });
+      const errorMsg = error.response?.data?.message || error.message || 'Erro desconhecido';
+      const statusCode = error.response?.status;
+      if (statusCode === 401) {
+        setMessage({ type: 'error', text: 'Sessão expirada. Faça login novamente.' });
+      } else if (statusCode === 403) {
+        setMessage({ type: 'error', text: 'Sem permissão para acessar a agenda.' });
+      } else {
+        setMessage({ type: 'error', text: `Erro ao carregar agenda: ${errorMsg}` });
+      }
     } finally {
       setLoading(false);
     }
