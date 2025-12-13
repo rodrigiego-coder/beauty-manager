@@ -12,7 +12,7 @@ interface ProfileData {
 }
 
 export function ProfilePage() {
-  const { user } = useAuth();
+  const { user: _user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);

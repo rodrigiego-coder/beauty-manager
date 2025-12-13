@@ -1,0 +1,239 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { db } from '../../database/connection';
+import { appointments, services, users, clients } from '../../database/schema';
+import { eq, and } from 'drizzle-orm';
+
+/**
+ * =====================================================
+ * ALEXIS SCHEDULER SERVICE
+ * Gerenciamento de agendamentos via IA
+ * =====================================================
+ */
+
+export interface AvailableSlot {
+  time: string;
+  professionalId: string;
+  professionalName: string;
+}
+
+export interface CreateAppointmentData {
+  salonId: string;
+  clientPhone: string;
+  clientName: string;
+  serviceId: number;
+  professionalId: string;
+  date: Date;
+  time: string;
+}
+
+export interface AppointmentResult {
+  success: boolean;
+  appointment?: any;
+  error?: string;
+}
+
+@Injectable()
+export class AlexisSchedulerService {
+  private readonly logger = new Logger(AlexisSchedulerService.name);
+
+  /**
+   * Busca horários disponíveis para um serviço
+   */
+  async getAvailableSlots(
+    salonId: string,
+    serviceId: number,
+    date: Date,
+    professionalId?: string,
+  ): Promise<AvailableSlot[]> {
+    try {
+      // Busca serviço para saber duração
+      const [service] = await db.select().from(services).where(eq(services.id, serviceId)).limit(1);
+
+      if (!service) {
+        this.logger.warn(`Serviço ${serviceId} não encontrado`);
+        return [];
+      }
+
+      // Busca profissionais ativos do salão
+      const allProfessionals = await db
+        .select()
+        .from(users)
+        .where(and(eq(users.salonId, salonId), eq(users.role, 'STYLIST'), eq(users.active, true)));
+
+      const targetProfessionals = professionalId
+        ? allProfessionals.filter((p) => p.id === professionalId)
+        : allProfessionals;
+
+      if (targetProfessionals.length === 0) {
+        return [];
+      }
+
+      // Formato de data YYYY-MM-DD
+      const dateStr = date.toISOString().split('T')[0];
+
+      // Busca agendamentos do dia
+      const existingAppointments = await db
+        .select()
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.salonId, salonId),
+            eq(appointments.date, dateStr),
+            eq(appointments.status, 'SCHEDULED'),
+          ),
+        );
+
+      // Calcula slots disponíveis (8h às 20h, intervalos de 30min)
+      const slots: AvailableSlot[] = [];
+      const serviceDuration = service.durationMinutes;
+
+      for (const professional of targetProfessionals) {
+        for (let hour = 8; hour < 20; hour++) {
+          for (const minute of [0, 30]) {
+            const slotTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+            const slotDate = new Date(date);
+            slotDate.setHours(hour, minute, 0, 0);
+
+            // Verifica se já passou (para o dia atual)
+            if (slotDate < new Date()) {
+              continue;
+            }
+
+            // Calcula o fim do slot baseado na duração do serviço
+            const slotEndMinutes = hour * 60 + minute + serviceDuration;
+
+            // Verifica se tem conflito com outro agendamento
+            const hasConflict = existingAppointments.some((apt) => {
+              if (apt.professionalId !== professional.id) return false;
+
+              // Converte horário do agendamento existente para minutos
+              const [aptHour, aptMin] = (apt.time || '00:00').split(':').map(Number);
+              const aptStartMinutes = aptHour * 60 + aptMin;
+              const aptEndMinutes = aptStartMinutes + apt.duration;
+
+              // Verifica sobreposição
+              const slotStartMinutes = hour * 60 + minute;
+              return (
+                (slotStartMinutes >= aptStartMinutes && slotStartMinutes < aptEndMinutes) ||
+                (slotEndMinutes > aptStartMinutes && slotEndMinutes <= aptEndMinutes) ||
+                (slotStartMinutes <= aptStartMinutes && slotEndMinutes >= aptEndMinutes)
+              );
+            });
+
+            if (!hasConflict) {
+              slots.push({
+                time: slotTime,
+                professionalId: professional.id,
+                professionalName: professional.name || 'Profissional',
+              });
+            }
+          }
+        }
+      }
+
+      return slots;
+    } catch (error: any) {
+      this.logger.error('Erro ao buscar horários disponíveis:', error?.message || error);
+      return [];
+    }
+  }
+
+  /**
+   * Cria um novo agendamento
+   */
+  async createAppointment(data: CreateAppointmentData): Promise<AppointmentResult> {
+    try {
+      // Busca ou cria cliente
+      let [client] = await db
+        .select()
+        .from(clients)
+        .where(and(eq(clients.salonId, data.salonId), eq(clients.phone, data.clientPhone)))
+        .limit(1);
+
+      if (!client) {
+        const [newClient] = await db
+          .insert(clients)
+          .values({
+            salonId: data.salonId,
+            name: data.clientName || 'Cliente WhatsApp',
+            phone: data.clientPhone,
+          })
+          .returning();
+        client = newClient;
+      }
+
+      // Busca serviço
+      const [service] = await db
+        .select()
+        .from(services)
+        .where(eq(services.id, data.serviceId))
+        .limit(1);
+
+      if (!service) {
+        return { success: false, error: 'Serviço não encontrado' };
+      }
+
+      // Verifica disponibilidade novamente (double check)
+      const slots = await this.getAvailableSlots(
+        data.salonId,
+        data.serviceId,
+        data.date,
+        data.professionalId,
+      );
+      const isAvailable = slots.some(
+        (s) => s.time === data.time && s.professionalId === data.professionalId,
+      );
+
+      if (!isAvailable) {
+        return { success: false, error: 'Horário não está mais disponível' };
+      }
+
+      // Formata data como YYYY-MM-DD
+      const dateStr = data.date.toISOString().split('T')[0];
+
+      // Calcula o horário de fim
+      const [hour, minute] = data.time.split(':').map(Number);
+      const endMinutes = hour * 60 + minute + service.durationMinutes;
+      const endHour = Math.floor(endMinutes / 60);
+      const endMin = endMinutes % 60;
+      const endTime = `${endHour.toString().padStart(2, '0')}:${endMin.toString().padStart(2, '0')}`;
+
+      // Cria o agendamento
+      const [appointment] = await db
+        .insert(appointments)
+        .values({
+          salonId: data.salonId,
+          clientId: client.id,
+          serviceId: data.serviceId,
+          professionalId: data.professionalId,
+          date: dateStr,
+          time: data.time,
+          startTime: data.time,
+          endTime: endTime,
+          duration: service.durationMinutes,
+          service: service.name,
+          status: 'SCHEDULED',
+        })
+        .returning();
+
+      this.logger.log(`Agendamento criado via WhatsApp: ${appointment.id}`);
+
+      return { success: true, appointment };
+    } catch (error: any) {
+      this.logger.error('Erro ao criar agendamento:', error?.message || error);
+      return { success: false, error: 'Erro ao criar agendamento' };
+    }
+  }
+
+  /**
+   * Formata a lista de horários disponíveis para exibição
+   */
+  formatAvailableSlots(slots: AvailableSlot[], limit = 6): string {
+    if (slots.length === 0) {
+      return 'Não há horários disponíveis para esta data.';
+    }
+
+    const limitedSlots = slots.slice(0, limit);
+    return limitedSlots.map((s) => `• ${s.time} - ${s.professionalName}`).join('\n');
+  }
+}

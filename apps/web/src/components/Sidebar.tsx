@@ -20,6 +20,11 @@ import {
   Lightbulb,
   Repeat,
   Truck,
+  ShoppingCart,
+  Zap,
+  FlaskConical,
+  ShoppingBag,
+  Bot,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
@@ -43,6 +48,11 @@ const navigation: NavItem[] = [
   { name: 'Produtos', href: '/produtos', icon: Package, roles: ['OWNER', 'MANAGER'] },
   { name: 'Assinaturas', href: '/assinaturas-produtos', icon: Repeat, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST'] },
   { name: 'Entregas', href: '/assinaturas-produtos/entregas', icon: Truck, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
+  { name: 'Reservas', href: '/reservas', icon: ShoppingBag, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
+  { name: 'Links Carrinho', href: '/cart-links', icon: ShoppingCart, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
+  { name: 'Upsell', href: '/upsell/regras', icon: Zap, roles: ['OWNER', 'MANAGER'] },
+  { name: 'Testes A/B', href: '/ab-tests', icon: FlaskConical, roles: ['OWNER', 'MANAGER'] },
+  { name: 'ALEXIS IA', href: '/alexis', icon: Bot, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
   { name: 'Recomendacoes', href: '/recomendacoes/regras', icon: Lightbulb, roles: ['OWNER', 'MANAGER'] },
   { name: 'Clientes', href: '/clientes', icon: Users, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
   { name: 'Equipe', href: '/equipe', icon: UserCog, roles: ['OWNER', 'MANAGER'] },

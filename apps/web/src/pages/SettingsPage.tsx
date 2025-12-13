@@ -10,7 +10,6 @@ import {
   MapPin,
   Phone,
   Mail,
-  Clock,
   FileText,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';

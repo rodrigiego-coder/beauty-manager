@@ -23,3 +23,8 @@ export { default as LoyaltyDashboardPage } from './LoyaltyDashboardPage';
 export { default as ProductSubscriptionPlansPage } from './ProductSubscriptionPlansPage';
 export { default as SubscriptionDeliveriesPage } from './SubscriptionDeliveriesPage';
 export { default as AvailableSubscriptionsPage } from './AvailableSubscriptionsPage';
+export { default as UpsellRulesPage } from './UpsellRulesPage';
+export { default as CartLinksPage } from './CartLinksPage';
+export { default as CartLinkPublicPage } from './CartLinkPublicPage';
+export { default as ReservationsPage } from './ReservationsPage';
+export { default as ABTestsPage } from './ABTestsPage';

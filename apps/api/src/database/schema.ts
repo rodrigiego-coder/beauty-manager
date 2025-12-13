@@ -1829,3 +1829,787 @@ export type SubscriptionDelivery = typeof subscriptionDeliveries.$inferSelect;
 export type NewSubscriptionDelivery = typeof subscriptionDeliveries.$inferInsert;
 export type SubscriptionDeliveryItem = typeof subscriptionDeliveryItems.$inferSelect;
 export type NewSubscriptionDeliveryItem = typeof subscriptionDeliveryItems.$inferInsert;
+
+// ==================== FASE D: UPSELL & COMÉRCIO CONVERSACIONAL ====================
+
+// Enum para tipo de gatilho de upsell
+export const upsellTriggerTypeEnum = pgEnum('upsell_trigger_type', [
+  'SERVICE',
+  'PRODUCT',
+  'HAIR_PROFILE',
+  'APPOINTMENT',
+]);
+
+// Enum para status da oferta de upsell
+export const upsellOfferStatusEnum = pgEnum('upsell_offer_status', [
+  'SHOWN',
+  'ACCEPTED',
+  'DECLINED',
+  'EXPIRED',
+]);
+
+// Enum para status do link de carrinho
+export const cartLinkStatusEnum = pgEnum('cart_link_status', [
+  'ACTIVE',
+  'CONVERTED',
+  'EXPIRED',
+  'CANCELLED',
+]);
+
+// Enum para origem do link
+export const cartLinkSourceEnum = pgEnum('cart_link_source', [
+  'WHATSAPP',
+  'SMS',
+  'EMAIL',
+  'MANUAL',
+]);
+
+// Enum para status da reserva
+export const reservationStatusEnum = pgEnum('reservation_status', [
+  'PENDING',
+  'CONFIRMED',
+  'READY',
+  'DELIVERED',
+  'CANCELLED',
+]);
+
+// Enum para tipo de entrega da reserva
+export const reservationDeliveryTypeEnum = pgEnum('reservation_delivery_type', [
+  'PICKUP',
+  'DELIVERY',
+]);
+
+// Enum para status do teste A/B
+export const abTestStatusEnum = pgEnum('ab_test_status', [
+  'DRAFT',
+  'RUNNING',
+  'PAUSED',
+  'COMPLETED',
+]);
+
+// Enum para tipo do teste A/B
+export const abTestTypeEnum = pgEnum('ab_test_type', [
+  'MESSAGE',
+  'OFFER',
+  'DISCOUNT',
+  'TIMING',
+]);
+
+// Regras de Upsell
+export const upsellRules = pgTable('upsell_rules', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  triggerType: varchar('trigger_type', { length: 20 }).notNull(),
+  triggerServiceIds: json('trigger_service_ids').$type<number[]>().default([]),
+  triggerProductIds: json('trigger_product_ids').$type<number[]>().default([]),
+  triggerHairTypes: json('trigger_hair_types').$type<string[]>().default([]),
+  recommendedProducts: json('recommended_products').$type<{ productId: number; discount: number; reason: string }[]>().default([]),
+  recommendedServices: json('recommended_services').$type<{ serviceId: number; discount: number; reason: string }[]>().default([]),
+  displayMessage: text('display_message'),
+  discountPercent: decimal('discount_percent', { precision: 5, scale: 2 }).default('0'),
+  validFrom: date('valid_from'),
+  validUntil: date('valid_until'),
+  maxUsesTotal: integer('max_uses_total'),
+  maxUsesPerClient: integer('max_uses_per_client'),
+  currentUses: integer('current_uses').default(0),
+  isActive: boolean('is_active').default(true),
+  priority: integer('priority').default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Ofertas de Upsell mostradas
+export const upsellOffers = pgTable('upsell_offers', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  ruleId: uuid('rule_id').references(() => upsellRules.id).notNull(),
+  clientId: uuid('client_id').references(() => clients.id),
+  appointmentId: uuid('appointment_id').references(() => appointments.id),
+  commandId: uuid('command_id').references(() => commands.id),
+  status: varchar('status', { length: 20 }).notNull().default('SHOWN'),
+  offeredProducts: json('offered_products').$type<{ productId: number; name: string; originalPrice: number; discountedPrice: number }[]>().default([]),
+  offeredServices: json('offered_services').$type<{ serviceId: number; name: string; originalPrice: number; discountedPrice: number }[]>().default([]),
+  totalOriginalPrice: decimal('total_original_price', { precision: 10, scale: 2 }).notNull(),
+  totalDiscountedPrice: decimal('total_discounted_price', { precision: 10, scale: 2 }).notNull(),
+  acceptedAt: timestamp('accepted_at'),
+  declinedAt: timestamp('declined_at'),
+  expiresAt: timestamp('expires_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Links de Pré-carrinho
+export const cartLinks = pgTable('cart_links', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  code: varchar('code', { length: 20 }).notNull().unique(),
+  clientId: uuid('client_id').references(() => clients.id),
+  clientPhone: varchar('client_phone', { length: 20 }),
+  clientName: varchar('client_name', { length: 255 }),
+  items: json('items').$type<{ type: 'PRODUCT' | 'SERVICE'; id: number; name: string; quantity: number; price: number; discount: number }[]>().default([]),
+  totalAmount: decimal('total_amount', { precision: 10, scale: 2 }).notNull(),
+  discountAmount: decimal('discount_amount', { precision: 10, scale: 2 }).default('0'),
+  finalAmount: decimal('final_amount', { precision: 10, scale: 2 }).notNull(),
+  message: text('message'),
+  expiresAt: timestamp('expires_at').notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('ACTIVE'),
+  convertedAt: timestamp('converted_at'),
+  convertedCommandId: uuid('converted_command_id').references(() => commands.id),
+  source: varchar('source', { length: 20 }).default('MANUAL'),
+  campaignId: uuid('campaign_id'),
+  viewCount: integer('view_count').default(0),
+  lastViewedAt: timestamp('last_viewed_at'),
+  createdById: uuid('created_by_id').references(() => users.id).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Visualizações dos Links
+export const cartLinkViews = pgTable('cart_link_views', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  cartLinkId: uuid('cart_link_id').references(() => cartLinks.id).notNull(),
+  viewedAt: timestamp('viewed_at').defaultNow().notNull(),
+  ipAddress: varchar('ip_address', { length: 50 }),
+  userAgent: text('user_agent'),
+  convertedToReservation: boolean('converted_to_reservation').default(false),
+});
+
+// Reservas de Produtos
+export const productReservations = pgTable('product_reservations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  clientId: uuid('client_id').references(() => clients.id),
+  clientName: varchar('client_name', { length: 255 }).notNull(),
+  clientPhone: varchar('client_phone', { length: 20 }).notNull(),
+  cartLinkId: uuid('cart_link_id').references(() => cartLinks.id),
+  items: json('items').$type<{ productId: number; name: string; quantity: number; price: number }[]>().default([]),
+  totalAmount: decimal('total_amount', { precision: 10, scale: 2 }).notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('PENDING'),
+  deliveryType: varchar('delivery_type', { length: 20 }).default('PICKUP'),
+  deliveryAddress: text('delivery_address'),
+  scheduledPickupDate: date('scheduled_pickup_date'),
+  notes: text('notes'),
+  confirmedAt: timestamp('confirmed_at'),
+  confirmedById: uuid('confirmed_by_id').references(() => users.id),
+  readyAt: timestamp('ready_at'),
+  deliveredAt: timestamp('delivered_at'),
+  cancelledAt: timestamp('cancelled_at'),
+  cancellationReason: text('cancellation_reason'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Testes A/B
+export const abTests = pgTable('ab_tests', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  type: varchar('type', { length: 20 }).notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('DRAFT'),
+  variantA: json('variant_a').$type<{ message?: string; discount?: number; timing?: string; offer?: any }>().default({}),
+  variantB: json('variant_b').$type<{ message?: string; discount?: number; timing?: string; offer?: any }>().default({}),
+  variantAViews: integer('variant_a_views').default(0),
+  variantAConversions: integer('variant_a_conversions').default(0),
+  variantBViews: integer('variant_b_views').default(0),
+  variantBConversions: integer('variant_b_conversions').default(0),
+  winningVariant: varchar('winning_variant', { length: 1 }),
+  startedAt: timestamp('started_at'),
+  endedAt: timestamp('ended_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Atribuições de Teste A/B
+export const abTestAssignments = pgTable('ab_test_assignments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  testId: uuid('test_id').references(() => abTests.id).notNull(),
+  clientId: uuid('client_id').references(() => clients.id),
+  clientPhone: varchar('client_phone', { length: 20 }),
+  variant: varchar('variant', { length: 1 }).notNull(),
+  converted: boolean('converted').default(false),
+  convertedAt: timestamp('converted_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// ==================== FASE E: IA ASSISTENTE ====================
+
+// Insights gerados pela IA
+export const aiInsights = pgTable('ai_insights', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  type: varchar('type', { length: 30 }).notNull(), // DAILY_BRIEFING, ALERT, OPPORTUNITY, TASK, TIP, CLIENT_INSIGHT
+  title: varchar('title', { length: 255 }).notNull(),
+  content: text('content').notNull(),
+  priority: varchar('priority', { length: 10 }).notNull().default('MEDIUM'), // LOW, MEDIUM, HIGH, URGENT
+  category: varchar('category', { length: 20 }).notNull().default('GENERAL'), // SALES, CLIENTS, INVENTORY, TEAM, FINANCE, SCHEDULE
+  data: json('data').$type<Record<string, any>>(),
+  actionUrl: varchar('action_url', { length: 255 }),
+  actionLabel: varchar('action_label', { length: 100 }),
+  isRead: boolean('is_read').default(false),
+  isDismissed: boolean('is_dismissed').default(false),
+  expiresAt: timestamp('expires_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ==================== BELLE - IA DO DASHBOARD ====================
+
+// Conversas com a Belle (chat do dashboard)
+export const dashboardConversations = pgTable('dashboard_conversations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  role: varchar('role', { length: 10 }).notNull(), // user, assistant
+  content: text('content').notNull(),
+  context: json('context').$type<Record<string, any>>(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Configurações da Belle por salão
+export const dashboardSettings = pgTable('dashboard_settings', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull().unique(),
+  isEnabled: boolean('is_enabled').default(true),
+  assistantName: varchar('assistant_name', { length: 50 }).default('Belle'),
+  personality: varchar('personality', { length: 20 }).default('FRIENDLY'), // FRIENDLY, PROFESSIONAL, CASUAL
+  dailyBriefingEnabled: boolean('daily_briefing_enabled').default(true),
+  dailyBriefingTime: varchar('daily_briefing_time', { length: 5 }).default('08:00'),
+  alertsEnabled: boolean('alerts_enabled').default(true),
+  tipsEnabled: boolean('tips_enabled').default(true),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Types para Belle
+export type DashboardConversation = typeof dashboardConversations.$inferSelect;
+export type NewDashboardConversation = typeof dashboardConversations.$inferInsert;
+export type DashboardSettings = typeof dashboardSettings.$inferSelect;
+export type NewDashboardSettings = typeof dashboardSettings.$inferInsert;
+
+// Notas sobre clientes geradas/assistidas pela IA
+export const clientNotesAi = pgTable('client_notes_ai', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  clientId: uuid('client_id').references(() => clients.id).notNull(),
+  noteType: varchar('note_type', { length: 20 }).notNull(), // PREFERENCE, ALLERGY, PERSONALITY, IMPORTANT
+  content: text('content').notNull(),
+  createdById: uuid('created_by_id').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Types para FASE D
+export type UpsellRule = typeof upsellRules.$inferSelect;
+export type NewUpsellRule = typeof upsellRules.$inferInsert;
+export type UpsellOffer = typeof upsellOffers.$inferSelect;
+export type NewUpsellOffer = typeof upsellOffers.$inferInsert;
+export type CartLink = typeof cartLinks.$inferSelect;
+export type NewCartLink = typeof cartLinks.$inferInsert;
+export type CartLinkView = typeof cartLinkViews.$inferSelect;
+export type NewCartLinkView = typeof cartLinkViews.$inferInsert;
+export type ProductReservation = typeof productReservations.$inferSelect;
+export type NewProductReservation = typeof productReservations.$inferInsert;
+export type ABTest = typeof abTests.$inferSelect;
+export type NewABTest = typeof abTests.$inferInsert;
+export type ABTestAssignment = typeof abTestAssignments.$inferSelect;
+export type NewABTestAssignment = typeof abTestAssignments.$inferInsert;
+
+// Types para FASE E (IA)
+export type AIInsight = typeof aiInsights.$inferSelect;
+export type NewAIInsight = typeof aiInsights.$inferInsert;
+export type AIConversation = typeof aiConversations.$inferSelect;
+export type NewAIConversation = typeof aiConversations.$inferInsert;
+export type AISettings = typeof aiSettings.$inferSelect;
+export type NewAISettings = typeof aiSettings.$inferInsert;
+export type ClientNoteAi = typeof clientNotesAi.$inferSelect;
+export type NewClientNoteAi = typeof clientNotesAi.$inferInsert;
+
+// ==================== ALEXIS - IA PARA WHATSAPP & DASHBOARD ====================
+
+// Enum para status da sessão ALEXIS
+export const alexisSessionStatusEnum = pgEnum('alexis_session_status', [
+  'ACTIVE',
+  'HUMAN_CONTROL',
+  'PAUSED',
+  'ENDED',
+]);
+
+// Enum para modo de controle
+export const alexisControlModeEnum = pgEnum('alexis_control_mode', [
+  'AI',       // ALEXIS respondendo
+  'HUMAN',    // Humano respondendo (#eu)
+  'HYBRID',   // Colaborativo
+]);
+
+// Enum para tipo de mensagem ALEXIS
+export const alexisMessageTypeEnum = pgEnum('alexis_message_type', [
+  'TEXT',
+  'AUDIO',
+  'IMAGE',
+  'DOCUMENT',
+  'LOCATION',
+  'CONTACT',
+  'TEMPLATE',
+]);
+
+// Enum para direção da mensagem
+export const alexisMessageDirectionEnum = pgEnum('alexis_message_direction', [
+  'INBOUND',   // Cliente -> Salão
+  'OUTBOUND',  // Salão -> Cliente
+]);
+
+// Enum para nível de risco de compliance
+export const alexisComplianceRiskEnum = pgEnum('alexis_compliance_risk', [
+  'NONE',
+  'LOW',
+  'MEDIUM',
+  'HIGH',
+  'BLOCKED',
+]);
+
+// Enum para tipo de violação
+export const alexisViolationTypeEnum = pgEnum('alexis_violation_type', [
+  'MEDICAL_ADVICE',      // Conselho médico (ANVISA)
+  'PRESCRIPTION',        // Prescrição medicamentosa
+  'HEALTH_CLAIM',        // Alegações de saúde não autorizadas
+  'PERSONAL_DATA',       // Vazamento de dados pessoais (LGPD)
+  'UNAUTHORIZED_SHARE',  // Compartilhamento não autorizado
+  'PROFANITY',           // Linguagem imprópria
+  'DISCRIMINATION',      // Discriminação
+  'SPAM',                // Spam/Marketing agressivo
+]);
+
+// Configurações do ALEXIS por salão
+export const alexisSettings = pgTable('alexis_settings', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull().unique(),
+  isEnabled: boolean('is_enabled').default(true),
+  assistantName: varchar('assistant_name', { length: 50 }).default('ALEXIS'),
+  welcomeMessage: text('welcome_message').default('Olá! Sou ALEXIS, assistente virtual do salão. Como posso ajudar?'),
+  personality: varchar('personality', { length: 20 }).default('PROFESSIONAL'),
+  language: varchar('language', { length: 10 }).default('pt-BR'),
+
+  // Compliance ANVISA/LGPD
+  complianceLevel: varchar('compliance_level', { length: 10 }).default('STRICT'), // STRICT, MODERATE, RELAXED
+  anvisaWarningsEnabled: boolean('anvisa_warnings_enabled').default(true),
+  lgpdConsentRequired: boolean('lgpd_consent_required').default(true),
+  dataRetentionDays: integer('data_retention_days').default(365),
+
+  // Controle de IA
+  autoResponseEnabled: boolean('auto_response_enabled').default(true),
+  maxResponsesPerMinute: integer('max_responses_per_minute').default(10),
+  humanTakeoverKeywords: json('human_takeover_keywords').$type<string[]>().default(['#eu', 'falar com humano', 'atendente']),
+  aiResumeKeywords: json('ai_resume_keywords').$type<string[]>().default(['#ia', 'voltar alexis', 'voltar robô']),
+
+  // Horários de atendimento
+  operatingHoursEnabled: boolean('operating_hours_enabled').default(false),
+  operatingHoursStart: varchar('operating_hours_start', { length: 5 }).default('08:00'),
+  operatingHoursEnd: varchar('operating_hours_end', { length: 5 }).default('20:00'),
+  outOfHoursMessage: text('out_of_hours_message').default('Estamos fora do horário de atendimento. Retornaremos em breve!'),
+
+  // Integrações
+  whatsappIntegrationId: varchar('whatsapp_integration_id', { length: 255 }),
+  webhookUrl: varchar('webhook_url', { length: 500 }),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Sessões de conversa ALEXIS
+export const alexisSessions = pgTable('alexis_sessions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  clientId: uuid('client_id').references(() => clients.id),
+  clientPhone: varchar('client_phone', { length: 20 }).notNull(),
+  clientName: varchar('client_name', { length: 255 }),
+
+  status: varchar('status', { length: 20 }).notNull().default('ACTIVE'),
+  controlMode: varchar('control_mode', { length: 10 }).notNull().default('AI'),
+
+  // Consentimento LGPD
+  lgpdConsentGiven: boolean('lgpd_consent_given').default(false),
+  lgpdConsentAt: timestamp('lgpd_consent_at'),
+
+  // Contexto da conversa
+  context: json('context').$type<{
+    currentIntent?: string;
+    lastService?: string;
+    appointmentInProgress?: boolean;
+    clientPreferences?: Record<string, any>;
+  }>().default({}),
+
+  // Métricas
+  messageCount: integer('message_count').default(0),
+  aiResponseCount: integer('ai_response_count').default(0),
+  humanResponseCount: integer('human_response_count').default(0),
+
+  // Controle
+  lastMessageAt: timestamp('last_message_at'),
+  humanTakeoverAt: timestamp('human_takeover_at'),
+  humanTakeoverById: uuid('human_takeover_by_id').references(() => users.id),
+
+  startedAt: timestamp('started_at').defaultNow().notNull(),
+  endedAt: timestamp('ended_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Mensagens ALEXIS
+export const alexisMessages = pgTable('alexis_messages', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  sessionId: uuid('session_id').references(() => alexisSessions.id).notNull(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+
+  direction: varchar('direction', { length: 10 }).notNull(), // INBOUND, OUTBOUND
+  messageType: varchar('message_type', { length: 20 }).notNull().default('TEXT'),
+  content: text('content').notNull(),
+  mediaUrl: varchar('media_url', { length: 500 }),
+
+  // Quem respondeu
+  respondedBy: varchar('responded_by', { length: 10 }).notNull(), // AI, HUMAN
+  respondedById: uuid('responded_by_id').references(() => users.id),
+
+  // Compliance - 3 camadas
+  preProcessingCheck: json('pre_processing_check').$type<{
+    passed: boolean;
+    blockedKeywords?: string[];
+    lgpdCheck?: boolean;
+    timestamp: string;
+  }>(),
+
+  aiProcessingCheck: json('ai_processing_check').$type<{
+    passed: boolean;
+    confidenceScore?: number;
+    intentDetected?: string;
+    flaggedContent?: string[];
+    timestamp: string;
+  }>(),
+
+  postProcessingCheck: json('post_processing_check').$type<{
+    passed: boolean;
+    sanitizedContent?: string;
+    complianceReview?: boolean;
+    timestamp: string;
+  }>(),
+
+  complianceRisk: varchar('compliance_risk', { length: 10 }).default('NONE'),
+
+  // WhatsApp metadata
+  whatsappMessageId: varchar('whatsapp_message_id', { length: 100 }),
+  deliveredAt: timestamp('delivered_at'),
+  readAt: timestamp('read_at'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Logs de compliance ALEXIS
+export const alexisComplianceLogs = pgTable('alexis_compliance_logs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  sessionId: uuid('session_id').references(() => alexisSessions.id),
+  messageId: uuid('message_id').references(() => alexisMessages.id),
+
+  violationType: varchar('violation_type', { length: 30 }).notNull(),
+  riskLevel: varchar('risk_level', { length: 10 }).notNull(),
+
+  originalContent: text('original_content').notNull(),
+  sanitizedContent: text('sanitized_content'),
+
+  detectionLayer: varchar('detection_layer', { length: 20 }).notNull(), // PRE, DURING, POST
+  action: varchar('action', { length: 20 }).notNull(), // BLOCKED, FLAGGED, SANITIZED, ALLOWED
+
+  details: json('details').$type<{
+    matchedPatterns?: string[];
+    anvisaCode?: string;
+    lgpdArticle?: string;
+    recommendation?: string;
+  }>(),
+
+  reviewedById: uuid('reviewed_by_id').references(() => users.id),
+  reviewedAt: timestamp('reviewed_at'),
+  reviewNotes: text('review_notes'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Takeovers humanos
+export const alexisHumanTakeovers = pgTable('alexis_human_takeovers', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  sessionId: uuid('session_id').references(() => alexisSessions.id).notNull(),
+
+  takenOverById: uuid('taken_over_by_id').references(() => users.id).notNull(),
+  reason: varchar('reason', { length: 50 }).notNull(), // COMMAND, KEYWORD, MANUAL, ESCALATION
+
+  triggerMessage: text('trigger_message'),
+  startedAt: timestamp('started_at').defaultNow().notNull(),
+  endedAt: timestamp('ended_at'),
+
+  // Resumo do atendimento humano
+  messagesDuringTakeover: integer('messages_during_takeover').default(0),
+  resolution: text('resolution'),
+  returnedToAi: boolean('returned_to_ai').default(false),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Palavras-chave bloqueadas (ANVISA/LGPD)
+export const alexisBlockedKeywords = pgTable('alexis_blocked_keywords', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id), // null = global
+
+  keyword: varchar('keyword', { length: 100 }).notNull(),
+  category: varchar('category', { length: 30 }).notNull(), // ANVISA, LGPD, PROFANITY, CUSTOM
+  violationType: varchar('violation_type', { length: 30 }).notNull(),
+
+  severity: varchar('severity', { length: 10 }).notNull().default('HIGH'), // LOW, MEDIUM, HIGH, CRITICAL
+  action: varchar('action', { length: 20 }).notNull().default('BLOCK'), // BLOCK, WARN, FLAG, SANITIZE
+
+  replacement: text('replacement'), // Texto de substituição se action = SANITIZE
+  warningMessage: text('warning_message'),
+
+  isActive: boolean('is_active').default(true),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Templates de respostas ALEXIS
+export const alexisResponseTemplates = pgTable('alexis_response_templates', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+
+  name: varchar('name', { length: 100 }).notNull(),
+  category: varchar('category', { length: 30 }).notNull(), // GREETING, SCHEDULING, SERVICES, PRICES, HOURS, FAQ, GOODBYE
+  triggerKeywords: json('trigger_keywords').$type<string[]>().default([]),
+
+  content: text('content').notNull(),
+  variables: json('variables').$type<string[]>().default([]), // {{client_name}}, {{salon_name}}, etc.
+
+  isActive: boolean('is_active').default(true),
+  usageCount: integer('usage_count').default(0),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Métricas diárias ALEXIS
+export const alexisDailyMetrics = pgTable('alexis_daily_metrics', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  date: date('date').notNull(),
+
+  totalSessions: integer('total_sessions').default(0),
+  totalMessages: integer('total_messages').default(0),
+  aiResponses: integer('ai_responses').default(0),
+  humanResponses: integer('human_responses').default(0),
+
+  humanTakeovers: integer('human_takeovers').default(0),
+  avgResponseTime: decimal('avg_response_time', { precision: 10, scale: 2 }), // segundos
+
+  complianceBlocks: integer('compliance_blocks').default(0),
+  complianceFlags: integer('compliance_flags').default(0),
+
+  appointmentsBooked: integer('appointments_booked').default(0),
+  questionsAnswered: integer('questions_answered').default(0),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Types para ALEXIS
+export type AlexisSettings = typeof alexisSettings.$inferSelect;
+export type NewAlexisSettings = typeof alexisSettings.$inferInsert;
+export type AlexisSession = typeof alexisSessions.$inferSelect;
+export type NewAlexisSession = typeof alexisSessions.$inferInsert;
+export type AlexisMessage = typeof alexisMessages.$inferSelect;
+export type NewAlexisMessage = typeof alexisMessages.$inferInsert;
+export type AlexisComplianceLog = typeof alexisComplianceLogs.$inferSelect;
+export type NewAlexisComplianceLog = typeof alexisComplianceLogs.$inferInsert;
+export type AlexisHumanTakeover = typeof alexisHumanTakeovers.$inferSelect;
+export type NewAlexisHumanTakeover = typeof alexisHumanTakeovers.$inferInsert;
+export type AlexisBlockedKeyword = typeof alexisBlockedKeywords.$inferSelect;
+export type NewAlexisBlockedKeyword = typeof alexisBlockedKeywords.$inferInsert;
+export type AlexisResponseTemplate = typeof alexisResponseTemplates.$inferSelect;
+export type NewAlexisResponseTemplate = typeof alexisResponseTemplates.$inferInsert;
+export type AlexisDailyMetrics = typeof alexisDailyMetrics.$inferSelect;
+export type NewAlexisDailyMetrics = typeof alexisDailyMetrics.$inferInsert;
+
+// ==================== AI TABLES - ALEXIS V2 (WHATSAPP & DASHBOARD) ====================
+
+// Enum para status da conversa AI
+export const aiConversationStatusEnum = pgEnum('ai_conversation_status', [
+  'AI_ACTIVE',    // Alexis respondendo
+  'HUMAN_ACTIVE', // Atendente respondendo (#eu)
+  'CLOSED',       // Conversa encerrada
+]);
+
+// Enum para role de mensagem AI
+export const aiMessageRoleEnum = pgEnum('ai_message_role', [
+  'client',  // Mensagem do cliente
+  'ai',      // Resposta da Alexis
+  'human',   // Resposta do atendente
+  'system',  // Mensagem de sistema (#eu, #ia)
+]);
+
+// Enum para intenção detectada
+export const aiIntentEnum = pgEnum('ai_intent', [
+  'GREETING',
+  'SCHEDULE',
+  'RESCHEDULE',
+  'CANCEL',
+  'PRODUCT_INFO',
+  'SERVICE_INFO',
+  'PRICE_INFO',
+  'HOURS_INFO',
+  'GENERAL',
+  'BLOCKED',
+  'HUMAN_TAKEOVER',
+  'AI_RESUME',
+]);
+
+// Configurações da IA por salão
+export const aiSettings = pgTable('ai_settings', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull().unique(),
+
+  isEnabled: boolean('is_enabled').default(true),
+  assistantName: varchar('assistant_name', { length: 50 }).default('Alexis'),
+
+  // Mensagens customizáveis
+  greetingMessage: text('greeting_message').default('Olá! Sou a Alexis, assistente virtual do salão. Como posso ajudar? 😊'),
+  humanTakeoverMessage: text('human_takeover_message').default('Ops! Agora você será atendida por alguém da nossa equipe. Estou por aqui se precisar depois. 😊'),
+  aiResumeMessage: text('ai_resume_message').default('Voltei! Se quiser, posso continuar te ajudando por aqui. 💇‍♀️'),
+
+  // Comandos de controle
+  humanTakeoverCommand: varchar('human_takeover_command', { length: 20 }).default('#eu'),
+  aiResumeCommand: varchar('ai_resume_command', { length: 20 }).default('#ia'),
+
+  // Funcionalidades
+  autoSchedulingEnabled: boolean('auto_scheduling_enabled').default(true),
+
+  // Horário de funcionamento
+  workingHoursStart: varchar('working_hours_start', { length: 5 }).default('08:00'),
+  workingHoursEnd: varchar('working_hours_end', { length: 5 }).default('20:00'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Conversas WhatsApp
+export const aiConversations = pgTable('ai_conversations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  clientId: uuid('client_id').references(() => clients.id),
+
+  clientPhone: varchar('client_phone', { length: 20 }).notNull(),
+  clientName: varchar('client_name', { length: 255 }),
+
+  // Status: AI_ACTIVE, HUMAN_ACTIVE, CLOSED
+  status: varchar('status', { length: 20 }).notNull().default('AI_ACTIVE'),
+
+  // Atendente que assumiu (#eu)
+  humanAgentId: uuid('human_agent_id').references(() => users.id),
+  humanTakeoverAt: timestamp('human_takeover_at'),
+  aiResumedAt: timestamp('ai_resumed_at'),
+
+  lastMessageAt: timestamp('last_message_at'),
+  messagesCount: integer('messages_count').default(0),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Mensagens da conversa
+export const aiMessages = pgTable('ai_messages', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  conversationId: uuid('conversation_id').references(() => aiConversations.id).notNull(),
+
+  // Role: client, ai, human, system
+  role: varchar('role', { length: 10 }).notNull(),
+  content: text('content').notNull(),
+
+  // Intenção detectada
+  intent: varchar('intent', { length: 30 }),
+
+  // Compliance
+  wasBlocked: boolean('was_blocked').default(false),
+  blockReason: varchar('block_reason', { length: 50 }),
+
+  // Flag para comandos (#eu, #ia) - NÃO são enviados ao cliente
+  isCommand: boolean('is_command').default(false),
+
+  // Metadata adicional
+  metadata: json('metadata').$type<{
+    tokensUsed?: number;
+    responseTimeMs?: number;
+    confidenceScore?: number;
+  }>(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Logs de interação (auditoria)
+export const aiInteractionLogs = pgTable('ai_interaction_logs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  conversationId: uuid('conversation_id').references(() => aiConversations.id),
+
+  clientPhone: varchar('client_phone', { length: 20 }).notNull(),
+  messageIn: text('message_in').notNull(),
+  messageOut: text('message_out').notNull(),
+
+  intent: varchar('intent', { length: 30 }),
+
+  wasBlocked: boolean('was_blocked').default(false),
+  blockReason: varchar('block_reason', { length: 50 }),
+
+  tokensUsed: integer('tokens_used'),
+  responseTimeMs: integer('response_time_ms'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Log de termos bloqueados (ANVISA/LGPD)
+export const aiBlockedTermsLog = pgTable('ai_blocked_terms_log', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  conversationId: uuid('conversation_id').references(() => aiConversations.id),
+
+  originalMessage: text('original_message').notNull(),
+  blockedTerms: json('blocked_terms').$type<string[]>().notNull(),
+
+  // Camada: INPUT (antes da IA) ou OUTPUT (resposta da IA)
+  layer: varchar('layer', { length: 10 }).notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Briefings do dashboard
+export const aiBriefings = pgTable('ai_briefings', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+
+  userRole: varchar('user_role', { length: 20 }).notNull(),
+  content: text('content').notNull(),
+
+  // Dados usados para gerar o briefing
+  data: json('data').$type<Record<string, any>>(),
+
+  isRead: boolean('is_read').default(false),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Types para AI tables
+export type AiSettings = typeof aiSettings.$inferSelect;
+export type NewAiSettings = typeof aiSettings.$inferInsert;
+export type AiConversation = typeof aiConversations.$inferSelect;
+export type NewAiConversation = typeof aiConversations.$inferInsert;
+export type AiMessage = typeof aiMessages.$inferSelect;
+export type NewAiMessage = typeof aiMessages.$inferInsert;
+export type AiInteractionLog = typeof aiInteractionLogs.$inferSelect;
+export type NewAiInteractionLog = typeof aiInteractionLogs.$inferInsert;
+export type AiBlockedTermsLog = typeof aiBlockedTermsLog.$inferSelect;
+export type NewAiBlockedTermsLog = typeof aiBlockedTermsLog.$inferInsert;
+export type AiBriefing = typeof aiBriefings.$inferSelect;
+export type NewAiBriefing = typeof aiBriefings.$inferInsert;

@@ -34,6 +34,7 @@ import {
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import api from '../services/api';
+import AIAssistantWidget from '../components/AIAssistantWidget';
 
 type DashboardPeriod = 'today' | 'week' | 'month' | 'year';
 
@@ -806,6 +807,9 @@ export function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Belle - Assistente IA */}
+      <AIAssistantWidget />
     </div>
   );
 }

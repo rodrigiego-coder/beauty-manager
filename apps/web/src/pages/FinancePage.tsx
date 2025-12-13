@@ -10,8 +10,6 @@ import {
   Download,
   X,
   Loader2,
-  Calendar,
-  ChevronDown,
   AlertCircle,
   CheckCircle,
 } from 'lucide-react';
@@ -26,8 +24,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  BarChart,
-  Bar,
 } from 'recharts';
 import api from '../services/api';
 
@@ -68,6 +64,7 @@ interface CategoryData {
   name: string;
   value: number;
   color: string;
+  [key: string]: string | number;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {

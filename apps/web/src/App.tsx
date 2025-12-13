@@ -28,7 +28,15 @@ import {
   ProductSubscriptionPlansPage,
   SubscriptionDeliveriesPage,
   AvailableSubscriptionsPage,
+  UpsellRulesPage,
+  CartLinksPage,
+  CartLinkPublicPage,
+  ReservationsPage,
+  ABTestsPage,
 } from './pages';
+import AlexisConversationsPage from './pages/AlexisConversationsPage';
+import AlexisSettingsPage from './pages/AlexisSettingsPage';
+import AlexisLogsPage from './pages/AlexisLogsPage';
 
 type UserRole = 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST' | 'SUPER_ADMIN';
 
@@ -54,8 +62,9 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Rota publica */}
+          {/* Rotas publicas */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/cart/:code" element={<CartLinkPublicPage />} />
 
           {/* Rotas protegidas */}
           <Route
@@ -224,6 +233,66 @@ function App() {
               element={
                 <RoleGuard allowedRoles={['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST']}>
                   <AvailableSubscriptionsPage />
+                </RoleGuard>
+              }
+            />
+
+            {/* Rotas de Upsell & Vendas (FASE D) */}
+            <Route
+              path="/upsell/regras"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <UpsellRulesPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/cart-links"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER', 'RECEPTIONIST']}>
+                  <CartLinksPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/reservas"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER', 'RECEPTIONIST']}>
+                  <ReservationsPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/ab-tests"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <ABTestsPage />
+                </RoleGuard>
+              }
+            />
+
+            {/* ALEXIS - IA para WhatsApp & Dashboard */}
+            <Route
+              path="/alexis"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER', 'RECEPTIONIST']}>
+                  <AlexisConversationsPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/alexis/configuracoes"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <AlexisSettingsPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/alexis/logs"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <AlexisLogsPage />
                 </RoleGuard>
               }
             />

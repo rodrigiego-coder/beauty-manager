@@ -15,14 +15,11 @@ import {
   Clock,
   BarChart3,
   Eye,
-  Copy,
   X,
   Save,
   TestTube,
   Smartphone,
-  Mail,
   Gift,
-  Calendar,
   Star,
   Zap,
 } from 'lucide-react';
@@ -122,7 +119,7 @@ export default function AutomationPage() {
   // Modal states
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showTestModal, setShowTestModal] = useState(false);
-  const [showLogsModal, setShowLogsModal] = useState(false);
+  const [_showLogsModal, setShowLogsModal] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<MessageTemplate | null>(null);
 
   // Form states

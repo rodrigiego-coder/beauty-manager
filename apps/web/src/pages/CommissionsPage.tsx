@@ -5,12 +5,9 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
-  Search,
   Filter,
   X,
   Loader2,
-  Calendar,
-  CreditCard,
   ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';

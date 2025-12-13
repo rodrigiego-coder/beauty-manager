@@ -40,6 +40,12 @@ import { HairProfileModule } from './modules/hair-profile/hair-profile.module';
 import { RecommendationsModule } from './modules/recommendations/recommendations.module';
 import { LoyaltyModule } from './modules/loyalty/loyalty.module';
 import { ProductSubscriptionsModule } from './modules/product-subscriptions/product-subscriptions.module';
+import { UpsellModule } from './modules/upsell/upsell.module';
+import { CartLinksModule } from './modules/cart-links/cart-links.module';
+import { ReservationsModule } from './modules/reservations/reservations.module';
+import { ABTestsModule } from './modules/ab-tests/ab-tests.module';
+import { AIAssistantModule } from './modules/ai-assistant/ai-assistant.module';
+import { AlexisModule } from './modules/alexis/alexis.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -112,6 +118,15 @@ import { ProductSubscriptionsModule } from './modules/product-subscriptions/prod
     LoyaltyModule,
     // Módulo de Assinaturas de Produtos
     ProductSubscriptionsModule,
+    // Módulo de Upsell & Vendas (FASE D)
+    UpsellModule,
+    CartLinksModule,
+    ReservationsModule,
+    ABTestsModule,
+    // Módulo de IA Assistente (FASE E)
+    AIAssistantModule,
+    // Módulo ALEXIS - IA para WhatsApp & Dashboard (ANVISA/LGPD)
+    AlexisModule,
   ],
   controllers: [AppController],
   providers: [
