@@ -485,8 +485,8 @@ export function AppointmentsPage() {
       const response = await api.post(`/appointments/${appointmentId}/convert-to-command`);
       setMessage({ type: 'success', text: 'Comanda criada com sucesso!' });
       setShowDetailsModal(false);
-      // Navigate to command
-      window.location.href = `/comandas?id=${response.data.commandId}`;
+      // Navigate to command page
+      window.location.href = `/comandas/${response.data.commandId}`;
     } catch (error: any) {
       setMessage({ type: 'error', text: error.response?.data?.message || 'Erro ao criar comanda' });
     }
@@ -1229,7 +1229,7 @@ export function AppointmentsPage() {
                   )}
                   {apt.commandId && (
                     <a
-                      href={`/comandas?id=${apt.commandId}`}
+                      href={`/comandas/${apt.commandId}`}
                       className="flex items-center gap-1 px-3 py-2 border rounded-lg hover:bg-gray-50"
                     >
                       <FileText className="w-4 h-4" /> Ver Comanda
