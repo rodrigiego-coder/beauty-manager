@@ -456,19 +456,45 @@ export function AppointmentsPage() {
         }
       }
 
-      // Montar payload sem campos vazios
-      const payload: Record<string, unknown> = {
-        ...formData,
-        clientId: clientId || undefined, // Não enviar string vazia
-        professionalId: formData.professionalId || undefined,
-        serviceId: formData.serviceId ? parseInt(formData.serviceId) : undefined,
-      };
-
-      // Remover campos vazios para evitar validação UUID
-      if (!payload.clientId) delete payload.clientId;
-      if (!payload.professionalId) {
+      // Validar profissional antes de montar payload
+      if (!formData.professionalId) {
         setMessage({ type: 'error', text: 'Selecione um profissional' });
         return;
+      }
+
+      // Montar payload apenas com campos necessários (sem spread para evitar campos vazios)
+      const payload: Record<string, unknown> = {
+        professionalId: formData.professionalId,
+        date: formData.date,
+        time: formData.time,
+        duration: formData.duration,
+        service: formData.service,
+        price: formData.price,
+        notes: formData.notes || undefined,
+        internalNotes: formData.internalNotes || undefined,
+        bufferBefore: formData.bufferBefore,
+        bufferAfter: formData.bufferAfter,
+      };
+
+      // Adicionar clientId apenas se existir (UUID válido)
+      if (clientId) {
+        payload.clientId = clientId;
+      }
+
+      // Adicionar dados do cliente para walk-in (sem clientId)
+      if (!clientId && formData.clientName) {
+        payload.clientName = formData.clientName;
+      }
+      if (!clientId && formData.clientPhone) {
+        payload.clientPhone = formData.clientPhone;
+      }
+      if (!clientId && formData.clientEmail) {
+        payload.clientEmail = formData.clientEmail;
+      }
+
+      // Adicionar serviceId se selecionado
+      if (formData.serviceId) {
+        payload.serviceId = parseInt(formData.serviceId);
       }
 
       await api.post('/appointments', payload);
