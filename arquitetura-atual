@@ -1,0 +1,727 @@
+# 🏗️ BEAUTY MANAGER - ARQUITETURA COMPLETA
+## Documento de Continuidade para Novas Conversas
+
+**Última atualização:** Dezembro 2025  
+**Versão:** 3.0  
+**Repositório:** https://github.com/rodrigiego-coder/beauty-manager
+
+---
+
+# 📋 ÍNDICE
+
+1. [Resumo do Projeto](#1-resumo-do-projeto)
+2. [Stack Tecnológica](#2-stack-tecnológica)
+3. [Estrutura de Pastas](#3-estrutura-de-pastas)
+4. [Banco de Dados](#4-banco-de-dados)
+5. [Módulos Backend](#5-módulos-backend)
+6. [Endpoints da API](#6-endpoints-da-api)
+7. [Páginas Frontend](#7-páginas-frontend)
+8. [IA Alexis](#8-ia-alexis)
+9. [Variáveis de Ambiente](#9-variáveis-de-ambiente)
+10. [Como Executar](#10-como-executar)
+11. [Credenciais de Teste](#11-credenciais-de-teste)
+12. [Fases Implementadas](#12-fases-implementadas)
+13. [Próximas Etapas](#13-próximas-etapas)
+
+---
+
+# 1. RESUMO DO PROJETO
+
+**Beauty Manager** é um sistema completo de gestão para salões de beleza, com:
+
+- Gestão de comandas e caixa
+- Agenda inteligente com multi-profissionais
+- Sistema de assinaturas SaaS com Mercado Pago
+- Automação de WhatsApp/SMS
+- Perfil capilar e recomendações inteligentes
+- Programa de fidelidade com pontos e níveis
+- **IA Alexis** - Assistente virtual para WhatsApp e Dashboard
+
+---
+
+# 2. STACK TECNOLÓGICA
+
+## Backend
+| Tecnologia | Uso |
+|------------|-----|
+| Node.js | Runtime |
+| NestJS | Framework |
+| TypeScript | Linguagem |
+| Drizzle ORM | ORM |
+| PostgreSQL | Banco de dados |
+| JWT | Autenticação |
+| Google Gemini | IA (Alexis) |
+
+## Frontend
+| Tecnologia | Uso |
+|------------|-----|
+| React 18 | Framework |
+| TypeScript | Linguagem |
+| Vite | Build tool |
+| TailwindCSS | Estilos |
+| React Router | Rotas |
+| Axios | HTTP Client |
+| Recharts | Gráficos |
+| Lucide React | Ícones |
+
+## Infraestrutura
+| Tecnologia | Uso |
+|------------|-----|
+| Docker | Containers |
+| Docker Compose | Orquestração |
+| PostgreSQL 15 | Database |
+
+---
+
+# 3. ESTRUTURA DE PASTAS
+
+```
+C:\Users\Rodrigo Viana\Desktop\sistema-salao\
+├── apps/
+│   ├── api/                          # Backend NestJS
+│   │   ├── src/
+│   │   │   ├── database/
+│   │   │   │   ├── schema.ts         # Todas as tabelas
+│   │   │   │   └── connection.ts     # Conexão DB
+│   │   │   ├── modules/
+│   │   │   │   ├── auth/             # Autenticação JWT
+│   │   │   │   ├── users/            # Usuários
+│   │   │   │   ├── salons/           # Salões
+│   │   │   │   ├── clients/          # Clientes
+│   │   │   │   ├── services/         # Serviços
+│   │   │   │   ├── products/         # Produtos
+│   │   │   │   ├── appointments/     # Agendamentos
+│   │   │   │   ├── commands/         # Comandas
+│   │   │   │   ├── cash-register/    # Caixa
+│   │   │   │   ├── commissions/      # Comissões
+│   │   │   │   ├── subscriptions/    # Assinaturas SaaS
+│   │   │   │   ├── invoices/         # Faturas
+│   │   │   │   ├── automation/       # WhatsApp/SMS
+│   │   │   │   ├── hair-profile/     # Perfil Capilar
+│   │   │   │   ├── recommendation/   # Recomendações
+│   │   │   │   ├── loyalty/          # Fidelidade
+│   │   │   │   └── alexis/           # IA Alexis
+│   │   │   ├── jobs/                 # Jobs agendados
+│   │   │   ├── guards/               # Guards de autenticação
+│   │   │   ├── seed.ts               # Seed do banco
+│   │   │   └── main.ts               # Entry point
+│   │   ├── .env                      # Variáveis de ambiente
+│   │   └── package.json
+│   │
+│   └── web/                          # Frontend React
+│       ├── src/
+│       │   ├── components/           # Componentes reutilizáveis
+│       │   │   ├── Sidebar.tsx
+│       │   │   ├── Header.tsx
+│       │   │   ├── ClientLoyaltyCard.tsx
+│       │   │   ├── VoucherInput.tsx
+│       │   │   ├── HairProfileModal.tsx
+│       │   │   ├── ProductRecommendations.tsx
+│       │   │   └── AlexisWidget.tsx
+│       │   ├── pages/                # Páginas
+│       │   │   ├── DashboardPage.tsx
+│       │   │   ├── LoginPage.tsx
+│       │   │   ├── CashierPage.tsx
+│       │   │   ├── CommandPage.tsx
+│       │   │   ├── CommandsPage.tsx
+│       │   │   ├── AppointmentsPage.tsx
+│       │   │   ├── ClientsPage.tsx
+│       │   │   ├── ServicesPage.tsx
+│       │   │   ├── ProductsPage.tsx
+│       │   │   ├── TeamPage.tsx
+│       │   │   ├── CommissionsPage.tsx
+│       │   │   ├── FinancePage.tsx
+│       │   │   ├── ReportsPage.tsx
+│       │   │   ├── SubscriptionPage.tsx
+│       │   │   ├── LoyaltySettingsPage.tsx
+│       │   │   ├── LoyaltyDashboardPage.tsx
+│       │   │   ├── AutomationSettingsPage.tsx
+│       │   │   ├── MessageTemplatesPage.tsx
+│       │   │   ├── MessageLogsPage.tsx
+│       │   │   ├── RecommendationRulesPage.tsx
+│       │   │   ├── WhatsAppInboxPage.tsx
+│       │   │   ├── AlexisSettingsPage.tsx
+│       │   │   └── AlexisLogsPage.tsx
+│       │   ├── services/             # Chamadas API
+│       │   │   └── api.ts
+│       │   ├── contexts/             # Contextos React
+│       │   │   └── AuthContext.tsx
+│       │   ├── types/                # Tipos TypeScript
+│       │   ├── App.tsx               # Rotas
+│       │   └── main.tsx              # Entry point
+│       └── package.json
+│
+├── docker-compose.yml                # PostgreSQL
+├── package.json                      # Monorepo root
+└── BEAUTY_MANAGER_DOCUMENTACAO_COMPLETA.md
+```
+
+---
+
+# 4. BANCO DE DADOS
+
+## Tabelas Implementadas (~45 tabelas)
+
+### Core
+| Tabela | Descrição |
+|--------|-----------|
+| users | Usuários (OWNER, MANAGER, RECEPTIONIST, PROFESSIONAL) |
+| salons | Salões |
+| clients | Clientes |
+| services | Serviços |
+| products | Produtos |
+| appointments | Agendamentos |
+| commands | Comandas |
+| command_items | Itens da comanda |
+| command_payments | Pagamentos da comanda |
+| cash_registers | Caixas |
+| cash_movements | Movimentações (sangria/suprimento) |
+| commissions | Comissões |
+
+### Assinaturas SaaS
+| Tabela | Descrição |
+|--------|-----------|
+| subscription_plans | Planos (FREE, BASIC, PRO, PREMIUM) |
+| salon_subscriptions | Assinaturas ativas |
+| subscription_invoices | Faturas |
+| subscription_payments | Pagamentos |
+
+### Automação WhatsApp/SMS
+| Tabela | Descrição |
+|--------|-----------|
+| message_templates | Templates de mensagens |
+| message_logs | Histórico de envios |
+| automation_settings | Configurações por salão |
+| scheduled_messages | Fila de mensagens |
+
+### Perfil Capilar
+| Tabela | Descrição |
+|--------|-----------|
+| client_hair_profiles | Perfil capilar do cliente |
+| product_recommendation_rules | Regras de recomendação |
+| product_recommendations_log | Log de recomendações |
+
+### Fidelidade
+| Tabela | Descrição |
+|--------|-----------|
+| loyalty_programs | Configuração do programa |
+| loyalty_tiers | Níveis (Basic, Silver, Gold, VIP) |
+| loyalty_rewards | Recompensas disponíveis |
+| client_loyalty_accounts | Conta de pontos do cliente |
+| loyalty_transactions | Movimentações de pontos |
+| loyalty_redemptions | Resgates/Vouchers |
+
+### IA Alexis
+| Tabela | Descrição |
+|--------|-----------|
+| ai_settings | Configurações da IA |
+| ai_conversations | Conversas WhatsApp |
+| ai_messages | Mensagens das conversas |
+| ai_interaction_logs | Logs de interação |
+| ai_blocked_terms_log | Termos bloqueados |
+| ai_briefings | Briefings do dashboard |
+
+---
+
+# 5. MÓDULOS BACKEND
+
+## Estrutura de cada módulo:
+```
+módulo/
+├── módulo.module.ts      # Configuração do módulo
+├── módulo.controller.ts  # Endpoints
+├── módulo.service.ts     # Lógica de negócio
+└── dto.ts                # Data Transfer Objects
+```
+
+## Módulos implementados:
+
+| Módulo | Arquivo | Descrição |
+|--------|---------|-----------|
+| AuthModule | auth/ | Login, JWT, refresh token |
+| UsersModule | users/ | CRUD usuários |
+| SalonsModule | salons/ | CRUD salões |
+| ClientsModule | clients/ | CRUD clientes |
+| ServicesModule | services/ | CRUD serviços |
+| ProductsModule | products/ | CRUD produtos, estoque |
+| AppointmentsModule | appointments/ | Agendamentos |
+| CommandsModule | commands/ | Comandas, integração fidelidade |
+| CashRegisterModule | cash-register/ | Caixa, sangria, suprimento |
+| CommissionsModule | commissions/ | Comissões dos profissionais |
+| SubscriptionsModule | subscriptions/ | Assinaturas SaaS |
+| InvoicesModule | invoices/ | Faturas Mercado Pago |
+| AutomationModule | automation/ | WhatsApp, SMS, templates |
+| HairProfileModule | hair-profile/ | Perfil capilar |
+| RecommendationModule | recommendation/ | Motor de recomendações |
+| LoyaltyModule | loyalty/ | Programa de fidelidade |
+| AlexisModule | alexis/ | IA Alexis |
+
+---
+
+# 6. ENDPOINTS DA API
+
+## Base URL: `http://localhost:3000`
+
+### Auth
+```
+POST /auth/login
+POST /auth/register
+POST /auth/refresh
+POST /auth/logout
+```
+
+### Users
+```
+GET    /users
+GET    /users/:id
+POST   /users
+PATCH  /users/:id
+DELETE /users/:id
+```
+
+### Clients
+```
+GET    /clients
+GET    /clients/:id
+POST   /clients
+PATCH  /clients/:id
+DELETE /clients/:id
+GET    /clients/:id/history
+```
+
+### Services
+```
+GET    /services
+GET    /services/:id
+POST   /services
+PATCH  /services/:id
+DELETE /services/:id
+```
+
+### Products
+```
+GET    /products
+GET    /products/:id
+POST   /products
+PATCH  /products/:id
+DELETE /products/:id
+POST   /products/:id/adjust-stock
+```
+
+### Appointments
+```
+GET    /appointments
+GET    /appointments/:id
+POST   /appointments
+PATCH  /appointments/:id
+DELETE /appointments/:id
+PATCH  /appointments/:id/status
+GET    /appointments/available-slots
+```
+
+### Commands (Comandas)
+```
+GET    /commands
+GET    /commands/:id
+POST   /commands
+PATCH  /commands/:id
+POST   /commands/:id/items
+DELETE /commands/:id/items/:itemId
+POST   /commands/:id/close
+POST   /commands/:id/cancel
+```
+
+### Cash Register (Caixa)
+```
+GET    /cash-register/current
+POST   /cash-register/open
+POST   /cash-register/close
+POST   /cash-register/withdrawal
+POST   /cash-register/supply
+GET    /cash-register/history
+```
+
+### Commissions
+```
+GET    /commissions
+GET    /commissions/pending
+GET    /commissions/by-professional/:id
+POST   /commissions/:id/pay
+POST   /commissions/pay-batch
+```
+
+### Subscriptions
+```
+GET    /subscriptions/plans
+GET    /subscriptions/current
+POST   /subscriptions/subscribe
+POST   /subscriptions/cancel
+GET    /subscriptions/invoices
+```
+
+### Automation (WhatsApp/SMS)
+```
+GET    /automation/settings
+PATCH  /automation/settings
+GET    /automation/templates
+POST   /automation/templates
+PATCH  /automation/templates/:id
+DELETE /automation/templates/:id
+POST   /automation/send
+POST   /automation/send-test
+GET    /automation/logs
+GET    /automation/stats
+```
+
+### Hair Profile
+```
+GET    /clients/:id/hair-profile
+POST   /clients/:id/hair-profile
+GET    /hair-profile/options
+GET    /hair-profile/statistics
+```
+
+### Recommendations
+```
+GET    /recommendations/for-client/:id
+GET    /recommendations/for-service/:id
+GET    /recommendations/for-appointment/:id
+POST   /recommendations/log
+GET    /recommendations/rules
+POST   /recommendations/rules
+PATCH  /recommendations/rules/:id
+DELETE /recommendations/rules/:id
+```
+
+### Loyalty (Fidelidade)
+```
+GET    /loyalty/program
+POST   /loyalty/program
+PATCH  /loyalty/program
+GET    /loyalty/tiers
+POST   /loyalty/tiers
+PATCH  /loyalty/tiers/:id
+GET    /loyalty/rewards
+POST   /loyalty/rewards
+PATCH  /loyalty/rewards/:id
+DELETE /loyalty/rewards/:id
+GET    /loyalty/account/:clientId
+POST   /loyalty/account/:clientId/enroll
+GET    /loyalty/account/:clientId/transactions
+GET    /loyalty/account/:clientId/available-rewards
+POST   /loyalty/account/:clientId/redeem/:rewardId
+POST   /loyalty/account/:clientId/adjust
+GET    /loyalty/voucher/:code
+POST   /loyalty/voucher/:code/use
+GET    /loyalty/referral/:code
+POST   /loyalty/referral/:code/apply
+GET    /loyalty/stats
+GET    /loyalty/leaderboard
+```
+
+### Alexis (IA)
+```
+POST   /alexis/whatsapp/message
+GET    /alexis/whatsapp/conversations
+GET    /alexis/whatsapp/conversations/:id/messages
+GET    /alexis/dashboard/briefing
+POST   /alexis/dashboard/chat
+GET    /alexis/settings
+PATCH  /alexis/settings
+GET    /alexis/logs
+GET    /alexis/logs/blocked
+GET    /alexis/status
+```
+
+---
+
+# 7. PÁGINAS FRONTEND
+
+## Base URL: `http://localhost:5173` (ou 5174, 5175)
+
+### Públicas
+| Rota | Página | Descrição |
+|------|--------|-----------|
+| /login | LoginPage | Tela de login |
+
+### Autenticadas
+| Rota | Página | Descrição |
+|------|--------|-----------|
+| / | DashboardPage | Dashboard principal |
+| /caixa | CashierPage | Gestão do caixa |
+| /comandas | CommandsPage | Lista de comandas |
+| /comandas/:id | CommandPage | Detalhe da comanda |
+| /agenda | AppointmentsPage | Agenda de agendamentos |
+| /clientes | ClientsPage | Gestão de clientes |
+| /servicos | ServicesPage | Catálogo de serviços |
+| /produtos | ProductsPage | Estoque e produtos |
+| /equipe | TeamPage | Gestão da equipe |
+| /comissoes | CommissionsPage | Comissões |
+| /financeiro | FinancePage | Financeiro |
+| /relatorios | ReportsPage | Relatórios |
+| /relatorios/fidelidade | LoyaltyDashboardPage | Dashboard fidelidade |
+| /assinatura | SubscriptionPage | Assinatura SaaS |
+| /configuracoes/fidelidade | LoyaltySettingsPage | Config fidelidade |
+| /configuracoes/automacao | AutomationSettingsPage | Config WhatsApp/SMS |
+| /configuracoes/templates | MessageTemplatesPage | Templates mensagens |
+| /configuracoes/alexis | AlexisSettingsPage | Config IA Alexis |
+| /automacao/logs | MessageLogsPage | Histórico mensagens |
+| /admin/recomendacoes | RecommendationRulesPage | Regras recomendação |
+| /whatsapp | WhatsAppInboxPage | Inbox WhatsApp |
+| /admin/alexis-logs | AlexisLogsPage | Logs da Alexis |
+
+---
+
+# 8. IA ALEXIS
+
+## Arquitetura
+
+```
+apps/api/src/modules/alexis/
+├── alexis.module.ts
+├── alexis.controller.ts
+├── alexis.service.ts           # Serviço principal
+├── gemini.service.ts           # Integração Google Gemini
+├── content-filter.service.ts   # 3 camadas de proteção ANVISA
+├── intent-classifier.service.ts # Classificador de intenção
+├── scheduler.service.ts        # Agendamento automático
+├── data-collector.service.ts   # Coleta dados do banco
+├── dto.ts
+└── constants/
+    └── forbidden-terms.ts      # Regex termos proibidos
+```
+
+## Funcionalidades
+
+### WhatsApp
+- Responde clientes automaticamente
+- Agenda horários verificando disponibilidade
+- Só indica produtos CADASTRADOS no sistema
+- 3 camadas de filtro ANVISA
+- Comandos `#eu` (humano assume) e `#ia` (Alexis volta)
+
+### Dashboard
+- Briefing personalizado por perfil (Owner, Manager, Receptionist, Professional)
+- Chat com a Alexis sobre dados do negócio
+
+### Comandos de Controle
+
+| Comando | Ação | Mensagem para cliente |
+|---------|------|----------------------|
+| `#eu` | Atendente assume | "Ops! Agora você será atendida por alguém da nossa equipe. Estou por aqui se precisar depois. 😊" |
+| `#ia` | Alexis volta | "Voltei! Se quiser, posso continuar te ajudando por aqui. 💇‍♀️" |
+
+### Termos Proibidos (ANVISA)
+- formol, formaldeído
+- cura, curar, tratamento médico
+- medicamento, remédio
+- garantido, definitivo, milagre
+- E muitos outros (ver forbidden-terms.ts)
+
+### Substituições Automáticas
+| Proibido | Substituição |
+|----------|--------------|
+| cura | ajuda na manutenção |
+| tratamento | cuidado estético |
+| elimina | auxilia na redução |
+| garante | pode contribuir |
+
+---
+
+# 9. VARIÁVEIS DE AMBIENTE
+
+## Arquivo: `apps/api/.env`
+
+```env
+# DATABASE
+DATABASE_URL=postgresql://beauty_admin:beauty_secret_2025@localhost:5432/beauty_manager
+
+# JWT TOKENS
+ACCESS_TOKEN_SECRET=beauty_manager_access_token_secret_2025_super_seguro
+REFRESH_TOKEN_SECRET=beauty_manager_refresh_token_secret_2025_super_seguro
+
+# GEMINI AI (Alexis)
+GEMINI_API_KEY=sua_chave_aqui
+GEMINI_MODEL=gemini-1.5-flash
+
+# SERVIDOR
+PORT=3000
+NODE_ENV=development
+
+# MERCADO PAGO (opcional)
+MERCADOPAGO_ACCESS_TOKEN=
+MERCADOPAGO_PUBLIC_KEY=
+
+# WHATSAPP (opcional - Meta Business API)
+WHATSAPP_API_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+
+# TWILIO SMS (opcional)
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_PHONE_NUMBER=
+
+# GOOGLE CALENDAR (opcional)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=http://localhost:3000/auth/google/callback
+```
+
+---
+
+# 10. COMO EXECUTAR
+
+## Pré-requisitos
+- Node.js 18+
+- Docker Desktop
+- Git
+
+## Passo a passo
+
+### 1. Clonar repositório
+```powershell
+git clone https://github.com/rodrigiego-coder/beauty-manager.git
+cd beauty-manager
+```
+
+### 2. Instalar dependências
+```powershell
+npm install
+```
+
+### 3. Subir banco de dados
+```powershell
+docker-compose up -d
+```
+
+### 4. Configurar variáveis de ambiente
+```powershell
+# Criar/editar arquivo
+notepad apps/api/.env
+```
+
+### 5. Rodar migrations
+```powershell
+cd apps/api
+npx drizzle-kit push
+```
+
+### 6. Popular banco (seed)
+```powershell
+npm run db:seed
+# ou
+npx tsx src/seed.ts
+```
+
+### 7. Iniciar aplicação
+```powershell
+cd ../..
+npm run dev
+```
+
+### 8. Acessar
+- **Frontend:** http://localhost:5173
+- **API:** http://localhost:3000
+
+---
+
+# 11. CREDENCIAIS DE TESTE
+
+## Owner do Salão
+- **Email:** owner@salao.com
+- **Senha:** senhaforte2
+
+## Acesso Admin
+- **Email:** admin@beautymanager.com
+- **Senha:** admin123
+
+---
+
+# 12. FASES IMPLEMENTADAS
+
+| Fase | Descrição | Status |
+|------|-----------|--------|
+| 1 | Core Operacional (Caixa, Comandas, Comissões) | ✅ |
+| 2 | Sistema Assinaturas SaaS + Mercado Pago | ✅ |
+| 3 | Agenda Profissional v3.0 | ✅ |
+| 4 | Integração Google Calendar | ✅ |
+| 5 | Automação WhatsApp/SMS | ✅ |
+| 6 | Fase A - Perfil Capilar & Recomendações | ✅ |
+| 7 | Fase B - Fidelidade & Gamificação | ✅ |
+| 8 | IA Alexis - Assistente Virtual | ✅ |
+
+---
+
+# 13. PRÓXIMAS ETAPAS
+
+## Fase C - Assinaturas de Produtos
+- Planos de assinatura de kits (mensal/bimestral)
+- Entregas agendadas (PICKUP/DELIVERY)
+- Gestão de entregas (Kanban)
+- Jobs de renovação automática
+
+## Fase D - Upsell & Comércio Conversacional
+- Upsell inteligente no agendamento
+- Mini landing pages de pré-carrinho
+- Links inteligentes para WhatsApp
+- Testes A/B de mensagens
+
+## Integrações Pendentes
+- Meta Business API (WhatsApp real)
+- Twilio (SMS real)
+- Deploy em produção (Railway, Render, AWS)
+
+---
+
+# 📌 PROMPT PARA NOVA CONVERSA
+
+Copie e cole isso ao iniciar uma nova conversa:
+
+```
+Estou continuando o desenvolvimento do Beauty Manager, um sistema de gestão para salões de beleza.
+
+REPOSITÓRIO: https://github.com/rodrigiego-coder/beauty-manager
+
+STACK:
+- Backend: NestJS + TypeScript + Drizzle ORM + PostgreSQL
+- Frontend: React + TypeScript + Vite + TailwindCSS
+- IA: Google Gemini (Alexis)
+
+JÁ IMPLEMENTADO:
+1. Core (Caixa, Comandas, Comissões, Clientes, Serviços, Produtos)
+2. Assinaturas SaaS + Mercado Pago
+3. Agenda Profissional v3.0
+4. Google Calendar
+5. Automação WhatsApp/SMS
+6. Perfil Capilar & Recomendações
+7. Programa de Fidelidade
+8. IA Alexis (compliance ANVISA, comandos #eu/#ia)
+
+CAMINHO DO PROJETO: C:\Users\Rodrigo Viana\Desktop\sistema-salao
+
+PRÓXIMAS ETAPAS POSSÍVEIS:
+- Fase C: Assinaturas de Produtos
+- Fase D: Upsell & Comércio Conversacional
+- Integração WhatsApp real (Meta Business API)
+- Deploy em produção
+
+O que eu gostaria de fazer agora é: [DESCREVA AQUI]
+```
+
+---
+
+# 📊 MÉTRICAS DO PROJETO
+
+| Métrica | Valor |
+|---------|-------|
+| Tabelas no banco | ~45 |
+| Endpoints API | ~150+ |
+| Páginas frontend | ~25 |
+| Componentes React | ~50+ |
+| Linhas de código | ~35.000+ |
+| Módulos NestJS | 17 |
+
+---
+
+**Documento gerado em:** Dezembro 2025  
+**Desenvolvido com:** Claude AI + Claude Code

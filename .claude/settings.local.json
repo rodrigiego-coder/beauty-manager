@@ -7,7 +7,14 @@
       "Bash(timeout:*)",
       "Bash(npm run dev)",
       "Bash(cat:*)",
-      "Bash(node run-migration.js:*)"
+      "Bash(node run-migration.js:*)",
+      "Bash(dir /AD /B \"C:\\Users\\Rodrigo Viana\\Desktop\\sistema-salao\")",
+      "Bash(npm run build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(npm test:*)",
+      "Bash(npm audit:*)"
     ],
     "deny": [],
     "ask": []

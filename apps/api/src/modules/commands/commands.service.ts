@@ -1,5 +1,5 @@
 import { Injectable, Inject, BadRequestException, NotFoundException } from '@nestjs/common';
-import { eq, and, desc, ne } from 'drizzle-orm';
+import { eq, and, desc, ne, inArray } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.module';
 import {
   Database,
@@ -9,6 +9,7 @@ import {
   commandEvents,
   users,
   services,
+  clients,
   Command,
   CommandItem,
   CommandPayment,
@@ -47,18 +48,56 @@ export class CommandsService {
   /**
    * Lista comandas do salão com filtros
    */
-  async findAll(salonId: string, status?: string): Promise<Command[]> {
+  async findAll(salonId: string, status?: string) {
+    // Query base com LEFT JOIN para incluir dados do cliente
+    const baseQuery = this.db
+      .select({
+        id: commands.id,
+        salonId: commands.salonId,
+        clientId: commands.clientId,
+        appointmentId: commands.appointmentId,
+        cardNumber: commands.cardNumber,
+        code: commands.code,
+        status: commands.status,
+        openedAt: commands.openedAt,
+        openedById: commands.openedById,
+        serviceClosedAt: commands.serviceClosedAt,
+        serviceClosedById: commands.serviceClosedById,
+        cashierClosedAt: commands.cashierClosedAt,
+        cashierClosedById: commands.cashierClosedById,
+        totalGross: commands.totalGross,
+        totalDiscounts: commands.totalDiscounts,
+        totalNet: commands.totalNet,
+        notes: commands.notes,
+        createdAt: commands.createdAt,
+        updatedAt: commands.updatedAt,
+        // Dados do cliente
+        clientName: clients.name,
+        clientPhone: clients.phone,
+      })
+      .from(commands)
+      .leftJoin(clients, eq(commands.clientId, clients.id));
+
     if (status) {
-      return this.db
-        .select()
-        .from(commands)
-        .where(and(eq(commands.salonId, salonId), eq(commands.status, status)))
+      // Suporta múltiplos status separados por vírgula (ex: "OPEN,IN_SERVICE,WAITING_PAYMENT")
+      const statusList = status.split(',').map(s => s.trim());
+
+      if (statusList.length === 1) {
+        return baseQuery
+          .where(and(eq(commands.salonId, salonId), eq(commands.status, statusList[0])))
+          .orderBy(desc(commands.openedAt));
+      }
+
+      // Múltiplos status usando IN
+      return baseQuery
+        .where(and(
+          eq(commands.salonId, salonId),
+          inArray(commands.status, statusList)
+        ))
         .orderBy(desc(commands.openedAt));
     }
 
-    return this.db
-      .select()
-      .from(commands)
+    return baseQuery
       .where(eq(commands.salonId, salonId))
       .orderBy(desc(commands.openedAt));
   }

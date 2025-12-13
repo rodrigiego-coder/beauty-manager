@@ -146,9 +146,7 @@ export class DashboardService {
 
       // Comandas
       totalCommands: commandsData.total,
-      openCommands: commandsData.commandsByStatus.open +
-                   commandsData.commandsByStatus.inService +
-                   commandsData.commandsByStatus.waitingPayment,
+      openCommands: commandsData.openCommands, // Total de comandas abertas (independente do período)
       averageTicket,
       commandsByStatus: commandsData.commandsByStatus,
 

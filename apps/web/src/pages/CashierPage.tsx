@@ -26,6 +26,8 @@ interface Command {
   code: string;
   status: 'OPEN' | 'IN_SERVICE' | 'WAITING_PAYMENT';
   clientId?: string;
+  clientName?: string;
+  clientPhone?: string;
   totalGross: string;
   totalDiscounts: string;
   totalNet: string;
@@ -291,7 +293,11 @@ export function CashierPage() {
             </div>
             <div>
               <h3 className="font-bold text-gray-900 text-lg">#{command.cardNumber}</h3>
-              <p className="text-xs text-gray-500">Cod: {command.code}</p>
+              {command.clientName ? (
+                <p className="text-sm text-gray-700 font-medium">{command.clientName}</p>
+              ) : (
+                <p className="text-xs text-gray-400 italic">Sem cliente vinculado</p>
+              )}
             </div>
           </div>
           <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${status.bgColor} ${status.color}`}>
