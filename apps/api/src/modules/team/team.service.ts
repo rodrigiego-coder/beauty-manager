@@ -167,10 +167,10 @@ export class TeamService {
    * Estatisticas do profissional (atendimentos e faturamento do mes)
    */
   async getStats(userId: string) {
-    // Get start and end of current month
+    // Get start and end of current month (formato ISO para PostgreSQL)
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
     // Count appointments this month
     const appointmentsResult = await this.db
