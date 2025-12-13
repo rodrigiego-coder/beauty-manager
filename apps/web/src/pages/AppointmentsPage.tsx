@@ -303,11 +303,28 @@ export function AppointmentsPage() {
           allAppointments.push(...day.appointments);
         });
         setAppointments(allAppointments);
+        // Carregar profissionais do primeiro dia que tiver dados
+        if (data.days?.length > 0 && data.days[0]?.professionals) {
+          setProfessionals(data.days[0].professionals);
+        }
       }
 
       // Load services
       const servicesRes = await api.get('/services');
       setServices(servicesRes.data || []);
+
+      // Sempre carregar profissionais via /team para garantir lista completa
+      try {
+        const teamRes = await api.get('/team');
+        const activeProfessionals = (teamRes.data || [])
+          .filter((u: any) => u.role === 'STYLIST' && u.active)
+          .map((u: any) => ({ id: u.id, name: u.name }));
+        if (activeProfessionals.length > 0) {
+          setProfessionals(activeProfessionals);
+        }
+      } catch (teamErr) {
+        console.error('Error loading team:', teamErr);
+      }
     } catch (error) {
       console.error('Error loading data:', error);
       setMessage({ type: 'error', text: 'Erro ao carregar agenda' });
