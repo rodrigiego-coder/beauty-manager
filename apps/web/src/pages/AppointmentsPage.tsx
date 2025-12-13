@@ -430,7 +430,48 @@ export function AppointmentsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/appointments', formData);
+      let clientId = formData.clientId;
+
+      // Se não tem clientId mas tem nome/telefone, criar o cliente primeiro
+      if (!clientId && (formData.clientName || formData.clientPhone)) {
+        try {
+          const clientResponse = await api.post('/clients', {
+            name: formData.clientName || 'Cliente',
+            phone: formData.clientPhone || undefined,
+            email: formData.clientEmail || undefined,
+          });
+          clientId = clientResponse.data.id;
+        } catch (clientError: any) {
+          // Se o cliente já existe (mesmo telefone), buscar o ID existente
+          if (clientError.response?.status === 409 && formData.clientPhone) {
+            const searchResponse = await api.get('/clients', {
+              params: { search: formData.clientPhone }
+            });
+            if (searchResponse.data.length > 0) {
+              clientId = searchResponse.data[0].id;
+            }
+          } else {
+            throw clientError;
+          }
+        }
+      }
+
+      // Montar payload sem campos vazios
+      const payload: Record<string, unknown> = {
+        ...formData,
+        clientId: clientId || undefined, // Não enviar string vazia
+        professionalId: formData.professionalId || undefined,
+        serviceId: formData.serviceId ? parseInt(formData.serviceId) : undefined,
+      };
+
+      // Remover campos vazios para evitar validação UUID
+      if (!payload.clientId) delete payload.clientId;
+      if (!payload.professionalId) {
+        setMessage({ type: 'error', text: 'Selecione um profissional' });
+        return;
+      }
+
+      await api.post('/appointments', payload);
       setMessage({ type: 'success', text: 'Agendamento criado com sucesso!' });
       setShowCreateModal(false);
       resetForm();
