@@ -169,7 +169,7 @@ export class AuthService {
       }),
       this.jwtService.signAsync(refreshPayload, {
         secret: process.env.REFRESH_TOKEN_SECRET || 'SEGREDO_REFRESH_FORTE_AQUI',
-        expiresIn: '1d', // Refresh token: 7 dias
+        expiresIn: '7d', // Refresh token: 7 dias
       }),
     ]);
 
