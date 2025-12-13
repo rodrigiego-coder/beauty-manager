@@ -1531,22 +1531,28 @@ export class AppointmentsService {
   }
 
   /**
-   * Generate card number
+   * Generate card number - Numeração sequencial simples (1, 2, 3...)
    */
   private async generateCardNumber(salonId: string): Promise<string> {
-    const today = new Date();
-    const datePrefix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-
-    const todayCommands = await this.db
+    // Busca todos os cardNumbers do salão
+    const existingCommands = await this.db
       .select({ cardNumber: commands.cardNumber })
       .from(commands)
-      .where(and(
-        eq(commands.salonId, salonId),
-        sql`${commands.cardNumber} LIKE ${datePrefix + '%'}`,
-      ));
+      .where(eq(commands.salonId, salonId));
 
-    const nextNumber = todayCommands.length + 1;
-    return `${datePrefix}-${String(nextNumber).padStart(3, '0')}`;
+    // Encontra o maior número existente (apenas números puros, ignora formato antigo)
+    let maxNumber = 0;
+    for (const cmd of existingCommands) {
+      if (cmd.cardNumber && /^\d+$/.test(cmd.cardNumber)) {
+        const num = parseInt(cmd.cardNumber, 10);
+        if (!isNaN(num) && num > maxNumber) {
+          maxNumber = num;
+        }
+      }
+    }
+
+    // Retorna o próximo número sequencial
+    return String(maxNumber + 1);
   }
 
   /**
