@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -236,5 +237,110 @@ export class AlexisController {
         aiResume: settings?.aiResumeCommand || '#ia',
       },
     };
+  }
+
+  // ==================== SESSIONS (Dashboard) ====================
+
+  /**
+   * Lista sessões de conversa
+   */
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Get('sessions')
+  async getSessions(@Request() req: any) {
+    return this.alexisService.getSessions(req.user.salonId);
+  }
+
+  /**
+   * Obtém mensagens de uma sessão
+   */
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Get('sessions/:sessionId/messages')
+  async getSessionMessages(@Request() req: any, @Param('sessionId') sessionId: string) {
+    return this.alexisService.getSessionMessages(req.user.salonId, sessionId);
+  }
+
+  /**
+   * Encerra uma sessão
+   */
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Post('sessions/:sessionId/end')
+  async endSession(@Request() req: any, @Param('sessionId') sessionId: string) {
+    return this.alexisService.endSession(req.user.salonId, sessionId);
+  }
+
+  // ==================== COMPLIANCE ====================
+
+  /**
+   * Estatísticas de compliance ANVISA
+   */
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER')
+  @Get('compliance/stats')
+  async getComplianceStats(@Request() req: any) {
+    return this.alexisService.getComplianceStats(req.user.salonId);
+  }
+
+  // ==================== METRICS ====================
+
+  /**
+   * Métricas de uso da Alexis
+   */
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER')
+  @Get('metrics')
+  async getMetrics(@Request() req: any) {
+    return this.alexisService.getMetrics(req.user.salonId);
+  }
+
+  // ==================== TAKEOVER ====================
+
+  /**
+   * Atendente assume controle da conversa
+   */
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Post('takeover')
+  async takeover(@Request() req: any, @Body() dto: { sessionId: string }) {
+    return this.alexisService.humanTakeover(req.user.salonId, dto.sessionId, req.user.id);
+  }
+
+  /**
+   * Alexis retoma controle da conversa
+   */
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Post('resume/:sessionId')
+  async resume(@Request() req: any, @Param('sessionId') sessionId: string) {
+    return this.alexisService.aiResume(req.user.salonId, sessionId);
+  }
+
+  /**
+   * Envia mensagem como humano
+   */
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Post('message/human')
+  async sendHumanMessage(
+    @Request() req: any,
+    @Body() dto: { sessionId: string; message: string },
+  ) {
+    return this.alexisService.sendHumanMessage(
+      req.user.salonId,
+      dto.sessionId,
+      dto.message,
+      req.user.id,
+    );
+  }
+
+  /**
+   * Deleta histórico do chat do dashboard
+   */
+  @UseGuards(AuthGuard)
+  @Delete('chat/history')
+  async deleteChatHistory(@Request() req: any) {
+    return this.alexisService.deleteDashboardChatHistory(req.user.id);
   }
 }

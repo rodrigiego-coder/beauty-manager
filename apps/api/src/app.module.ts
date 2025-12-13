@@ -46,6 +46,8 @@ import { ReservationsModule } from './modules/reservations/reservations.module';
 import { ABTestsModule } from './modules/ab-tests/ab-tests.module';
 import { AIAssistantModule } from './modules/ai-assistant/ai-assistant.module';
 import { AlexisModule } from './modules/alexis/alexis.module';
+import { PackagesModule } from './modules/packages/packages.module';
+import { ClientPackagesModule } from './modules/client-packages/client-packages.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -127,6 +129,9 @@ import { AlexisModule } from './modules/alexis/alexis.module';
     AIAssistantModule,
     // Módulo ALEXIS - IA para WhatsApp & Dashboard (ANVISA/LGPD)
     AlexisModule,
+    // Módulos de Pacotes de Serviços
+    PackagesModule,
+    ClientPackagesModule,
   ],
   controllers: [AppController],
   providers: [

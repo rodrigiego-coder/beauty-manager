@@ -81,6 +81,13 @@ export class CommandsService {
   }
 
   /**
+   * Lista clientes do salão para seleção em comandas
+   */
+  async getClients(salonId: string) {
+    return this.clientsService.findAll({ salonId, includeInactive: false });
+  }
+
+  /**
    * Busca comanda por ID
    */
   async findById(id: string): Promise<Command | null> {

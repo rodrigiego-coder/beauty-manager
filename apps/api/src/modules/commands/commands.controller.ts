@@ -49,6 +49,15 @@ export class CommandsController {
   }
 
   /**
+   * GET /commands/clients
+   * Lista clientes do salão para seleção em comandas
+   */
+  @Get('clients')
+  async findClients(@CurrentUser() user: JwtPayload) {
+    return this.commandsService.getClients(user.salonId);
+  }
+
+  /**
    * GET /commands/card/:cardNumber
    * Busca comanda por número do cartão
    */

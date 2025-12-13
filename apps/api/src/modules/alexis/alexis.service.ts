@@ -550,4 +550,221 @@ export class AlexisService {
   isEnabled(): boolean {
     return this.gemini.isAvailable();
   }
+
+  /**
+   * =====================================================
+   * SESSIONS (Dashboard)
+   * =====================================================
+   */
+
+  /**
+   * Lista sessões de conversa do salão
+   */
+  async getSessions(salonId: string) {
+    return db
+      .select()
+      .from(aiConversations)
+      .where(eq(aiConversations.salonId, salonId))
+      .orderBy(desc(aiConversations.updatedAt))
+      .limit(100);
+  }
+
+  /**
+   * Obtém mensagens de uma sessão
+   */
+  async getSessionMessages(salonId: string, sessionId: string) {
+    // Verifica se a sessão pertence ao salão
+    const session = await db
+      .select()
+      .from(aiConversations)
+      .where(and(eq(aiConversations.id, sessionId), eq(aiConversations.salonId, salonId)))
+      .limit(1);
+
+    if (!session.length) {
+      return [];
+    }
+
+    return db
+      .select()
+      .from(aiMessages)
+      .where(eq(aiMessages.conversationId, sessionId))
+      .orderBy(aiMessages.createdAt);
+  }
+
+  /**
+   * Encerra uma sessão de conversa
+   */
+  async endSession(salonId: string, sessionId: string) {
+    await db
+      .update(aiConversations)
+      .set({ status: 'ENDED', updatedAt: new Date() })
+      .where(and(eq(aiConversations.id, sessionId), eq(aiConversations.salonId, salonId)));
+
+    return { success: true, message: 'Sessão encerrada' };
+  }
+
+  /**
+   * =====================================================
+   * COMPLIANCE & METRICS
+   * =====================================================
+   */
+
+  /**
+   * Estatísticas de compliance ANVISA
+   */
+  async getComplianceStats(salonId: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Total de mensagens bloqueadas
+    const blocked = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(aiBlockedTermsLog)
+      .where(eq(aiBlockedTermsLog.salonId, salonId));
+
+    // Total de interações
+    const interactions = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(aiInteractionLogs)
+      .where(eq(aiInteractionLogs.salonId, salonId));
+
+    // Sessões com takeover humano
+    const humanTakeovers = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(aiConversations)
+      .where(and(eq(aiConversations.salonId, salonId), eq(aiConversations.status, 'HUMAN_ACTIVE')));
+
+    return {
+      totalBlocked: blocked[0]?.count || 0,
+      totalInteractions: interactions[0]?.count || 0,
+      humanTakeovers: humanTakeovers[0]?.count || 0,
+      complianceRate: interactions[0]?.count
+        ? Math.round(((interactions[0].count - (blocked[0]?.count || 0)) / interactions[0].count) * 100)
+        : 100,
+    };
+  }
+
+  /**
+   * Métricas de uso da Alexis
+   */
+  async getMetrics(salonId: string) {
+    // Total de conversas
+    const conversations = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(aiConversations)
+      .where(eq(aiConversations.salonId, salonId));
+
+    // Conversas ativas
+    const activeConversations = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(aiConversations)
+      .where(and(eq(aiConversations.salonId, salonId), eq(aiConversations.status, 'AI_ACTIVE')));
+
+    // Total de mensagens
+    const messagesResult = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(aiMessages)
+      .innerJoin(aiConversations, eq(aiMessages.conversationId, aiConversations.id))
+      .where(eq(aiConversations.salonId, salonId));
+
+    return {
+      totalConversations: conversations[0]?.count || 0,
+      activeConversations: activeConversations[0]?.count || 0,
+      totalMessages: messagesResult[0]?.count || 0,
+      avgMessagesPerConversation: conversations[0]?.count
+        ? Math.round((messagesResult[0]?.count || 0) / conversations[0].count)
+        : 0,
+    };
+  }
+
+  /**
+   * =====================================================
+   * TAKEOVER & RESUME
+   * =====================================================
+   */
+
+  /**
+   * Atendente assume controle da conversa
+   */
+  async humanTakeover(salonId: string, sessionId: string, userId: string) {
+    await db
+      .update(aiConversations)
+      .set({
+        status: 'HUMAN_ACTIVE',
+        humanAgentId: userId,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(aiConversations.id, sessionId), eq(aiConversations.salonId, salonId)));
+
+    return { success: true, message: 'Atendimento assumido' };
+  }
+
+  /**
+   * Alexis retoma controle da conversa
+   */
+  async aiResume(salonId: string, sessionId: string) {
+    await db
+      .update(aiConversations)
+      .set({
+        status: 'AI_ACTIVE',
+        humanAgentId: null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(aiConversations.id, sessionId), eq(aiConversations.salonId, salonId)));
+
+    return { success: true, message: 'Alexis retomou o atendimento' };
+  }
+
+  /**
+   * Envia mensagem como humano
+   */
+  async sendHumanMessage(salonId: string, sessionId: string, message: string, _userId: string) {
+    // Verifica se a sessão pertence ao salão
+    const session = await db
+      .select()
+      .from(aiConversations)
+      .where(and(eq(aiConversations.id, sessionId), eq(aiConversations.salonId, salonId)))
+      .limit(1);
+
+    if (!session.length) {
+      return { success: false, message: 'Sessão não encontrada' };
+    }
+
+    // Salva a mensagem
+    await db.insert(aiMessages).values({
+      conversationId: sessionId,
+      role: 'human', // Mensagem do atendente humano
+      content: message,
+      intent: 'HUMAN_MESSAGE',
+    });
+
+    // Atualiza timestamp da conversa
+    await db
+      .update(aiConversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(aiConversations.id, sessionId));
+
+    return { success: true, message: 'Mensagem enviada' };
+  }
+
+  /**
+   * Deleta histórico do chat do dashboard
+   */
+  async deleteDashboardChatHistory(userId: string) {
+    // Busca conversas do dashboard deste usuário
+    const conversations = await db
+      .select()
+      .from(aiConversations)
+      .where(eq(aiConversations.clientPhone, `dashboard-${userId}`));
+
+    // Deleta mensagens das conversas
+    for (const conv of conversations) {
+      await db.delete(aiMessages).where(eq(aiMessages.conversationId, conv.id));
+    }
+
+    // Deleta as conversas
+    await db.delete(aiConversations).where(eq(aiConversations.clientPhone, `dashboard-${userId}`));
+
+    return { success: true, message: 'Histórico deletado' };
+  }
 }
