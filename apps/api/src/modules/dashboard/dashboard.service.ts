@@ -247,7 +247,7 @@ export class DashboardService {
     // Buscar pagamentos das comandas fechadas no periodo
     const commandIds = closedCommands.map(cmd => cmd.id);
 
-    let payments: { method: string; amount: string }[] = [];
+    let payments: { method: string | null; amount: string }[] = [];
     if (commandIds.length > 0) {
       payments = await this.db
         .select({

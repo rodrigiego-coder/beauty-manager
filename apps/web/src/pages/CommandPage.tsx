@@ -26,6 +26,8 @@ import {
   Sparkles,
   Crown,
   PartyPopper,
+  RotateCcw,
+  Building2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -35,6 +37,8 @@ import { ProductRecommendations } from '../components/ProductRecommendations';
 import { ClientLoyaltyCard } from '../components/ClientLoyaltyCard';
 import { VoucherInput } from '../components/VoucherInput';
 import { HairProfile, HairProfileFormData, ProductRecommendation } from '../types';
+import { PaymentMethod, PaymentDestination, AddPaymentResponse } from '../types/payment';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Command {
   id: string;
@@ -68,9 +72,17 @@ interface CommandItem {
 
 interface CommandPayment {
   id: string;
-  method: string;
+  method?: string | null;
+  paymentMethodId?: string | null;
+  paymentDestinationId?: string | null;
   amount: string;
+  grossAmount?: string | null;
+  feeAmount?: string | null;
+  netAmount?: string | null;
   paidAt: string;
+  // Populated relations
+  paymentMethod?: { id: string; name: string; type: string } | null;
+  paymentDestination?: { id: string; name: string; type: string } | null;
 }
 
 interface CommandEvent {
@@ -124,31 +136,29 @@ const eventLabels: Record<string, string> = {
   SERVICE_CLOSED: 'encerrou os serviços',
   PAYMENT_ADDED: 'registrou pagamento',
   CASHIER_CLOSED: 'fechou a comanda no caixa',
+  CASHIER_CLOSED_AUTO: 'comanda fechada automaticamente',
+  COMMAND_REOPENED: 'reabriu a comanda',
   STATUS_CHANGED: 'alterou status',
   NOTE_ADDED: 'adicionou observação',
   CLIENT_LINKED: 'vinculou cliente',
   CLIENT_UNLINKED: 'removeu cliente',
 };
 
-const paymentMethods = [
-  { value: 'PIX', label: 'PIX' },
-  { value: 'CREDIT_CARD', label: 'Cartão de Crédito' },
-  { value: 'DEBIT_CARD', label: 'Cartão de Débito' },
-  { value: 'CASH', label: 'Dinheiro' },
-  { value: 'TRANSFER', label: 'Transferência' },
-];
-
-const paymentMethodLabels: Record<string, string> = {
+// Fallback labels para métodos legados (antes da migração)
+const legacyPaymentMethodLabels: Record<string, string> = {
   CASH: 'Dinheiro',
   CREDIT_CARD: 'Cartão de Crédito',
   DEBIT_CARD: 'Cartão de Débito',
   PIX: 'PIX',
   TRANSFER: 'Transferência',
+  CARD_CREDIT: 'Cartão de Crédito',
+  CARD_DEBIT: 'Cartão de Débito',
 };
 
 export function CommandPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [command, setCommand] = useState<Command | null>(null);
   const [loading, setLoading] = useState(true);
@@ -158,11 +168,23 @@ export function CommandPage() {
   // Modais
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showReopenModal, setShowReopenModal] = useState(false);
+
+  // Payment methods e destinations da API
+  const [availablePaymentMethods, setAvailablePaymentMethods] = useState<PaymentMethod[]>([]);
+  const [availableDestinations, setAvailableDestinations] = useState<PaymentDestination[]>([]);
 
   // Form de pagamento
-  const [paymentMethod, setPaymentMethod] = useState('PIX');
+  const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState('');
+  const [selectedDestinationId, setSelectedDestinationId] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
+
+  // Form de reabertura
+  const [reopenReason, setReopenReason] = useState('');
+
+  // Auto-close feedback
+  const [showAutoCloseMessage, setShowAutoCloseMessage] = useState(false);
 
   // Form de cancelamento
   const [cancelReason, setCancelReason] = useState('');
@@ -210,6 +232,24 @@ export function CommandPage() {
       loadCommand();
     }
   }, [id]);
+
+  // Buscar formas de pagamento e destinos da API
+  const loadPaymentOptions = async () => {
+    try {
+      const [methodsRes, destinationsRes] = await Promise.all([
+        api.get('/payment-methods'),
+        api.get('/payment-destinations'),
+      ]);
+      setAvailablePaymentMethods(methodsRes.data);
+      setAvailableDestinations(destinationsRes.data);
+      // Pre-select first method if available
+      if (methodsRes.data.length > 0 && !selectedPaymentMethodId) {
+        setSelectedPaymentMethodId(methodsRes.data[0].id);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar opções de pagamento:', err);
+    }
+  };
 
   // Buscar serviços e produtos
   const loadServices = async () => {
@@ -467,6 +507,26 @@ export function CommandPage() {
     return format(new Date(date), "HH:mm", { locale: ptBR });
   };
 
+  // Helper para obter nome do método de pagamento
+  const getPaymentMethodName = (payment: CommandPayment): string => {
+    // Prioridade: paymentMethod.name > method (legado) > fallback
+    if (payment.paymentMethod?.name) {
+      return payment.paymentMethod.name;
+    }
+    if (payment.method) {
+      return legacyPaymentMethodLabels[payment.method] || payment.method;
+    }
+    return 'Não especificado';
+  };
+
+  // Helper para obter nome do destino
+  const getPaymentDestinationName = (payment: CommandPayment): string | null => {
+    if (payment.paymentDestination?.name) {
+      return payment.paymentDestination.name;
+    }
+    return null;
+  };
+
   // Ação: Encerrar Serviços
   const handleCloseService = async () => {
     if (!command) return;
@@ -495,21 +555,68 @@ export function CommandPage() {
       return;
     }
 
+    if (!selectedPaymentMethodId) {
+      alert('Selecione uma forma de pagamento');
+      return;
+    }
+
     try {
       setActionLoading(true);
-      await api.post(`/commands/${command.id}/payments`, {
-        method: paymentMethod,
+      const response = await api.post<AddPaymentResponse>(`/commands/${command.id}/payments`, {
+        paymentMethodId: selectedPaymentMethodId,
+        paymentDestinationId: selectedDestinationId || undefined,
         amount,
         notes: paymentNotes || undefined,
       });
-      
+
       setShowPaymentModal(false);
-      setPaymentMethod('PIX');
+      setSelectedPaymentMethodId(availablePaymentMethods[0]?.id || '');
+      setSelectedDestinationId('');
       setPaymentAmount('');
       setPaymentNotes('');
+
+      // Handle auto-close feedback
+      if (response.data.autoClosed) {
+        setShowAutoCloseMessage(true);
+        setTimeout(() => setShowAutoCloseMessage(false), 5000);
+
+        // Handle loyalty points if present
+        if (response.data.loyaltyPointsEarned && response.data.loyaltyPointsEarned > 0) {
+          setPointsEarned(response.data.loyaltyPointsEarned);
+          setShowPointsEarned(true);
+          setTimeout(() => setShowPointsEarned(false), 5000);
+        }
+      }
+
       await loadCommand();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Erro ao registrar pagamento');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Ação: Reabrir Comanda
+  const handleReopenCommand = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!command) return;
+
+    if (!reopenReason.trim() || reopenReason.trim().length < 10) {
+      alert('O motivo deve ter pelo menos 10 caracteres');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      await api.post(`/commands/${command.id}/reopen`, {
+        reason: reopenReason.trim(),
+      });
+
+      setShowReopenModal(false);
+      setReopenReason('');
+      await loadCommand();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Erro ao reabrir comanda');
     } finally {
       setActionLoading(false);
     }
@@ -686,6 +793,7 @@ export function CommandPage() {
   const canCloseService = command.status === 'OPEN' || command.status === 'IN_SERVICE';
   const canCloseCashier = command.status === 'WAITING_PAYMENT' && remaining <= 0;
   const canAddPayment = isEditable && remaining > 0;
+  const canReopen = command.status === 'CLOSED' && (user?.role === 'OWNER' || user?.role === 'MANAGER');
 
   return (
     <div className="space-y-6">
@@ -731,28 +839,40 @@ export function CommandPage() {
           </div>
 
           {/* Botões de Ação no Header */}
-          {isEditable && (
-            <div className="flex gap-2">
-              {canCloseService && activeItems.length > 0 && (
-                <button 
-                  onClick={handleCloseService}
-                  disabled={actionLoading}
-                  className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium disabled:opacity-50"
-                >
-                  Encerrar Serviços
-                </button>
-              )}
-              {canCloseCashier && (
-                <button 
-                  onClick={handleCloseCashier}
-                  disabled={actionLoading}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50"
-                >
-                  Fechar Comanda
-                </button>
-              )}
-            </div>
-          )}
+          <div className="flex gap-2">
+            {isEditable && (
+              <>
+                {canCloseService && activeItems.length > 0 && (
+                  <button
+                    onClick={handleCloseService}
+                    disabled={actionLoading}
+                    className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium disabled:opacity-50"
+                  >
+                    Encerrar Serviços
+                  </button>
+                )}
+                {canCloseCashier && (
+                  <button
+                    onClick={handleCloseCashier}
+                    disabled={actionLoading}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50"
+                  >
+                    Fechar Comanda
+                  </button>
+                )}
+              </>
+            )}
+            {canReopen && (
+              <button
+                onClick={() => setShowReopenModal(true)}
+                disabled={actionLoading}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Reabrir Comanda
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -884,8 +1004,9 @@ export function CommandPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Pagamentos</h2>
               {canAddPayment && (
-                <button 
+                <button
                   onClick={() => {
+                    loadPaymentOptions();
                     setPaymentAmount(remaining.toFixed(2).replace('.', ','));
                     setShowPaymentModal(true);
                   }}
@@ -916,15 +1037,27 @@ export function CommandPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {command.payments.map((payment) => (
-                      <tr key={payment.id} className="hover:bg-gray-50">
-                        <td className="py-3 pr-4 font-medium text-gray-900">
-                          {paymentMethodLabels[payment.method] || payment.method}
-                        </td>
-                        <td className="py-3 pr-4 text-gray-500 text-sm">{formatDate(payment.paidAt)}</td>
-                        <td className="py-3 text-right font-semibold text-green-600">{formatCurrency(payment.amount)}</td>
-                      </tr>
-                    ))}
+                    {command.payments.map((payment) => {
+                      const destinationName = getPaymentDestinationName(payment);
+                      return (
+                        <tr key={payment.id} className="hover:bg-gray-50">
+                          <td className="py-3 pr-4">
+                            <div>
+                              <span className="font-medium text-gray-900">
+                                {getPaymentMethodName(payment)}
+                              </span>
+                              {destinationName && (
+                                <span className="text-xs text-gray-500 block">
+                                  → {destinationName}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 pr-4 text-gray-500 text-sm">{formatDate(payment.paidAt)}</td>
+                          <td className="py-3 text-right font-semibold text-green-600">{formatCurrency(payment.amount)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1142,20 +1275,53 @@ export function CommandPage() {
 
             <form onSubmit={handleAddPayment} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Método de Pagamento</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Forma de Pagamento *</label>
+                {availablePaymentMethods.length === 0 ? (
+                  <p className="text-sm text-gray-500 italic">Carregando formas de pagamento...</p>
+                ) : (
+                  <select
+                    value={selectedPaymentMethodId}
+                    onChange={(e) => setSelectedPaymentMethodId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    required
+                  >
+                    <option value="">Selecione...</option>
+                    {availablePaymentMethods.map((method) => (
+                      <option key={method.id} value={method.id}>
+                        {method.name}
+                        {method.feeType && method.feeValue && parseFloat(method.feeValue) > 0 && (
+                          ` (${method.feeType === 'DISCOUNT' ? '-' : '+'}${method.feeMode === 'PERCENT' ? `${method.feeValue}%` : `R$${method.feeValue}`})`
+                        )}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <span className="flex items-center gap-1">
+                    <Building2 className="w-4 h-4" />
+                    Destino (opcional)
+                  </span>
+                </label>
                 <select
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  value={selectedDestinationId}
+                  onChange={(e) => setSelectedDestinationId(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                 >
-                  {paymentMethods.map((method) => (
-                    <option key={method.value} value={method.value}>{method.label}</option>
+                  <option value="">Nenhum</option>
+                  {availableDestinations.map((dest) => (
+                    <option key={dest.id} value={dest.id}>
+                      {dest.name}
+                      {dest.bankName && ` (${dest.bankName})`}
+                    </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Valor</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Valor *</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">R$</span>
                   <input
@@ -1164,6 +1330,7 @@ export function CommandPage() {
                     onChange={(e) => setPaymentAmount(e.target.value)}
                     placeholder="0,00"
                     className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    required
                   />
                 </div>
                 <p className="text-xs text-gray-500 mt-1">Restante: {formatCurrency(remaining)}</p>
@@ -1190,7 +1357,7 @@ export function CommandPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={actionLoading}
+                  disabled={actionLoading || !selectedPaymentMethodId}
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
                 >
                   {actionLoading ? 'Salvando...' : 'Confirmar'}
@@ -1734,6 +1901,85 @@ export function CommandPage() {
           onSave={handleSaveHairProfile}
           existingProfile={clientHairProfile}
         />
+      )}
+
+      {/* Modal Reabrir Comanda */}
+      {showReopenModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-blue-100 rounded-full">
+                <RotateCcw className="w-6 h-6 text-blue-600" />
+              </div>
+              <h2 className="text-lg font-semibold text-gray-900">Reabrir Comanda</h2>
+            </div>
+
+            <p className="text-gray-600 mb-4">
+              Esta comanda está fechada. Ao reabrir, você poderá adicionar novos itens ou registrar mais pagamentos.
+            </p>
+
+            <form onSubmit={handleReopenCommand} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Motivo da reabertura *
+                </label>
+                <textarea
+                  value={reopenReason}
+                  onChange={(e) => setReopenReason(e.target.value)}
+                  placeholder="Ex: Cliente solicitou adicionar mais um serviço"
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                  minLength={10}
+                />
+                <p className="text-xs text-gray-500 mt-1">Mínimo 10 caracteres. Este motivo será registrado no histórico.</p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReopenModal(false);
+                    setReopenReason('');
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading || reopenReason.trim().length < 10}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {actionLoading ? 'Reabrindo...' : 'Reabrir Comanda'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-Close Toast */}
+      {showAutoCloseMessage && (
+        <div className="fixed bottom-6 left-6 z-50 animate-bounce">
+          <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3">
+            <div className="p-2 bg-white/20 rounded-full">
+              <CheckCircle className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="font-bold text-lg">Comanda Fechada!</p>
+              <p className="text-sm opacity-90">
+                Pagamento completo. A comanda foi encerrada automaticamente.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAutoCloseMessage(false)}
+              className="ml-2 p-1 hover:bg-white/20 rounded-full"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Points Earned Toast */}

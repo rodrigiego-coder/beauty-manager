@@ -1359,15 +1359,25 @@ export const commandItems = pgTable('command_items', {
 export const commandPayments = pgTable('command_payments', {
   id: uuid('id').defaultRandom().primaryKey(),
   commandId: uuid('command_id').references(() => commands.id).notNull(),
-  
-  method: varchar('method', { length: 30 }).notNull(),
+
+  // Campos legados (mantidos para compatibilidade)
+  method: varchar('method', { length: 30 }), // Agora opcional para novos pagamentos
   amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
-  
+
+  // Novos campos para formas de pagamento configuráveis
+  paymentMethodId: uuid('payment_method_id').references(() => paymentMethods.id),
+  paymentDestinationId: uuid('payment_destination_id').references(() => paymentDestinations.id),
+
+  // Valores bruto, taxa e líquido
+  grossAmount: decimal('gross_amount', { precision: 10, scale: 2 }),
+  feeAmount: decimal('fee_amount', { precision: 10, scale: 2 }).default('0'),
+  netAmount: decimal('net_amount', { precision: 10, scale: 2 }),
+
   receivedById: uuid('received_by_id').references(() => users.id).notNull(),
   paidAt: timestamp('paid_at').defaultNow().notNull(),
-  
+
   notes: text('notes'),
-  
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -1399,6 +1409,29 @@ export type NewCommandEvent = typeof commandEvents.$inferInsert;
 // Types para Blacklist
 export type RefreshTokenBlacklist = typeof refreshTokenBlacklist.$inferSelect;
 export type NewRefreshTokenBlacklist = typeof refreshTokenBlacklist.$inferInsert;
+
+/**
+ * Enums para Formas de Pagamento Configuráveis
+ */
+export const paymentMethodTypeEnum = pgEnum('payment_method_type', [
+  'CASH',
+  'PIX',
+  'CARD_CREDIT',
+  'CARD_DEBIT',
+  'TRANSFER',
+  'VOUCHER',
+  'OTHER',
+]);
+
+export const paymentDestinationTypeEnum = pgEnum('payment_destination_type', [
+  'BANK',
+  'CARD_MACHINE',
+  'CASH_DRAWER',
+  'OTHER',
+]);
+
+export const feeTypeEnum = pgEnum('fee_type', ['DISCOUNT', 'FEE']);
+export const feeModeEnum = pgEnum('fee_mode', ['PERCENT', 'FIXED']);
 
 /**
  * Enums para Caixa
@@ -1461,6 +1494,61 @@ export type CashRegister = typeof cashRegisters.$inferSelect;
 export type NewCashRegister = typeof cashRegisters.$inferInsert;
 export type CashMovement = typeof cashMovements.$inferSelect;
 export type NewCashMovement = typeof cashMovements.$inferInsert;
+
+/**
+ * Tabela de Formas de Pagamento Configuráveis
+ */
+export const paymentMethods = pgTable('payment_methods', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+
+  name: varchar('name', { length: 100 }).notNull(),
+  type: varchar('type', { length: 30 }).notNull(), // CASH, PIX, CARD_CREDIT, CARD_DEBIT, TRANSFER, VOUCHER, OTHER
+
+  // Regra de taxa/desconto
+  feeType: varchar('fee_type', { length: 20 }), // DISCOUNT ou FEE
+  feeMode: varchar('fee_mode', { length: 20 }), // PERCENT ou FIXED
+  feeValue: decimal('fee_value', { precision: 10, scale: 2 }).default('0'),
+
+  sortOrder: integer('sort_order').default(0),
+  active: boolean('active').default(true).notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Tabela de Destinos do Dinheiro
+ */
+export const paymentDestinations = pgTable('payment_destinations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+
+  name: varchar('name', { length: 100 }).notNull(),
+  type: varchar('type', { length: 30 }).notNull(), // BANK, CARD_MACHINE, CASH_DRAWER, OTHER
+
+  // Metadados opcionais
+  bankName: varchar('bank_name', { length: 100 }),
+  lastDigits: varchar('last_digits', { length: 10 }),
+  description: text('description'),
+
+  // Regra adicional de taxa (opcional, sobrescreve método)
+  feeType: varchar('fee_type', { length: 20 }),
+  feeMode: varchar('fee_mode', { length: 20 }),
+  feeValue: decimal('fee_value', { precision: 10, scale: 2 }).default('0'),
+
+  sortOrder: integer('sort_order').default(0),
+  active: boolean('active').default(true).notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Types para Formas de Pagamento e Destinos
+export type PaymentMethod = typeof paymentMethods.$inferSelect;
+export type NewPaymentMethod = typeof paymentMethods.$inferInsert;
+export type PaymentDestination = typeof paymentDestinations.$inferSelect;
+export type NewPaymentDestination = typeof paymentDestinations.$inferInsert;
 
 /**
  * Enum para status de comissao

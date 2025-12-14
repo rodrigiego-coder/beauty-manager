@@ -124,11 +124,22 @@ export class ApplyDiscountDto {
   reason?: string;
 }
 
-// DTO para adicionar pagamento
+// DTO para adicionar pagamento (compatível com formato legado e novo)
 export class AddPaymentDto {
+  // Formato legado (mantido para compatibilidade)
   @IsEnum(PaymentMethod, { message: 'Metodo de pagamento invalido' })
-  @IsNotEmpty({ message: 'Metodo de pagamento e obrigatorio' })
-  method!: PaymentMethod;
+  @IsOptional()
+  method?: PaymentMethod;
+
+  // Novo formato: ID da forma de pagamento configurada
+  @IsUUID('4', { message: 'ID da forma de pagamento deve ser um UUID valido' })
+  @IsOptional()
+  paymentMethodId?: string;
+
+  // Novo: ID do destino do pagamento (opcional)
+  @IsUUID('4', { message: 'ID do destino deve ser um UUID valido' })
+  @IsOptional()
+  paymentDestinationId?: string;
 
   @IsNumber({}, { message: 'Valor deve ser um numero' })
   @Min(0.01, { message: 'Valor deve ser maior que zero' })
@@ -138,6 +149,13 @@ export class AddPaymentDto {
   @IsString({ message: 'Notas deve ser uma string' })
   @IsOptional()
   notes?: string;
+}
+
+// DTO para reabrir comanda (apenas OWNER/MANAGER)
+export class ReopenCommandDto {
+  @IsString({ message: 'Motivo deve ser uma string' })
+  @IsNotEmpty({ message: 'Motivo e obrigatorio' })
+  reason!: string;
 }
 
 // DTO para adicionar nota

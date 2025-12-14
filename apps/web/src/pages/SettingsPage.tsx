@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Building2,
   Bell,
@@ -11,11 +12,14 @@ import {
   Phone,
   Mail,
   FileText,
+  CreditCard,
+  Wallet,
+  ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
-type TabType = 'salao' | 'notificacoes' | 'aparencia';
+type TabType = 'salao' | 'pagamentos' | 'notificacoes' | 'aparencia';
 
 interface SalonData {
   id: string;
@@ -106,6 +110,7 @@ export function SettingsPage() {
 
   const tabs = [
     { id: 'salao' as TabType, label: 'Salao', icon: Building2 },
+    { id: 'pagamentos' as TabType, label: 'Pagamentos', icon: Wallet },
     { id: 'notificacoes' as TabType, label: 'Notificacoes', icon: Bell },
     { id: 'aparencia' as TabType, label: 'Aparencia', icon: Palette },
   ];
@@ -260,6 +265,49 @@ export function SettingsPage() {
                   </p>
                 )}
               </form>
+            </div>
+          )}
+
+          {activeTab === 'pagamentos' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Configuracoes de Pagamento</h2>
+                <p className="text-sm text-gray-500 mt-1">Configure formas de pagamento e destinos do dinheiro</p>
+              </div>
+
+              <div className="space-y-3">
+                <Link
+                  to="/configuracoes/formas-pagamento"
+                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-primary-100 rounded-lg">
+                      <CreditCard className="w-6 h-6 text-primary-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">Formas de Pagamento</p>
+                      <p className="text-sm text-gray-500">Configure as formas de pagamento aceitas (Dinheiro, PIX, Cartao, etc)</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-primary-600 transition-colors" />
+                </Link>
+
+                <Link
+                  to="/configuracoes/destinos-pagamento"
+                  className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-primary-100 rounded-lg">
+                      <Wallet className="w-6 h-6 text-primary-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">Destinos de Pagamento</p>
+                      <p className="text-sm text-gray-500">Configure para onde o dinheiro vai (Banco, Maquininha, Caixa)</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-primary-600 transition-colors" />
+                </Link>
+              </div>
             </div>
           )}
 

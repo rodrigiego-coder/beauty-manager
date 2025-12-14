@@ -33,6 +33,8 @@ import {
   CartLinkPublicPage,
   ReservationsPage,
   ABTestsPage,
+  PaymentMethodsPage,
+  PaymentDestinationsPage,
 } from './pages';
 import AlexisConversationsPage from './pages/AlexisConversationsPage';
 import AlexisSettingsPage from './pages/AlexisSettingsPage';
@@ -155,6 +157,22 @@ function App() {
               element={
                 <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
                   <SettingsPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/configuracoes/formas-pagamento"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <PaymentMethodsPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/configuracoes/destinos-pagamento"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <PaymentDestinationsPage />
                 </RoleGuard>
               }
             />

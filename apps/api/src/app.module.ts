@@ -48,6 +48,8 @@ import { AIAssistantModule } from './modules/ai-assistant/ai-assistant.module';
 import { AlexisModule } from './modules/alexis/alexis.module';
 import { PackagesModule } from './modules/packages/packages.module';
 import { ClientPackagesModule } from './modules/client-packages/client-packages.module';
+import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.module';
+import { PaymentDestinationsModule } from './modules/payment-destinations/payment-destinations.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -97,6 +99,9 @@ import { ClientPackagesModule } from './modules/client-packages/client-packages.
     ServicesModule, // Modulo de servicos
     // Modulo de caixa
     CashRegistersModule,
+    // Modulo de formas de pagamento
+    PaymentMethodsModule,
+    PaymentDestinationsModule,
     // Modulo de comissoes
     CommissionsModule,
     // Modulo de equipe

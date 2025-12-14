@@ -15,6 +15,13 @@
       "when": 1765587864764,
       "tag": "0001_cultured_retro_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1765729150520,
+      "tag": "0002_right_siren",
+      "breakpoints": true
     }
   ]
 }

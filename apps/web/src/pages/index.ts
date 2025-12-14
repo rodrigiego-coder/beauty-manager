@@ -28,3 +28,5 @@ export { default as CartLinksPage } from './CartLinksPage';
 export { default as CartLinkPublicPage } from './CartLinkPublicPage';
 export { default as ReservationsPage } from './ReservationsPage';
 export { default as ABTestsPage } from './ABTestsPage';
+export { PaymentMethodsPage } from './PaymentMethodsPage';
+export { PaymentDestinationsPage } from './PaymentDestinationsPage';

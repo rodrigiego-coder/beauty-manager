@@ -1,4 +1,4 @@
-import { Injectable, Inject, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { eq, and, desc, ne, inArray } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.module';
 import {
@@ -10,9 +10,13 @@ import {
   users,
   services,
   clients,
+  paymentMethods,
+  paymentDestinations,
   Command,
   CommandItem,
   CommandPayment,
+  PaymentMethod,
+  PaymentDestination,
 } from '../../database';
 import {
   OpenCommandDto,
@@ -22,11 +26,23 @@ import {
   ApplyDiscountDto,
   AddNoteDto,
   LinkClientDto,
+  ReopenCommandDto,
 } from './dto';
 import { CashRegistersService } from '../cash-registers';
 import { ClientsService } from '../clients';
 import { CommissionsService } from '../commissions';
 import { LoyaltyService } from '../loyalty/loyalty.service';
+
+// Interface para resultado de pagamento (exportada para controller)
+export interface AddPaymentResult {
+  payment: CommandPayment;
+  command: Command;
+  autoClosed: boolean;
+  message: string;
+  loyaltyPointsEarned?: number;
+  tierUpgraded?: boolean;
+  newTierName?: string;
+}
 
 interface CurrentUser {
   id: string;
@@ -524,28 +540,122 @@ export class CommandsService {
   }
 
   /**
-   * Adiciona pagamento à comanda
+   * Calcula valores de taxa/desconto para um pagamento
+   */
+  private calculatePaymentFee(
+    amount: number,
+    paymentMethod?: PaymentMethod | null,
+    destination?: PaymentDestination | null,
+  ): { grossAmount: number; feeAmount: number; netAmount: number } {
+    const grossAmount = amount;
+    let feeAmount = 0;
+
+    // Prioridade: destino > método
+    const rule = destination?.feeValue && parseFloat(destination.feeValue) > 0
+      ? destination
+      : paymentMethod;
+
+    if (rule?.feeType && rule?.feeMode && rule?.feeValue) {
+      const feeValue = parseFloat(rule.feeValue);
+      if (rule.feeMode === 'PERCENT') {
+        feeAmount = (amount * feeValue) / 100;
+      } else {
+        feeAmount = feeValue;
+      }
+    }
+
+    // netAmount é sempre grossAmount - feeAmount (taxa reduz o líquido)
+    const netAmount = grossAmount - feeAmount;
+
+    return { grossAmount, feeAmount, netAmount };
+  }
+
+  /**
+   * Adiciona pagamento à comanda (com auto-close se quitado)
    */
   async addPayment(
     commandId: string,
     data: AddPaymentDto,
     currentUser: CurrentUser,
-  ): Promise<CommandPayment> {
+  ): Promise<AddPaymentResult> {
     const command = await this.findById(commandId);
     if (!command) {
       throw new NotFoundException('Comanda nao encontrada');
     }
 
-    if (command.status === 'CLOSED' || command.status === 'CANCELED') {
-      throw new BadRequestException('Comanda ja encerrada ou cancelada');
+    if (command.status === 'CLOSED') {
+      throw new BadRequestException('Comanda ja encerrada');
     }
 
+    if (command.status === 'CANCELED') {
+      throw new BadRequestException('Comanda foi cancelada');
+    }
+
+    // Valida que tem method OU paymentMethodId
+    if (!data.method && !data.paymentMethodId) {
+      throw new BadRequestException('Informe method ou paymentMethodId');
+    }
+
+    // Busca forma de pagamento configurada (se fornecida)
+    let paymentMethod: PaymentMethod | null = null;
+    if (data.paymentMethodId) {
+      const result = await this.db
+        .select()
+        .from(paymentMethods)
+        .where(eq(paymentMethods.id, data.paymentMethodId))
+        .limit(1);
+      paymentMethod = result[0] || null;
+
+      if (!paymentMethod) {
+        throw new BadRequestException('Forma de pagamento nao encontrada');
+      }
+
+      if (paymentMethod.salonId !== command.salonId) {
+        throw new BadRequestException('Forma de pagamento nao pertence a este salao');
+      }
+    }
+
+    // Busca destino (se fornecido)
+    let destination: PaymentDestination | null = null;
+    if (data.paymentDestinationId) {
+      const result = await this.db
+        .select()
+        .from(paymentDestinations)
+        .where(eq(paymentDestinations.id, data.paymentDestinationId))
+        .limit(1);
+      destination = result[0] || null;
+
+      if (!destination) {
+        throw new BadRequestException('Destino de pagamento nao encontrado');
+      }
+
+      if (destination.salonId !== command.salonId) {
+        throw new BadRequestException('Destino de pagamento nao pertence a este salao');
+      }
+    }
+
+    // Calcula fee
+    const { grossAmount, feeAmount, netAmount } = this.calculatePaymentFee(
+      data.amount,
+      paymentMethod,
+      destination,
+    );
+
+    // Determina o method legado (para compatibilidade)
+    const legacyMethod = data.method || (paymentMethod?.type as string) || 'OTHER';
+
+    // Insere pagamento
     const [payment] = await this.db
       .insert(commandPayments)
       .values({
         commandId,
-        method: data.method,
+        method: legacyMethod,
         amount: data.amount.toString(),
+        paymentMethodId: data.paymentMethodId || null,
+        paymentDestinationId: data.paymentDestinationId || null,
+        grossAmount: grossAmount.toString(),
+        feeAmount: feeAmount.toString(),
+        netAmount: netAmount.toString(),
         notes: data.notes || null,
         receivedById: currentUser.id,
       })
@@ -554,11 +664,199 @@ export class CommandsService {
     // Registra evento
     await this.addEvent(commandId, currentUser.id, 'PAYMENT_ADDED', {
       paymentId: payment.id,
-      method: data.method,
-      amount: data.amount,
+      method: legacyMethod,
+      paymentMethodId: data.paymentMethodId,
+      paymentDestinationId: data.paymentDestinationId,
+      grossAmount,
+      feeAmount,
+      netAmount,
     });
 
-    return payment;
+    // Verifica se quitou para auto-close
+    const totalPaid = await this.getTotalPaid(commandId);
+    const totalNet = parseFloat(command.totalNet || '0');
+    const tolerance = 0.01; // tolerância de 1 centavo
+
+    if (totalPaid >= totalNet - tolerance) {
+      // Auto-close
+      const closedCommand = await this.autoCloseCashier(commandId, currentUser);
+
+      return {
+        payment,
+        command: closedCommand.command,
+        autoClosed: true,
+        message: 'Comanda encerrada automaticamente',
+        loyaltyPointsEarned: closedCommand.loyaltyPointsEarned,
+        tierUpgraded: closedCommand.tierUpgraded,
+        newTierName: closedCommand.newTierName,
+      };
+    }
+
+    // Atualiza command para retornar
+    const updatedCommand = await this.findById(commandId);
+
+    return {
+      payment,
+      command: updatedCommand!,
+      autoClosed: false,
+      message: 'Pagamento registrado',
+    };
+  }
+
+  /**
+   * Calcula total pago (usando netAmount quando disponível)
+   */
+  private async getTotalPaid(commandId: string): Promise<number> {
+    const payments = await this.getPayments(commandId);
+    return payments.reduce((sum, p) => {
+      // Usa netAmount se disponível, senão usa amount
+      const value = p.netAmount ? parseFloat(p.netAmount) : parseFloat(p.amount);
+      return sum + value;
+    }, 0);
+  }
+
+  /**
+   * Auto-close interno (chamado quando pagamento quita a comanda)
+   */
+  private async autoCloseCashier(
+    commandId: string,
+    currentUser: CurrentUser,
+  ): Promise<{
+    command: Command;
+    loyaltyPointsEarned: number;
+    tierUpgraded: boolean;
+    newTierName?: string;
+  }> {
+    const command = await this.findById(commandId);
+    if (!command) {
+      throw new NotFoundException('Comanda nao encontrada');
+    }
+
+    // Atualiza status para CLOSED
+    const [closedCommand] = await this.db
+      .update(commands)
+      .set({
+        status: 'CLOSED',
+        cashierClosedAt: new Date(),
+        cashierClosedById: currentUser.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(commands.id, commandId))
+      .returning();
+
+    // Atualiza totais do caixa por método de pagamento
+    const payments = await this.getPayments(commandId);
+    for (const payment of payments) {
+      // Usa method para compatibilidade com caixa atual
+      await this.cashRegistersService.addSale(
+        command.salonId,
+        payment.method || 'OTHER',
+        parseFloat(payment.netAmount || payment.amount),
+      );
+    }
+
+    // Se a comanda tem cliente vinculado, atualiza totalVisits e lastVisitDate
+    if (command.clientId) {
+      await this.clientsService.updateLastVisit(command.clientId);
+    }
+
+    // Cria comissoes para itens de servico com profissional
+    await this.createCommissionsForCommand(command.salonId, commandId);
+
+    // Processa pontos de fidelidade se cliente vinculado
+    let loyaltyPointsEarned = 0;
+    let tierUpgraded = false;
+    let newTierName: string | undefined;
+
+    if (command.clientId) {
+      try {
+        const loyaltyResult = await this.loyaltyService.processCommandPoints(
+          command.salonId,
+          commandId,
+          command.clientId,
+          currentUser.id
+        );
+        loyaltyPointsEarned = loyaltyResult.pointsEarned;
+        tierUpgraded = loyaltyResult.tierUpgraded;
+        newTierName = loyaltyResult.newTierName;
+      } catch (err) {
+        console.error('Erro ao processar pontos de fidelidade:', err);
+      }
+    }
+
+    // Registra evento de auto-close
+    const totalPaid = await this.getTotalPaid(commandId);
+    const totalNet = parseFloat(command.totalNet || '0');
+
+    await this.addEvent(commandId, currentUser.id, 'CASHIER_CLOSED_AUTO', {
+      totalNet,
+      totalPaid,
+      change: totalPaid - totalNet,
+      clientId: command.clientId,
+      loyaltyPointsEarned,
+      tierUpgraded,
+      newTierName,
+    });
+
+    return {
+      command: closedCommand,
+      loyaltyPointsEarned,
+      tierUpgraded,
+      newTierName,
+    };
+  }
+
+  /**
+   * Reabre comanda fechada (apenas OWNER/MANAGER)
+   */
+  async reopenCommand(
+    commandId: string,
+    data: ReopenCommandDto,
+    currentUser: CurrentUser,
+  ): Promise<Command> {
+    // Verifica permissão
+    if (currentUser.role !== 'OWNER' && currentUser.role !== 'MANAGER') {
+      throw new ForbiddenException('Apenas OWNER ou MANAGER podem reabrir comandas');
+    }
+
+    const command = await this.findById(commandId);
+    if (!command) {
+      throw new NotFoundException('Comanda nao encontrada');
+    }
+
+    if (command.salonId !== currentUser.salonId) {
+      throw new ForbiddenException('Comanda nao pertence a este salao');
+    }
+
+    if (command.status !== 'CLOSED') {
+      throw new BadRequestException('Apenas comandas fechadas podem ser reabertas');
+    }
+
+    // Valida motivo
+    if (!data.reason || data.reason.trim().length < 10) {
+      throw new BadRequestException('Motivo deve ter pelo menos 10 caracteres');
+    }
+
+    // Reabre comanda
+    const [reopenedCommand] = await this.db
+      .update(commands)
+      .set({
+        status: 'WAITING_PAYMENT',
+        cashierClosedAt: null,
+        cashierClosedById: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(commands.id, commandId))
+      .returning();
+
+    // Registra evento de reabertura
+    await this.addEvent(commandId, currentUser.id, 'COMMAND_REOPENED', {
+      previousStatus: 'CLOSED',
+      reason: data.reason,
+      reopenedAt: new Date().toISOString(),
+    });
+
+    return reopenedCommand;
   }
 
   /**
@@ -604,8 +902,8 @@ export class CommandsService {
     for (const payment of payments) {
       await this.cashRegistersService.addSale(
         command.salonId,
-        payment.method,
-        parseFloat(payment.amount),
+        payment.method || 'OTHER',
+        parseFloat(payment.netAmount || payment.amount),
       );
     }
 

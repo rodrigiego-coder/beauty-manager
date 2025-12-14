@@ -18,6 +18,7 @@ import {
   AddNoteDto,
   LinkClientDto,
   RemoveItemDto,
+  ReopenCommandDto,
 } from './dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/jwt.strategy';
@@ -276,6 +277,24 @@ export class CommandsController {
     @Body() data: { reason?: string },
   ) {
     return this.commandsService.cancel(id, data.reason, {
+      id: user.id,
+      salonId: user.salonId,
+      role: user.role,
+    });
+  }
+
+  /**
+   * POST /commands/:id/reopen
+   * Reabre comanda fechada (apenas OWNER/MANAGER)
+   */
+  @Post(':id/reopen')
+  @Roles('OWNER', 'MANAGER')
+  async reopen(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() data: ReopenCommandDto,
+  ) {
+    return this.commandsService.reopenCommand(id, data, {
       id: user.id,
       salonId: user.salonId,
       role: user.role,
