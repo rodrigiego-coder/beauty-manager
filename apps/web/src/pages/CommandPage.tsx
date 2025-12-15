@@ -28,6 +28,11 @@ import {
   PartyPopper,
   RotateCcw,
   Building2,
+  FileText,
+  Heart,
+  Mail,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -215,6 +220,11 @@ export function CommandPage() {
   const [clientHistoryLoading, setClientHistoryLoading] = useState(false);
   const [quickClientName, setQuickClientName] = useState('');
   const [quickClientPhone, setQuickClientPhone] = useState('');
+  const [quickClientEmail, setQuickClientEmail] = useState('');
+  const [quickClientTechNotes, setQuickClientTechNotes] = useState('');
+  const [quickClientPreferences, setQuickClientPreferences] = useState('');
+  const [showOptionalFields, setShowOptionalFields] = useState(false);
+  const [clientFormErrors, setClientFormErrors] = useState<{ name?: string; phone?: string }>({});
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Hair Profile state
@@ -445,36 +455,127 @@ export function CommandPage() {
     }
   };
 
-  // Cadastro rápido de cliente
+  // Validação de nome completo (mínimo 2 palavras)
+  const validateFullName = (name: string): string | undefined => {
+    const trimmed = name.trim();
+    if (!trimmed) return 'Nome é obrigatório';
+    const words = trimmed.split(/\s+/).filter(w => w.length > 0);
+    if (words.length < 2) return 'Informe o nome completo (nome e sobrenome)';
+    return undefined;
+  };
+
+  // Validação de telefone brasileiro (10-11 dígitos)
+  const validatePhone = (phone: string): string | undefined => {
+    if (!phone.trim()) return 'Telefone é obrigatório';
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 10 || digits.length > 11) {
+      return 'Telefone inválido. Informe DDD + número (10 ou 11 dígitos)';
+    }
+    return undefined;
+  };
+
+  // Verificar se o formulário é válido
+  const isClientFormValid = (): boolean => {
+    const nameError = validateFullName(quickClientName);
+    const phoneError = validatePhone(quickClientPhone);
+    return !nameError && !phoneError;
+  };
+
+  // Validar e atualizar erros em tempo real
+  const handleNameChange = (value: string) => {
+    setQuickClientName(value);
+    // Só mostra erro se o usuário já digitou algo
+    if (value.trim()) {
+      setClientFormErrors(prev => ({ ...prev, name: validateFullName(value) }));
+    } else {
+      setClientFormErrors(prev => ({ ...prev, name: undefined }));
+    }
+  };
+
+  const handlePhoneChange = (value: string) => {
+    setQuickClientPhone(value);
+    // Só mostra erro se o usuário já digitou algo
+    if (value.trim()) {
+      setClientFormErrors(prev => ({ ...prev, phone: validatePhone(value) }));
+    } else {
+      setClientFormErrors(prev => ({ ...prev, phone: undefined }));
+    }
+  };
+
+  // Reset do formulário de cliente
+  const resetClientForm = () => {
+    setQuickClientName('');
+    setQuickClientPhone('');
+    setQuickClientEmail('');
+    setQuickClientTechNotes('');
+    setQuickClientPreferences('');
+    setShowOptionalFields(false);
+    setClientFormErrors({});
+  };
+
+  // Cadastro completo de cliente
   const handleQuickCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!command) return;
 
-    if (!quickClientName.trim() || !quickClientPhone.trim()) {
-      alert('Preencha nome e telefone');
+    // Validação frontend
+    const nameError = validateFullName(quickClientName);
+    const phoneError = validatePhone(quickClientPhone);
+
+    if (nameError || phoneError) {
+      setClientFormErrors({ name: nameError, phone: phoneError });
       return;
     }
 
     try {
       setActionLoading(true);
-      // Criar cliente
-      const createResponse = await api.post('/clients', {
+
+      // Preparar dados (normalizar telefone)
+      const clientData: Record<string, string | boolean | undefined> = {
         name: quickClientName.trim(),
-        phone: quickClientPhone.trim(),
-      });
+        phone: quickClientPhone.replace(/\D/g, ''), // Envia apenas dígitos
+      };
+
+      // Adicionar campos opcionais se preenchidos
+      if (quickClientEmail.trim()) {
+        clientData.email = quickClientEmail.trim();
+      }
+      if (quickClientTechNotes.trim()) {
+        clientData.technicalNotes = quickClientTechNotes.trim();
+      }
+      if (quickClientPreferences.trim()) {
+        clientData.preferences = quickClientPreferences.trim();
+      }
+
+      // Criar cliente
+      const createResponse = await api.post('/clients', clientData);
 
       // Vincular à comanda
       await api.post(`/commands/${command.id}/link-client`, {
         clientId: createResponse.data.id,
       });
 
+      // Fechar modais e limpar formulário
       setShowQuickClientModal(false);
       setShowLinkClientModal(false);
-      setQuickClientName('');
-      setQuickClientPhone('');
+      resetClientForm();
+
+      // Recarregar comanda para mostrar cliente vinculado
       await loadCommand();
+
+      // Feedback visual (opcional: poderia usar toast)
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Erro ao cadastrar cliente');
+      // Exibir erro do backend de forma amigável
+      const message = err.response?.data?.message;
+      if (Array.isArray(message)) {
+        // class-validator retorna array de erros
+        setClientFormErrors({
+          name: message.find((m: string) => m.toLowerCase().includes('nome')),
+          phone: message.find((m: string) => m.toLowerCase().includes('telefone') || m.toLowerCase().includes('phone'))
+        });
+      } else {
+        alert(message || 'Erro ao cadastrar cliente');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -1712,67 +1813,172 @@ export function CommandPage() {
         </div>
       )}
 
-      {/* Modal Cadastro Rápido de Cliente */}
+      {/* Modal Cadastro Completo de Cliente */}
       {showQuickClientModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Novo Cliente</h2>
+          <div className="bg-white rounded-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Novo Cliente</h2>
+                <p className="text-sm text-gray-500 mt-0.5">Preencha os dados para cadastrar</p>
+              </div>
               <button
                 onClick={() => {
                   setShowQuickClientModal(false);
-                  setQuickClientName('');
-                  setQuickClientPhone('');
+                  resetClientForm();
                 }}
-                className="p-1 hover:bg-gray-100 rounded"
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
 
-            <form onSubmit={handleQuickCreateClient} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nome *</label>
-                <input
-                  type="text"
-                  value={quickClientName}
-                  onChange={(e) => setQuickClientName(e.target.value)}
-                  placeholder="Nome do cliente"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  required
-                  autoFocus
-                />
+            <form onSubmit={handleQuickCreateClient} className="p-6 space-y-4">
+              {/* Seção Obrigatória */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <User className="w-4 h-4" />
+                  <span>Dados Obrigatórios</span>
+                </div>
+
+                {/* Nome Completo */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nome Completo *
+                  </label>
+                  <input
+                    type="text"
+                    value={quickClientName}
+                    onChange={(e) => handleNameChange(e.target.value)}
+                    placeholder="Ex: Maria Silva"
+                    className={`w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-colors ${
+                      clientFormErrors.name
+                        ? 'border-red-300 bg-red-50'
+                        : 'border-gray-300'
+                    }`}
+                    autoFocus
+                  />
+                  {clientFormErrors.name && (
+                    <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {clientFormErrors.name}
+                    </p>
+                  )}
+                </div>
+
+                {/* Telefone */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Telefone *
+                  </label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="tel"
+                      value={quickClientPhone}
+                      onChange={(e) => handlePhoneChange(e.target.value)}
+                      placeholder="(11) 99999-9999"
+                      className={`w-full pl-10 pr-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-colors ${
+                        clientFormErrors.phone
+                          ? 'border-red-300 bg-red-50'
+                          : 'border-gray-300'
+                      }`}
+                    />
+                  </div>
+                  {clientFormErrors.phone && (
+                    <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {clientFormErrors.phone}
+                    </p>
+                  )}
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Telefone *</label>
-                <input
-                  type="tel"
-                  value={quickClientPhone}
-                  onChange={(e) => setQuickClientPhone(e.target.value)}
-                  placeholder="(11) 99999-9999"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  required
-                />
-              </div>
+              {/* Botão para expandir campos opcionais */}
+              <button
+                type="button"
+                onClick={() => setShowOptionalFields(!showOptionalFields)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <span className="text-sm font-medium text-gray-700">
+                  Informações Adicionais (opcional)
+                </span>
+                {showOptionalFields ? (
+                  <ChevronUp className="w-4 h-4 text-gray-500" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                )}
+              </button>
 
-              <div className="flex gap-3 pt-2">
+              {/* Seção Opcional (expansível) */}
+              {showOptionalFields && (
+                <div className="space-y-4 pt-2">
+                  {/* Email */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <Mail className="w-4 h-4 inline mr-1" />
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={quickClientEmail}
+                      onChange={(e) => setQuickClientEmail(e.target.value)}
+                      placeholder="email@exemplo.com"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                    />
+                  </div>
+
+                  {/* Notas Técnicas */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <FileText className="w-4 h-4 inline mr-1" />
+                      Notas Técnicas
+                    </label>
+                    <textarea
+                      value={quickClientTechNotes}
+                      onChange={(e) => setQuickClientTechNotes(e.target.value)}
+                      rows={2}
+                      placeholder="Ex: Cabelo fino, sensível a amônia..."
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none"
+                    />
+                  </div>
+
+                  {/* Preferências */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <Heart className="w-4 h-4 inline mr-1" />
+                      Preferências do Cliente
+                    </label>
+                    <textarea
+                      value={quickClientPreferences}
+                      onChange={(e) => setQuickClientPreferences(e.target.value)}
+                      rows={2}
+                      placeholder="Ex: Prefere horários pela manhã, gosta de música ambiente..."
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Botões de ação */}
+              <div className="flex gap-3 pt-4 border-t border-gray-100">
                 <button
                   type="button"
                   onClick={() => {
                     setShowQuickClientModal(false);
-                    setQuickClientName('');
-                    setQuickClientPhone('');
+                    resetClientForm();
                   }}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={actionLoading}
-                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                  disabled={actionLoading || !isClientFormValid()}
+                  className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors flex items-center justify-center gap-2"
                 >
+                  {actionLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                   {actionLoading ? 'Salvando...' : 'Cadastrar e Vincular'}
                 </button>
               </div>
