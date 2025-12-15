@@ -717,6 +717,10 @@ export class CommandsService {
 
   /**
    * Auto-close interno (chamado quando pagamento quita a comanda)
+   *
+   * IMPORTANTE: Operações não-críticas (caixa, comissões, fidelidade) são
+   * envolvidas em try/catch para garantir que o pagamento retorne 200
+   * mesmo se alguma operação secundária falhar.
    */
   private async autoCloseCashier(
     commandId: string,
@@ -732,7 +736,7 @@ export class CommandsService {
       throw new NotFoundException('Comanda nao encontrada');
     }
 
-    // Atualiza status para CLOSED
+    // Atualiza status para CLOSED (operação crítica)
     const [closedCommand] = await this.db
       .update(commands)
       .set({
@@ -744,24 +748,38 @@ export class CommandsService {
       .where(eq(commands.id, commandId))
       .returning();
 
+    // === OPERAÇÕES NÃO-CRÍTICAS (não devem derrubar a resposta) ===
+
     // Atualiza totais do caixa por método de pagamento
-    const payments = await this.getPayments(commandId);
-    for (const payment of payments) {
-      // Usa method para compatibilidade com caixa atual
-      await this.cashRegistersService.addSale(
-        command.salonId,
-        payment.method || 'OTHER',
-        parseFloat(payment.netAmount || payment.amount),
-      );
+    try {
+      const payments = await this.getPayments(commandId);
+      for (const payment of payments) {
+        // Usa method para compatibilidade com caixa atual
+        await this.cashRegistersService.addSale(
+          command.salonId,
+          payment.method || 'OTHER',
+          parseFloat(payment.netAmount || payment.amount),
+        );
+      }
+    } catch (err) {
+      console.error('[autoCloseCashier] Erro ao atualizar totais do caixa:', err);
     }
 
     // Se a comanda tem cliente vinculado, atualiza totalVisits e lastVisitDate
     if (command.clientId) {
-      await this.clientsService.updateLastVisit(command.clientId);
+      try {
+        await this.clientsService.updateLastVisit(command.clientId);
+      } catch (err) {
+        console.error('[autoCloseCashier] Erro ao atualizar ultima visita do cliente:', err);
+      }
     }
 
     // Cria comissoes para itens de servico com profissional
-    await this.createCommissionsForCommand(command.salonId, commandId);
+    try {
+      await this.createCommissionsForCommand(command.salonId, commandId);
+    } catch (err) {
+      console.error('[autoCloseCashier] Erro ao criar comissoes:', err);
+    }
 
     // Processa pontos de fidelidade se cliente vinculado
     let loyaltyPointsEarned = 0;
@@ -780,23 +798,27 @@ export class CommandsService {
         tierUpgraded = loyaltyResult.tierUpgraded;
         newTierName = loyaltyResult.newTierName;
       } catch (err) {
-        console.error('Erro ao processar pontos de fidelidade:', err);
+        console.error('[autoCloseCashier] Erro ao processar pontos de fidelidade:', err);
       }
     }
 
     // Registra evento de auto-close
-    const totalPaid = await this.getTotalPaid(commandId);
-    const totalNet = parseFloat(command.totalNet || '0');
+    try {
+      const totalPaid = await this.getTotalPaid(commandId);
+      const totalNet = parseFloat(command.totalNet || '0');
 
-    await this.addEvent(commandId, currentUser.id, 'CASHIER_CLOSED_AUTO', {
-      totalNet,
-      totalPaid,
-      change: totalPaid - totalNet,
-      clientId: command.clientId,
-      loyaltyPointsEarned,
-      tierUpgraded,
-      newTierName,
-    });
+      await this.addEvent(commandId, currentUser.id, 'CASHIER_CLOSED_AUTO', {
+        totalNet,
+        totalPaid,
+        change: totalPaid - totalNet,
+        clientId: command.clientId,
+        loyaltyPointsEarned,
+        tierUpgraded,
+        newTierName,
+      });
+    } catch (err) {
+      console.error('[autoCloseCashier] Erro ao registrar evento:', err);
+    }
 
     return {
       command: closedCommand,
@@ -860,7 +882,11 @@ export class CommandsService {
   }
 
   /**
-   * Fecha comanda no caixa
+   * Fecha comanda no caixa (chamada manual)
+   *
+   * IMPORTANTE: Operações não-críticas (caixa, comissões, fidelidade) são
+   * envolvidas em try/catch para garantir que o fechamento retorne 200
+   * mesmo se alguma operação secundária falhar.
    */
   async closeCashier(commandId: string, currentUser: CurrentUser): Promise<Command> {
     const command = await this.findById(commandId);
@@ -887,6 +913,7 @@ export class CommandsService {
       );
     }
 
+    // Atualiza status para CLOSED (operação crítica)
     const [closedCommand] = await this.db
       .update(commands)
       .set({
@@ -898,22 +925,36 @@ export class CommandsService {
       .where(eq(commands.id, commandId))
       .returning();
 
+    // === OPERAÇÕES NÃO-CRÍTICAS (não devem derrubar a resposta) ===
+
     // Atualiza totais do caixa por método de pagamento
-    for (const payment of payments) {
-      await this.cashRegistersService.addSale(
-        command.salonId,
-        payment.method || 'OTHER',
-        parseFloat(payment.netAmount || payment.amount),
-      );
+    try {
+      for (const payment of payments) {
+        await this.cashRegistersService.addSale(
+          command.salonId,
+          payment.method || 'OTHER',
+          parseFloat(payment.netAmount || payment.amount),
+        );
+      }
+    } catch (err) {
+      console.error('[closeCashier] Erro ao atualizar totais do caixa:', err);
     }
 
     // Se a comanda tem cliente vinculado, atualiza totalVisits e lastVisitDate
     if (command.clientId) {
-      await this.clientsService.updateLastVisit(command.clientId);
+      try {
+        await this.clientsService.updateLastVisit(command.clientId);
+      } catch (err) {
+        console.error('[closeCashier] Erro ao atualizar ultima visita do cliente:', err);
+      }
     }
 
     // Cria comissoes para itens de servico com profissional
-    await this.createCommissionsForCommand(command.salonId, commandId);
+    try {
+      await this.createCommissionsForCommand(command.salonId, commandId);
+    } catch (err) {
+      console.error('[closeCashier] Erro ao criar comissoes:', err);
+    }
 
     // Processa pontos de fidelidade se cliente vinculado
     let loyaltyPointsEarned = 0;
@@ -932,21 +973,24 @@ export class CommandsService {
         tierUpgraded = loyaltyResult.tierUpgraded;
         newTierName = loyaltyResult.newTierName;
       } catch (err) {
-        // Se houver erro no processamento de fidelidade, não impede o fechamento
-        console.error('Erro ao processar pontos de fidelidade:', err);
+        console.error('[closeCashier] Erro ao processar pontos de fidelidade:', err);
       }
     }
 
     // Registra evento
-    await this.addEvent(commandId, currentUser.id, 'CASHIER_CLOSED', {
-      totalNet,
-      totalPaid,
-      change: totalPaid - totalNet,
-      clientId: command.clientId,
-      loyaltyPointsEarned,
-      tierUpgraded,
-      newTierName,
-    });
+    try {
+      await this.addEvent(commandId, currentUser.id, 'CASHIER_CLOSED', {
+        totalNet,
+        totalPaid,
+        change: totalPaid - totalNet,
+        clientId: command.clientId,
+        loyaltyPointsEarned,
+        tierUpgraded,
+        newTierName,
+      });
+    } catch (err) {
+      console.error('[closeCashier] Erro ao registrar evento:', err);
+    }
 
     return closedCommand;
   }
