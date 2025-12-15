@@ -232,6 +232,10 @@ export function CommandPage() {
   const [clientHairProfile, setClientHairProfile] = useState<HairProfile | null>(null);
   const [, setHairProfileLoading] = useState(false);
 
+  // Profile Nudge Modal state (shown after creating a new client)
+  const [showProfileNudgeModal, setShowProfileNudgeModal] = useState(false);
+  const [newlyCreatedClient, setNewlyCreatedClient] = useState<{ id: string; name: string } | null>(null);
+
   // Loyalty state
   const [appliedVoucher, setAppliedVoucher] = useState<any>(null);
   const [showPointsEarned, setShowPointsEarned] = useState(false);
@@ -563,7 +567,13 @@ export function CommandPage() {
       // Recarregar comanda para mostrar cliente vinculado
       await loadCommand();
 
-      // Feedback visual (opcional: poderia usar toast)
+      // Armazenar info do cliente recém-criado e mostrar nudge para Perfil Capilar
+      // (clientes novos nunca têm perfil capilar, então sempre mostramos o nudge)
+      setNewlyCreatedClient({
+        id: createResponse.data.id,
+        name: quickClientName.trim(),
+      });
+      setShowProfileNudgeModal(true);
     } catch (err: any) {
       // Exibir erro do backend de forma amigável
       const message = err.response?.data?.message;
@@ -2091,6 +2101,51 @@ export function CommandPage() {
                 className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
               >
                 Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Recomendação de Perfil Capilar (após criar cliente) */}
+      {showProfileNudgeModal && newlyCreatedClient && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4 shadow-xl">
+            {/* Header com ícone */}
+            <div className="flex flex-col items-center text-center mb-6">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mb-4">
+                <Sparkles className="w-8 h-8 text-white" />
+              </div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                Cadastrar Perfil Capilar?
+              </h2>
+              <p className="text-gray-600 text-sm leading-relaxed">
+                Para que a <span className="font-medium text-purple-600">Alexis</span> (nossa IA) possa fazer recomendações
+                personalizadas de produtos e tratamentos, é importante cadastrar o perfil capilar de{' '}
+                <span className="font-medium">{newlyCreatedClient.name}</span>.
+              </p>
+            </div>
+
+            {/* Botões */}
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  setShowProfileNudgeModal(false);
+                  setShowHairProfileModal(true);
+                }}
+                className="w-full px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-medium hover:from-purple-700 hover:to-pink-700 transition-all flex items-center justify-center gap-2"
+              >
+                <Scissors className="w-5 h-5" />
+                Cadastrar Perfil Agora
+              </button>
+              <button
+                onClick={() => {
+                  setShowProfileNudgeModal(false);
+                  setNewlyCreatedClient(null);
+                }}
+                className="w-full px-4 py-2.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg font-medium transition-colors"
+              >
+                Agora não
               </button>
             </div>
           </div>
