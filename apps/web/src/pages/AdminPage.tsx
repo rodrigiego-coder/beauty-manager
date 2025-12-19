@@ -267,6 +267,45 @@ export function AdminPage() {
     }
   };
 
+  // Impersonate salon (Support Mode)
+  const handleImpersonateSalon = async (salonId: string, salonName: string) => {
+    const reason = prompt('Motivo do acesso (obrigatório para compliance):');
+    if (!reason || reason.length < 10) {
+      alert('O motivo deve ter pelo menos 10 caracteres.');
+      return;
+    }
+
+    try {
+      // 1. Criar sessão de suporte
+      const { data: session } = await api.post('/support/impersonate', { salonId, reason });
+
+      // 2. Consumir token imediatamente
+      const { data: auth } = await api.post('/support/consume-token', { token: session.token });
+
+      // 3. Salvar token atual como backup e usar o novo
+      const currentToken = localStorage.getItem('accessToken');
+      localStorage.setItem('accessToken_backup', currentToken || '');
+      localStorage.setItem('accessToken', auth.accessToken);
+
+      // 4. Marcar modo suporte
+      localStorage.setItem('supportMode', JSON.stringify({
+        active: true,
+        salonId,
+        salonName,
+        expiresAt: new Date(Date.now() + auth.expiresIn * 1000).toISOString(),
+      }));
+
+      // 5. Fechar modal e redirecionar
+      setShowSalonModal(false);
+      setSelectedSalon(null);
+      alert(`Entrando como "${salonName}". Você será redirecionado.`);
+      window.location.href = '/';
+    } catch (err) {
+      console.error('Error impersonating salon:', err);
+      alert('Erro ao acessar salão. Verifique suas permissões.');
+    }
+  };
+
   // Format currency
   const formatCurrency = (value: number | string) => {
     const num = typeof value === 'string' ? parseFloat(value) : value;
@@ -792,6 +831,12 @@ export function AdminPage() {
                   Suspender Salão
                 </button>
               ) : null}
+              <button
+                onClick={() => handleImpersonateSalon(selectedSalon.id, selectedSalon.name)}
+                className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+              >
+                Entrar como Este Salão
+              </button>
               <button
                 onClick={() => {
                   setShowSalonModal(false);

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
+import { SupportModeBanner } from '../components/SupportModeBanner';
 import { Bell, LogOut, User, Settings, ChevronDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -50,6 +51,7 @@ export function MainLayout() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <SupportModeBanner />
       <Sidebar />
 
       <div className="pl-64">
