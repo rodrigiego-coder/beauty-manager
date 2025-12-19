@@ -10,6 +10,7 @@ import {
   users,
 } from '../../database/schema';
 import { SalonSubscriptionsService } from '../subscriptions/salon-subscriptions.service';
+import { AuditService } from '../audit/audit.service';
 
 export interface DashboardMetrics {
   totalSalons: number;
@@ -29,6 +30,7 @@ export interface DashboardMetrics {
 export class AdminService {
   constructor(
     private readonly subscriptionsService: SalonSubscriptionsService,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -223,7 +225,12 @@ export class AdminService {
   /**
    * Suspend a salon's subscription
    */
-  async suspendSalon(salonId: string, reason?: string): Promise<void> {
+  async suspendSalon(
+    salonId: string,
+    reason?: string,
+    adminUserId?: string,
+    ipAddress?: string,
+  ): Promise<void> {
     const subscription = await db
       .select()
       .from(salonSubscriptions)
@@ -233,6 +240,8 @@ export class AdminService {
     if (subscription.length === 0) {
       throw new NotFoundException('Assinatura não encontrada');
     }
+
+    const previousStatus = subscription[0].status;
 
     await db
       .update(salonSubscriptions)
@@ -247,16 +256,34 @@ export class AdminService {
     await db.insert(subscriptionEvents).values({
       subscriptionId: subscription[0].id,
       type: 'SUSPENDED',
-      previousValue: subscription[0].status,
+      previousValue: previousStatus,
       newValue: 'SUSPENDED',
       metadata: { reason },
     });
+
+    // Registra no audit log
+    if (adminUserId) {
+      await this.auditService.log({
+        userId: adminUserId,
+        salonId,
+        action: 'UPDATE',
+        entity: 'salon_subscriptions',
+        entityId: subscription[0].id,
+        oldValues: { status: previousStatus },
+        newValues: { status: 'SUSPENDED', reason },
+        ipAddress,
+      });
+    }
   }
 
   /**
    * Activate a salon's subscription
    */
-  async activateSalon(salonId: string): Promise<void> {
+  async activateSalon(
+    salonId: string,
+    adminUserId?: string,
+    ipAddress?: string,
+  ): Promise<void> {
     const subscription = await db
       .select()
       .from(salonSubscriptions)
@@ -267,6 +294,7 @@ export class AdminService {
       throw new NotFoundException('Assinatura não encontrada');
     }
 
+    const previousStatus = subscription[0].status;
     const now = new Date();
     const periodEnd = new Date(now);
     periodEnd.setMonth(periodEnd.getMonth() + 1);
@@ -285,9 +313,23 @@ export class AdminService {
     await db.insert(subscriptionEvents).values({
       subscriptionId: subscription[0].id,
       type: 'REACTIVATED',
-      previousValue: subscription[0].status,
+      previousValue: previousStatus,
       newValue: 'ACTIVE',
     });
+
+    // Registra no audit log
+    if (adminUserId) {
+      await this.auditService.log({
+        userId: adminUserId,
+        salonId,
+        action: 'UPDATE',
+        entity: 'salon_subscriptions',
+        entityId: subscription[0].id,
+        oldValues: { status: previousStatus },
+        newValues: { status: 'ACTIVE' },
+        ipAddress,
+      });
+    }
   }
 
   /**

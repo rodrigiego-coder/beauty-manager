@@ -7,11 +7,13 @@ import {
   Body,
   Query,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('admin')
 @UseGuards(AuthGuard, RolesGuard)
@@ -53,8 +55,15 @@ export class AdminController {
   async suspendSalon(
     @Param('id') salonId: string,
     @Body() body: { reason?: string },
+    @CurrentUser('id') adminUserId: string,
+    @Req() request: any,
   ) {
-    await this.adminService.suspendSalon(salonId, body.reason);
+    await this.adminService.suspendSalon(
+      salonId,
+      body.reason,
+      adminUserId,
+      request.ip || request.connection?.remoteAddress,
+    );
     return { success: true, message: 'Salão suspenso com sucesso' };
   }
 
@@ -62,8 +71,16 @@ export class AdminController {
    * POST /admin/salons/:id/activate - Activate salon
    */
   @Post('salons/:id/activate')
-  async activateSalon(@Param('id') salonId: string) {
-    await this.adminService.activateSalon(salonId);
+  async activateSalon(
+    @Param('id') salonId: string,
+    @CurrentUser('id') adminUserId: string,
+    @Req() request: any,
+  ) {
+    await this.adminService.activateSalon(
+      salonId,
+      adminUserId,
+      request.ip || request.connection?.remoteAddress,
+    );
     return { success: true, message: 'Salão ativado com sucesso' };
   }
 

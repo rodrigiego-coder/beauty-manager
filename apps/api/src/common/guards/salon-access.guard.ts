@@ -45,6 +45,21 @@ export class SalonAccessGuard implements CanActivate {
       return true;
     }
 
+    // SUPER_ADMIN em modo suporte delegado: só pode acessar o salão selecionado
+    if (user.role === 'SUPER_ADMIN' && user.actingAsSalonId) {
+      if (user.actingAsSalonId !== requestSalonId) {
+        throw new ForbiddenException(
+          'Modo suporte: você só pode acessar dados do salão selecionado',
+        );
+      }
+      return true;
+    }
+
+    // SUPER_ADMIN sem actingAsSalonId pode acessar qualquer salão (console admin)
+    if (user.role === 'SUPER_ADMIN') {
+      return true;
+    }
+
     // Verifica se o usuário pertence ao salão sendo acessado
     if (user.salonId !== requestSalonId) {
       throw new ForbiddenException(

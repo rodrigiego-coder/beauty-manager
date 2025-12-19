@@ -33,9 +33,8 @@ import { CommissionsModule } from './modules/commissions';
 import { TeamModule } from './modules/team';
 import { PlansModule } from './modules/plans';
 import { MercadoPagoModule } from './modules/mercado-pago';
-import { AsaasModule } from './modules/asaas';
-import { BillingModule } from './modules/billing';
 import { AdminModule } from './modules/admin';
+import { SupportModule } from './modules/support';
 import { JobsModule } from './jobs';
 import { CalendarModule } from './modules/calendar';
 import { AutomationModule } from './modules/automation/automation.module';
@@ -53,6 +52,8 @@ import { PackagesModule } from './modules/packages/packages.module';
 import { ClientPackagesModule } from './modules/client-packages/client-packages.module';
 import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.module';
 import { PaymentDestinationsModule } from './modules/payment-destinations/payment-destinations.module';
+import { AsaasModule } from './modules/asaas';
+import { BillingModule } from './modules/billing';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -71,8 +72,7 @@ import { PaymentDestinationsModule } from './modules/payment-destinations/paymen
         {
           ttl: 60000, // 1 minuto
           limit: 100, // max 100 requests por minuto
-        },
-      ],
+        }],
     }),
     DatabaseModule,
     // Modulos de seguranca e compliance
@@ -113,12 +113,13 @@ import { PaymentDestinationsModule } from './modules/payment-destinations/paymen
     PlansModule,
     // Modulo MercadoPago
     MercadoPagoModule,
-    // Modulo ASAAS (Billing)
+    // Modulo Asaas + Billing
     AsaasModule,
     BillingModule,
-
     // Modulo Admin (SUPER_ADMIN)
     AdminModule,
+    // Modulo de Suporte Delegado (SUPER_ADMIN)
+    SupportModule,
     // Jobs agendados
     JobsModule,
     // Integração Google Calendar (completa)
@@ -143,8 +144,7 @@ import { PaymentDestinationsModule } from './modules/payment-destinations/paymen
     AlexisModule,
     // Módulos de Pacotes de Serviços
     PackagesModule,
-    ClientPackagesModule,
-  ],
+    ClientPackagesModule],
   controllers: [AppController],
   providers: [
     // Interceptor global de auditoria
@@ -176,9 +176,9 @@ import { PaymentDestinationsModule } from './modules/payment-destinations/paymen
     {
       provide: APP_GUARD,
       useClass: SubscriptionGuard,
-    },
-  ],
+    }],
 })
 export class AppModule {}
+
 
 

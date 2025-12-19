@@ -1165,6 +1165,25 @@ export const refreshTokenBlacklist = pgTable('refresh_token_blacklist', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+/**
+ * Tabela de Sessões de Suporte Delegado (SUPER_ADMIN)
+ * Permite que administradores acessem temporariamente um salão específico
+ * para suporte técnico, com auditoria completa.
+ */
+export const supportSessions = pgTable('support_sessions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  adminUserId: uuid('admin_user_id').references(() => users.id).notNull(),
+  targetSalonId: uuid('target_salon_id').references(() => salons.id).notNull(),
+  token: varchar('token', { length: 64 }).notNull().unique(),
+  reason: text('reason'),
+  status: varchar('status', { length: 20 }).default('PENDING').notNull(), // PENDING, CONSUMED, EXPIRED, REVOKED
+  expiresAt: timestamp('expires_at').notNull(),
+  consumedAt: timestamp('consumed_at'),
+  ipAddress: varchar('ip_address', { length: 45 }),
+  userAgent: text('user_agent'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // Types inferidos do schema
 export type Salon = typeof salons.$inferSelect;
 export type NewSalon = typeof salons.$inferInsert;
@@ -1198,6 +1217,8 @@ export type ClientPackage = typeof clientPackages.$inferSelect;
 export type NewClientPackage = typeof clientPackages.$inferInsert;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type NewAuditLog = typeof auditLogs.$inferInsert;
+export type SupportSession = typeof supportSessions.$inferSelect;
+export type NewSupportSession = typeof supportSessions.$inferInsert;
 
 // Types para Sistema de Assinaturas (Novo)
 export type Plan = typeof plans.$inferSelect;

@@ -35,7 +35,7 @@ export class SubscriptionGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
-    const path = request.path;
+    const path = (request.url ?? request.raw?.url ?? request.path ?? '') as string;
 
     // Check if route is public
     if (PUBLIC_ROUTES.some(route => path.startsWith(route))) {

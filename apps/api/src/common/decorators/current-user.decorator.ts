@@ -8,7 +8,11 @@ export interface AuthenticatedUser {
   salonId: string;
   email: string;
   name: string;
-  role: 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST';
+  role: 'SUPER_ADMIN' | 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST';
+  /** ID do salão quando SUPER_ADMIN está em modo suporte delegado */
+  actingAsSalonId?: string | null;
+  /** ID da sessão de suporte ativa */
+  supportSessionId?: string | null;
 }
 
 /**

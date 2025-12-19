@@ -54,6 +54,9 @@ export class AuthGuard implements CanActivate {
         email: payload.email,
         role: payload.role,
         salonId: payload.salonId,
+        // Campos para suporte delegado (SUPER_ADMIN)
+        actingAsSalonId: payload.actingAsSalonId || null,
+        supportSessionId: payload.supportSessionId || null,
       };
 
     } catch (error) {
