@@ -55,6 +55,8 @@ export function ProductsPage() {
     currentStock: 0,
     minStock: 0,
     unit: 'UN',
+    isRetail: true,
+    isBackbar: false,
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -172,6 +174,8 @@ export function ProductsPage() {
       currentStock: 0,
       minStock: 0,
       unit: 'UN',
+      isRetail: true,
+      isBackbar: false,
     });
     setFormErrors({});
     setShowCreateModal(true);
@@ -187,6 +191,8 @@ export function ProductsPage() {
       currentStock: product.currentStock,
       minStock: product.minStock,
       unit: product.unit,
+      isRetail: product.isRetail,
+      isBackbar: product.isBackbar,
     });
     setFormErrors({});
     setShowEditModal(true);
@@ -727,6 +733,31 @@ export function ProductsPage() {
                 </div>
               </div>
 
+              {/* Flags Retail/Backbar */}
+              <div className="border-t border-gray-200 pt-4 mt-4">
+                <p className="text-sm font-medium text-gray-700 mb-3">Tipo de Produto</p>
+                <div className="flex gap-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.isRetail}
+                      onChange={(e) => setFormData({ ...formData, isRetail: e.target.checked })}
+                      className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-gray-700">Vendavel (Retail)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.isBackbar}
+                      onChange={(e) => setFormData({ ...formData, isBackbar: e.target.checked })}
+                      className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-gray-700">Uso no salao (Backbar)</span>
+                  </label>
+                </div>
+              </div>
+
               {formErrors.submit && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
                   {formErrors.submit}
@@ -893,6 +924,31 @@ export function ProductsPage() {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                     min="0"
                   />
+                </div>
+              </div>
+
+              {/* Flags Retail/Backbar */}
+              <div className="border-t border-gray-200 pt-4 mt-4">
+                <p className="text-sm font-medium text-gray-700 mb-3">Tipo de Produto</p>
+                <div className="flex gap-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.isRetail}
+                      onChange={(e) => setFormData({ ...formData, isRetail: e.target.checked })}
+                      className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-gray-700">Vendavel (Retail)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.isBackbar}
+                      onChange={(e) => setFormData({ ...formData, isBackbar: e.target.checked })}
+                      className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-gray-700">Uso no salao (Backbar)</span>
+                  </label>
                 </div>
               </div>
 

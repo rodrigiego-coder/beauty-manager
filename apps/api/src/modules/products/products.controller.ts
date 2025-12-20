@@ -39,12 +39,14 @@ export class ProductsController {
     @Query('search') search?: string,
     @Query('includeInactive') includeInactive?: string,
     @Query('lowStockOnly') lowStockOnly?: string,
+    @Query('retailOnly') retailOnly?: string,
   ) {
     return this.productsService.findAll({
       salonId: user.salonId,
       search,
       includeInactive: includeInactive === 'true',
       lowStockOnly: lowStockOnly === 'true',
+      retailOnly: retailOnly === 'true',
     });
   }
 

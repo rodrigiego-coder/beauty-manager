@@ -44,6 +44,14 @@ export class CreateProductDto {
   @IsIn(['UN', 'ML', 'KG', 'L', 'G'], { message: 'Unidade deve ser UN, ML, KG, L ou G' })
   @IsOptional()
   unit?: 'UN' | 'ML' | 'KG' | 'L' | 'G';
+
+  @IsBoolean({ message: 'isRetail deve ser um booleano' })
+  @IsOptional()
+  isRetail?: boolean;
+
+  @IsBoolean({ message: 'isBackbar deve ser um booleano' })
+  @IsOptional()
+  isBackbar?: boolean;
 }
 
 // DTO para atualizar produto
@@ -85,6 +93,14 @@ export class UpdateProductDto {
   @IsBoolean({ message: 'Active deve ser um booleano' })
   @IsOptional()
   active?: boolean;
+
+  @IsBoolean({ message: 'isRetail deve ser um booleano' })
+  @IsOptional()
+  isRetail?: boolean;
+
+  @IsBoolean({ message: 'isBackbar deve ser um booleano' })
+  @IsOptional()
+  isBackbar?: boolean;
 }
 
 // DTO para ajuste de estoque

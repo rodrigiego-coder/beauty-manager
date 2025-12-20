@@ -15,6 +15,7 @@ export interface FindAllOptions {
   search?: string;
   includeInactive?: boolean;
   lowStockOnly?: boolean;
+  retailOnly?: boolean;
 }
 
 export interface AdjustStockData {
@@ -34,7 +35,7 @@ export class ProductsService {
    * Lista todos os produtos do salão com filtros opcionais
    */
   async findAll(options: FindAllOptions): Promise<Product[]> {
-    const { salonId, search, includeInactive, lowStockOnly } = options;
+    const { salonId, search, includeInactive, lowStockOnly, retailOnly } = options;
 
     // Construir condições
     const conditions = [eq(products.salonId, salonId)];
@@ -42,6 +43,11 @@ export class ProductsService {
     // Filtro de ativos/inativos
     if (!includeInactive) {
       conditions.push(eq(products.active, true));
+    }
+
+    // Filtro de produtos vendáveis (retail)
+    if (retailOnly) {
+      conditions.push(eq(products.isRetail, true));
     }
 
     // Busca por nome ou descrição

@@ -395,7 +395,8 @@ export function CommandPage() {
 
   const loadProducts = async () => {
     try {
-      const response = await api.get('/products');
+      // Filtrar apenas produtos vendáveis (retail)
+      const response = await api.get('/products?retailOnly=true');
       setAvailableProducts(response.data);
     } catch (err) {
       console.error('Erro ao carregar produtos:', err);

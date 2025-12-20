@@ -986,6 +986,9 @@ export const products = pgTable('products', {
   minStock: integer('min_stock').default(0).notNull(),
   unit: unitEnum('unit').default('UN').notNull(),
   active: boolean('active').default(true).notNull(),
+  // Flags Retail/Backbar (PACOTE 2-A)
+  isRetail: boolean('is_retail').default(true).notNull(),
+  isBackbar: boolean('is_backbar').default(false).notNull(),
   // Campos de Inteligência de Produto
   hairTypes: json('hair_types').$type<string[]>().default([]), // Tipos de cabelo indicados
   concerns: json('concerns').$type<string[]>().default([]), // Problemas/necessidades que resolve
