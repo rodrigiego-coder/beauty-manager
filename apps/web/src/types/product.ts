@@ -11,8 +11,6 @@ export interface Product {
   minStock: number;
   unit: ProductUnit;
   active: boolean;
-  isRetail: boolean;
-  isBackbar: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -25,8 +23,6 @@ export interface CreateProductData {
   currentStock?: number;
   minStock?: number;
   unit?: ProductUnit;
-  isRetail?: boolean;
-  isBackbar?: boolean;
 }
 
 export interface UpdateProductData {
@@ -38,8 +34,6 @@ export interface UpdateProductData {
   minStock?: number;
   unit?: ProductUnit;
   active?: boolean;
-  isRetail?: boolean;
-  isBackbar?: boolean;
 }
 
 export interface AdjustStockData {
