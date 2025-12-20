@@ -9,6 +9,8 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { ConsumedProductsService } from './consumed-products.service';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { JwtPayload } from '../auth/jwt.strategy';
 
 @Controller('consumed-products')
 export class ConsumedProductsController {
@@ -56,6 +58,7 @@ export class ConsumedProductsController {
    */
   @Post()
   async register(
+    @CurrentUser() user: JwtPayload,
     @Body()
     data: {
       appointmentId: string;
@@ -63,7 +66,11 @@ export class ConsumedProductsController {
       quantityUsed: number;
     },
   ) {
-    return this.consumedProductsService.register(data);
+    return this.consumedProductsService.register({
+      ...data,
+      salonId: user.salonId,
+      userId: user.id,
+    });
   }
 
   /**
@@ -71,8 +78,14 @@ export class ConsumedProductsController {
    * Remove um consumo (estorna o estoque)
    */
   @Delete(':id')
-  async remove(@Param('id', ParseIntPipe) id: number) {
-    const removed = await this.consumedProductsService.remove(id);
+  async remove(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const removed = await this.consumedProductsService.remove(id, {
+      salonId: user.salonId,
+      userId: user.id,
+    });
 
     if (!removed) {
       throw new NotFoundException('Consumo nao encontrado');

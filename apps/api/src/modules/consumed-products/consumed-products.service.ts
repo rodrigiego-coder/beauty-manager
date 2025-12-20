@@ -1,4 +1,4 @@
-import { Injectable, Inject, BadRequestException } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.module';
 import {
@@ -9,12 +9,14 @@ import {
   products,
   appointments,
 } from '../../database';
+import { ProductsService } from '../products/products.service';
 
 @Injectable()
 export class ConsumedProductsService {
   constructor(
     @Inject(DATABASE_CONNECTION)
     private db: Database,
+    private readonly productsService: ProductsService,
   ) {}
 
   /**
@@ -37,25 +39,26 @@ export class ConsumedProductsService {
   /**
    * Registra consumo de produto em atendimento
    * - Busca o custo atual do produto
-   * - Desconta do estoque
+   * - Desconta do estoque via ProductsService.adjustStock (auditoria em stock_adjustments)
    * - Registra o consumo com o custo no momento
    */
   async register(data: {
     appointmentId: string;
     productId: number;
     quantityUsed: number;
+    salonId: string;
+    userId: string;
   }): Promise<ConsumedProduct> {
     // Busca o produto para obter o custo atual
-    const productResult = await this.db
-      .select()
-      .from(products)
-      .where(eq(products.id, data.productId))
-      .limit(1);
-
-    const product = productResult[0];
+    const product = await this.productsService.findById(data.productId);
 
     if (!product) {
-      throw new BadRequestException('Produto nao encontrado');
+      throw new NotFoundException('Produto nao encontrado');
+    }
+
+    // Validação multi-tenant
+    if (product.salonId !== data.salonId) {
+      throw new NotFoundException('Produto nao encontrado');
     }
 
     if (!product.active) {
@@ -69,21 +72,24 @@ export class ConsumedProductsService {
       );
     }
 
-    // Desconta do estoque
-    await this.db
-      .update(products)
-      .set({
-        currentStock: product.currentStock - data.quantityUsed,
-        updatedAt: new Date(),
-      })
-      .where(eq(products.id, data.productId));
+    // Desconta do estoque via ProductsService (registra em stock_adjustments)
+    await this.productsService.adjustStock(
+      data.productId,
+      data.salonId,
+      data.userId,
+      {
+        quantity: data.quantityUsed,
+        type: 'OUT',
+        reason: 'SERVICE_CONSUMPTION',
+      },
+    );
 
     // Registra o consumo com o custo no momento
     const consumed: NewConsumedProduct = {
       appointmentId: data.appointmentId,
       productId: data.productId,
       quantityUsed: data.quantityUsed.toString(),
-      costAtTime: product.costPrice, // Custo no momento do uso
+      costAtTime: product.costPrice,
     };
 
     const result = await this.db
@@ -172,9 +178,12 @@ export class ConsumedProductsService {
   }
 
   /**
-   * Remove um consumo (estorna o estoque)
+   * Remove um consumo (estorna o estoque via ProductsService.adjustStock)
    */
-  async remove(id: number): Promise<boolean> {
+  async remove(
+    id: number,
+    ctx: { salonId: string; userId: string },
+  ): Promise<boolean> {
     // Busca o consumo para estornar o estoque
     const consumedResult = await this.db
       .select()
@@ -188,24 +197,29 @@ export class ConsumedProductsService {
       return false;
     }
 
-    // Estorna o estoque
-    const productResult = await this.db
-      .select()
-      .from(products)
-      .where(eq(products.id, consumed.productId))
-      .limit(1);
+    // Busca o produto para validar tenant
+    const product = await this.productsService.findById(consumed.productId);
 
-    const product = productResult[0];
-
-    if (product) {
-      await this.db
-        .update(products)
-        .set({
-          currentStock: product.currentStock + parseFloat(consumed.quantityUsed),
-          updatedAt: new Date(),
-        })
-        .where(eq(products.id, consumed.productId));
+    if (!product) {
+      return false;
     }
+
+    // Validação multi-tenant
+    if (product.salonId !== ctx.salonId) {
+      return false;
+    }
+
+    // Estorna o estoque via ProductsService (registra em stock_adjustments)
+    await this.productsService.adjustStock(
+      consumed.productId,
+      ctx.salonId,
+      ctx.userId,
+      {
+        quantity: parseFloat(consumed.quantityUsed),
+        type: 'IN',
+        reason: 'SERVICE_CONSUMPTION_REVERT',
+      },
+    );
 
     // Remove o registro
     await this.db.delete(consumedProducts).where(eq(consumedProducts.id, id));
