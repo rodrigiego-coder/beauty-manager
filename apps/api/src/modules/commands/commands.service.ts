@@ -32,6 +32,7 @@ import { CashRegistersService } from '../cash-registers';
 import { ClientsService } from '../clients';
 import { CommissionsService } from '../commissions';
 import { LoyaltyService } from '../loyalty/loyalty.service';
+import { ProductsService } from '../products';
 
 // Interface para resultado de pagamento (exportada para controller)
 export interface AddPaymentResult {
@@ -59,6 +60,7 @@ export class CommandsService {
     private clientsService: ClientsService,
     private commissionsService: CommissionsService,
     private loyaltyService: LoyaltyService,
+    private productsService: ProductsService,
   ) {}
 
   /**
@@ -303,6 +305,23 @@ export class CommandsService {
     const discount = data.discount || 0;
     const totalPrice = (quantity * data.unitPrice) - discount;
 
+    // Se for PRODUTO, baixar estoque antes de adicionar
+    if (data.type === 'PRODUCT' && data.referenceId) {
+      const productId = parseInt(data.referenceId, 10);
+      if (!isNaN(productId)) {
+        await this.productsService.adjustStock(
+          productId,
+          command.salonId,
+          currentUser.id,
+          {
+            quantity,
+            type: 'OUT',
+            reason: `Venda - Comanda ${command.cardNumber}`,
+          }
+        );
+      }
+    }
+
     // Adiciona o item
     const [item] = await this.db
       .insert(commandItems)
@@ -377,10 +396,36 @@ export class CommandsService {
       throw new BadRequestException('Item ja foi cancelado');
     }
 
-    const quantity = data.quantity ?? parseFloat(existingItem.quantity);
+    const oldQuantity = parseFloat(existingItem.quantity);
+    const quantity = data.quantity ?? oldQuantity;
     const unitPrice = data.unitPrice ?? parseFloat(existingItem.unitPrice);
     const discount = data.discount ?? parseFloat(existingItem.discount || '0');
     const totalPrice = (quantity * unitPrice) - discount;
+
+    // Se for PRODUTO e quantidade mudou, ajustar estoque
+    if (existingItem.type === 'PRODUCT' && existingItem.referenceId && quantity !== oldQuantity) {
+      const productId = parseInt(existingItem.referenceId, 10);
+      if (!isNaN(productId)) {
+        const diff = quantity - oldQuantity;
+        if (diff > 0) {
+          // Aumentou quantidade = baixar mais estoque
+          await this.productsService.adjustStock(
+            productId,
+            command.salonId,
+            currentUser.id,
+            { quantity: diff, type: 'OUT', reason: `Ajuste qty - Comanda ${command.cardNumber}` }
+          );
+        } else if (diff < 0) {
+          // Diminuiu quantidade = devolver estoque
+          await this.productsService.adjustStock(
+            productId,
+            command.salonId,
+            currentUser.id,
+            { quantity: Math.abs(diff), type: 'IN', reason: `Devolução qty - Comanda ${command.cardNumber}` }
+          );
+        }
+      }
+    }
 
     const [updatedItem] = await this.db
       .update(commandItems)
@@ -446,6 +491,20 @@ export class CommandsService {
 
     if (existingItem.canceledAt) {
       throw new BadRequestException('Item ja foi cancelado');
+    }
+
+    // Se for PRODUTO, devolver estoque
+    if (existingItem.type === 'PRODUCT' && existingItem.referenceId) {
+      const productId = parseInt(existingItem.referenceId, 10);
+      if (!isNaN(productId)) {
+        const qty = parseFloat(existingItem.quantity);
+        await this.productsService.adjustStock(
+          productId,
+          command.salonId,
+          currentUser.id,
+          { quantity: qty, type: 'IN', reason: `Cancelamento item - Comanda ${command.cardNumber}` }
+        );
+      }
     }
 
     const [canceledItem] = await this.db

@@ -5,6 +5,7 @@ import { CashRegistersModule } from '../cash-registers';
 import { ClientsModule } from '../clients';
 import { CommissionsModule } from '../commissions';
 import { LoyaltyModule } from '../loyalty';
+import { ProductsModule } from '../products';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { LoyaltyModule } from '../loyalty';
     forwardRef(() => ClientsModule),
     forwardRef(() => CommissionsModule),
     forwardRef(() => LoyaltyModule),
+    forwardRef(() => ProductsModule),
   ],
   controllers: [CommandsController],
   providers: [CommandsService],
