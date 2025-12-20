@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsNumber,
+  IsNumberString,
   IsUUID,
   IsEnum,
   Min,
@@ -37,8 +38,8 @@ export enum PaymentMethod {
 // DTO para abrir comanda
 export class OpenCommandDto {
   @IsString({ message: 'Numero do cartao deve ser uma string' })
-  @IsNotEmpty({ message: 'Numero do cartao e obrigatorio' })
-  cardNumber!: string;
+  @IsOptional()
+  cardNumber?: string;
 
   @IsUUID('4', { message: 'ID do cliente deve ser um UUID valido' })
   @IsOptional()
@@ -78,7 +79,7 @@ export class AddItemDto {
   @IsOptional()
   performerId?: string;
 
-  @IsUUID('4', { message: 'ID de referencia deve ser um UUID valido' })
+  @IsNumberString({}, { message: 'ID de referencia deve ser um numero inteiro' })
   @IsOptional()
   referenceId?: string;
 }

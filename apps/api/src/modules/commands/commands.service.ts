@@ -182,6 +182,9 @@ export class CommandsService {
    * Acesso rápido: busca ou cria comanda automaticamente
    */
   async quickAccess(salonId: string, code: string, currentUser: CurrentUser) {
+    // Valida range 1-999
+    this.validateCommandNumber(code);
+
     const openCommand = await this.findByCardNumber(salonId, code);
 
     if (openCommand) {
@@ -241,10 +244,20 @@ export class CommandsService {
       }
     }
 
+    // Se cardNumber informado, valida range 1-999
+    let cardNumber: string;
+    if (data.cardNumber?.trim()) {
+      cardNumber = data.cardNumber.trim();
+      this.validateCommandNumber(cardNumber);
+    } else {
+      // Gera automaticamente (primeiro disponível)
+      cardNumber = await this.generateNextNumber(salonId);
+    }
+
     // Verifica se já existe comanda aberta com este cartão
-    const existing = await this.findByCardNumber(salonId, data.cardNumber);
+    const existing = await this.findByCardNumber(salonId, cardNumber);
     if (existing) {
-      throw new BadRequestException(`Ja existe uma comanda aberta com o cartao ${data.cardNumber}`);
+      throw new BadRequestException(`Ja existe uma comanda aberta com o cartao ${cardNumber}`);
     }
 
     // Gera código sequencial
@@ -255,7 +268,7 @@ export class CommandsService {
       .insert(commands)
       .values({
         salonId,
-        cardNumber: data.cardNumber,
+        cardNumber,
         code,
         clientId: data.clientId || null,
         notes: data.notes || null,
@@ -266,7 +279,7 @@ export class CommandsService {
 
     // Registra evento
     await this.addEvent(command.id, currentUser.id, 'OPENED', {
-      cardNumber: data.cardNumber,
+      cardNumber,
       clientId: data.clientId,
     });
 
@@ -1277,6 +1290,50 @@ export class CommandsService {
     const todayCount = todayCommands.filter((c) => c.code?.startsWith(prefix)).length;
 
     return `${prefix}-${String(todayCount + 1).padStart(4, '0')}`;
+  }
+
+  /**
+   * Gera próximo número sequencial da comanda (1-999)
+   * Pula números que já estão em uso (comandas não fechadas/canceladas)
+   */
+  private async generateNextNumber(salonId: string): Promise<string> {
+    // Busca números de comandas ABERTAS (não CLOSED, não CANCELED) para saber quais pular
+    const openCommands = await this.db
+      .select({ cardNumber: commands.cardNumber })
+      .from(commands)
+      .where(and(
+        eq(commands.salonId, salonId),
+        ne(commands.status, 'CLOSED'),
+        ne(commands.status, 'CANCELED')
+      ));
+
+    const usedNumbers = new Set(
+      openCommands
+        .map(c => parseInt(c.cardNumber, 10))
+        .filter(n => !isNaN(n) && n >= 1 && n <= 999)
+    );
+
+    // Encontra o próximo número disponível começando de 1
+    let nextNumber = 1;
+    while (usedNumbers.has(nextNumber) && nextNumber <= 999) {
+      nextNumber++;
+    }
+
+    if (nextNumber > 999) {
+      throw new BadRequestException('Limite de 999 comandas atingido. Entre em contato com o suporte.');
+    }
+
+    return String(nextNumber);
+  }
+
+  /**
+   * Valida se número de comanda está no range 1-999
+   */
+  private validateCommandNumber(cardNumber: string): void {
+    const num = parseInt(cardNumber, 10);
+    if (isNaN(num) || num < 1 || num > 999) {
+      throw new BadRequestException('Numero da comanda deve ser entre 1 e 999');
+    }
   }
 
   /**
