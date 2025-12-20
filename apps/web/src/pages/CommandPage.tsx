@@ -132,21 +132,139 @@ const statusConfig: Record<string, { label: string; color: string; bgColor: stri
   CANCELED: { label: 'Cancelada', color: 'text-red-700', bgColor: 'bg-red-100' },
 };
 
-const eventLabels: Record<string, string> = {
-  OPENED: 'abriu a comanda',
-  ITEM_ADDED: 'adicionou item',
-  ITEM_UPDATED: 'atualizou item',
-  ITEM_REMOVED: 'removeu item',
-  DISCOUNT_APPLIED: 'aplicou desconto',
-  SERVICE_CLOSED: 'encerrou os serviços',
-  PAYMENT_ADDED: 'registrou pagamento',
-  CASHIER_CLOSED: 'fechou a comanda no caixa',
-  CASHIER_CLOSED_AUTO: 'comanda fechada automaticamente',
-  COMMAND_REOPENED: 'reabriu a comanda',
-  STATUS_CHANGED: 'alterou status',
-  NOTE_ADDED: 'adicionou observação',
-  CLIENT_LINKED: 'vinculou cliente',
-  CLIENT_UNLINKED: 'removeu cliente',
+// Função para formatar valor monetário
+const formatCurrency = (value: unknown): string => {
+  const num = typeof value === 'number' ? value : parseFloat(String(value) || '0');
+  return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+// Função para formatar mensagem de evento com base nos metadados
+const formatEventMessage = (eventType: string, metadata: Record<string, unknown>): { action: string; details?: string } => {
+  switch (eventType) {
+    case 'OPENED':
+      return {
+        action: 'abriu a comanda',
+        details: metadata.cardNumber ? `#${metadata.cardNumber}` : undefined
+      };
+
+    case 'ITEM_ADDED': {
+      const type = metadata.type === 'PRODUCT' ? 'produto' : 'serviço';
+      const qty = metadata.quantity || 1;
+      const total = formatCurrency(metadata.totalPrice);
+      return {
+        action: `adicionou ${type}`,
+        details: `${metadata.description} (${qty}x) — ${total}`
+      };
+    }
+
+    case 'ITEM_UPDATED': {
+      const from = metadata.from as { quantity?: number; unitPrice?: number; discount?: number } | undefined;
+      const to = metadata.to as { quantity?: number; unitPrice?: number; discount?: number } | undefined;
+      const changes: string[] = [];
+      if (from && to) {
+        if (from.quantity !== to.quantity) changes.push(`qtd: ${from.quantity} → ${to.quantity}`);
+        if (from.unitPrice !== to.unitPrice) changes.push(`preço: ${formatCurrency(from.unitPrice)} → ${formatCurrency(to.unitPrice)}`);
+        if (from.discount !== to.discount) changes.push(`desc: ${formatCurrency(from.discount)} → ${formatCurrency(to.discount)}`);
+      }
+      return {
+        action: 'atualizou item',
+        details: changes.length > 0 ? changes.join(', ') : undefined
+      };
+    }
+
+    case 'ITEM_REMOVED':
+      return {
+        action: 'removeu item',
+        details: metadata.description
+          ? `${metadata.description}${metadata.reason ? ` — Motivo: ${metadata.reason}` : ''}`
+          : undefined
+      };
+
+    case 'DISCOUNT_APPLIED': {
+      const amount = formatCurrency(metadata.amount);
+      return {
+        action: 'aplicou desconto',
+        details: `${amount}${metadata.reason ? ` — ${metadata.reason}` : ''}`
+      };
+    }
+
+    case 'SERVICE_CLOSED':
+      return {
+        action: 'encerrou os serviços',
+        details: metadata.totalNet ? `Total: ${formatCurrency(metadata.totalNet)}` : undefined
+      };
+
+    case 'PAYMENT_ADDED': {
+      const amount = formatCurrency(metadata.grossAmount || metadata.netAmount);
+      return {
+        action: 'registrou pagamento',
+        details: amount
+      };
+    }
+
+    case 'CASHIER_CLOSED': {
+      const total = formatCurrency(metadata.totalPaid);
+      const extras: string[] = [];
+      if (metadata.loyaltyPointsEarned) extras.push(`+${metadata.loyaltyPointsEarned} pts`);
+      if (metadata.tierUpgraded && metadata.newTierName) extras.push(`Subiu para ${metadata.newTierName}`);
+      return {
+        action: 'fechou a comanda',
+        details: extras.length > 0 ? `${total} — ${extras.join(', ')}` : total
+      };
+    }
+
+    case 'CASHIER_CLOSED_AUTO': {
+      const total = formatCurrency(metadata.totalPaid);
+      const extras: string[] = [];
+      if (metadata.loyaltyPointsEarned) extras.push(`+${metadata.loyaltyPointsEarned} pts`);
+      if (metadata.tierUpgraded && metadata.newTierName) extras.push(`Subiu para ${metadata.newTierName}`);
+      return {
+        action: 'comanda fechada automaticamente',
+        details: extras.length > 0 ? `${total} — ${extras.join(', ')}` : total
+      };
+    }
+
+    case 'COMMAND_REOPENED':
+      return {
+        action: 'reabriu a comanda',
+        details: metadata.reason ? `Motivo: ${metadata.reason}` : undefined
+      };
+
+    case 'STATUS_CHANGED': {
+      const details: string[] = [];
+      if (metadata.to === 'CANCELED' && metadata.reason) {
+        details.push(`Motivo: ${metadata.reason}`);
+      }
+      if (metadata.stockReturned && Number(metadata.stockReturned) > 0) {
+        details.push(`${metadata.stockReturned} produto(s) devolvido(s) ao estoque`);
+      }
+      return {
+        action: metadata.to === 'CANCELED' ? 'cancelou a comanda' : 'alterou status',
+        details: details.length > 0 ? details.join(' — ') : undefined
+      };
+    }
+
+    case 'NOTE_ADDED':
+      return {
+        action: 'adicionou observação',
+        details: metadata.note ? `"${String(metadata.note).substring(0, 50)}${String(metadata.note).length > 50 ? '...' : ''}"` : undefined
+      };
+
+    case 'CLIENT_LINKED':
+      return {
+        action: 'vinculou cliente',
+        details: metadata.clientName ? String(metadata.clientName) : undefined
+      };
+
+    case 'CLIENT_UNLINKED':
+      return {
+        action: 'removeu cliente',
+        details: metadata.clientName ? String(metadata.clientName) : undefined
+      };
+
+    default:
+      return { action: eventType };
+  }
 };
 
 // Fallback labels para métodos legados (antes da migração)
@@ -1323,26 +1441,32 @@ export function CommandPage() {
               <p className="text-gray-500 text-sm">Nenhuma atividade registrada.</p>
             ) : (
               <div className="space-y-4">
-                {command.events.slice(0, 10).map((event, index) => (
-                  <div key={event.id} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <div className="w-2 h-2 bg-primary-500 rounded-full mt-2"></div>
-                      {index < Math.min(command.events.length - 1, 9) && (
-                        <div className="w-0.5 h-full bg-gray-200 mt-1"></div>
-                      )}
+                {command.events.slice(0, 10).map((event, index) => {
+                  const { action, details } = formatEventMessage(event.eventType, event.metadata || {});
+                  return (
+                    <div key={event.id} className="flex gap-3">
+                      <div className="flex flex-col items-center">
+                        <div className="w-2 h-2 bg-primary-500 rounded-full mt-2"></div>
+                        {index < Math.min(command.events.length - 1, 9) && (
+                          <div className="w-0.5 h-full bg-gray-200 mt-1"></div>
+                        )}
+                      </div>
+                      <div className="flex-1 pb-4">
+                        <p className="text-sm text-gray-900">
+                          <span className="font-medium">{event.actorName || 'Usuário'}</span>
+                          {' '}
+                          {action}
+                        </p>
+                        {details && (
+                          <p className="text-sm text-gray-600 mt-0.5">{details}</p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {formatTime(event.createdAt)}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex-1 pb-4">
-                      <p className="text-sm text-gray-900">
-                        <span className="font-medium">{event.actorName || 'Usuário'}</span>
-                        {' '}
-                        {eventLabels[event.eventType] || event.eventType}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {formatTime(event.createdAt)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
