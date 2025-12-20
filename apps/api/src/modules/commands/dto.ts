@@ -7,6 +7,7 @@ import {
   IsUUID,
   IsEnum,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 // Status da comanda
@@ -79,8 +80,10 @@ export class AddItemDto {
   @IsOptional()
   performerId?: string;
 
+  // HARDENING: referenceId obrigatório para PRODUCT, opcional para SERVICE
+  @ValidateIf((o) => o.type === 'PRODUCT')
+  @IsNotEmpty({ message: 'referenceId e obrigatorio para itens do tipo PRODUCT' })
   @IsNumberString({}, { message: 'ID de referencia deve ser um numero inteiro' })
-  @IsOptional()
   referenceId?: string;
 }
 

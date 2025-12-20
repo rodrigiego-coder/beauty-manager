@@ -356,6 +356,8 @@ export function CommandPage() {
         description: product.productName,
         quantity: 1,
         unitPrice: parseFloat(product.salePrice),
+        // HOTFIX: enviar referenceId para baixa de estoque
+        referenceId: product.productId.toString(),
       });
       await loadCommand();
     } catch (err: any) {
@@ -784,6 +786,8 @@ export function CommandPage() {
         description: selectedItem.name,
         quantity: parseInt(itemQuantity),
         unitPrice: parseFloat(itemPrice.replace(',', '.')),
+        // HOTFIX: enviar referenceId para baixa de estoque quando PRODUCT
+        referenceId: itemType === 'PRODUCT' ? selectedItem.id.toString() : undefined,
       });
 
       setShowAddItemModal(false);

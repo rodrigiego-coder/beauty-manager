@@ -306,20 +306,32 @@ export class CommandsService {
     const totalPrice = (quantity * data.unitPrice) - discount;
 
     // Se for PRODUTO, baixar estoque antes de adicionar
+    // HARDENING: validação multi-tenant + existência do produto
     if (data.type === 'PRODUCT' && data.referenceId) {
       const productId = parseInt(data.referenceId, 10);
-      if (!isNaN(productId)) {
-        await this.productsService.adjustStock(
-          productId,
-          command.salonId,
-          currentUser.id,
-          {
-            quantity,
-            type: 'OUT',
-            reason: `Venda - Comanda ${command.cardNumber}`,
-          }
-        );
+      if (isNaN(productId)) {
+        throw new BadRequestException('referenceId invalido para PRODUCT');
       }
+
+      // Verificação multi-tenant: produto deve pertencer ao mesmo salão
+      const product = await this.productsService.findById(productId);
+      if (!product) {
+        throw new BadRequestException(`Produto ID ${productId} nao encontrado`);
+      }
+      if (product.salonId !== command.salonId) {
+        throw new BadRequestException('Produto nao pertence a este salao');
+      }
+
+      await this.productsService.adjustStock(
+        productId,
+        command.salonId,
+        currentUser.id,
+        {
+          quantity,
+          type: 'OUT',
+          reason: `Venda - Comanda ${command.cardNumber}`,
+        }
+      );
     }
 
     // Adiciona o item
