@@ -301,6 +301,11 @@ export class CommandsService {
       throw new BadRequestException('Comanda ja encerrada ou cancelada');
     }
 
+    // L1 FIX: Cliente obrigatório para adicionar itens
+    if (!command.clientId) {
+      throw new BadRequestException('Vincule um cliente antes de adicionar itens');
+    }
+
     const quantity = data.quantity || 1;
     const discount = data.discount || 0;
     const totalPrice = (quantity * data.unitPrice) - discount;
@@ -1152,6 +1157,34 @@ export class CommandsService {
       throw new BadRequestException('Comanda ja foi cancelada');
     }
 
+    // L5 FIX: Devolver estoque de todos os PRODUCTs não cancelados
+    const items = await this.getItems(commandId);
+    const productItems = items.filter(
+      item => item.type === 'PRODUCT' && !item.canceledAt && item.referenceId
+    );
+
+    for (const item of productItems) {
+      try {
+        const productId = parseInt(item.referenceId!, 10);
+        if (!isNaN(productId)) {
+          const qty = parseFloat(item.quantity);
+          await this.productsService.adjustStock(
+            productId,
+            command.salonId,
+            currentUser.id,
+            {
+              quantity: qty,
+              type: 'IN',
+              reason: `Cancelamento comanda ${command.cardNumber}`,
+            }
+          );
+        }
+      } catch (err) {
+        console.error(`[cancel] Erro ao devolver estoque do item ${item.id}:`, err);
+        // Continua mesmo se falhar (não bloqueia cancelamento)
+      }
+    }
+
     const [canceledCommand] = await this.db
       .update(commands)
       .set({
@@ -1167,6 +1200,7 @@ export class CommandsService {
       from: command.status,
       to: 'CANCELED',
       reason,
+      stockReturned: productItems.length,
     });
 
     return canceledCommand;
