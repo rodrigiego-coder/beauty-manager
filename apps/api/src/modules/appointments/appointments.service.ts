@@ -19,6 +19,7 @@ import {
   NewProfessionalBlock,
 } from '../../database';
 import { UsersService } from '../users';
+import { ScheduledMessagesService } from '../notifications';
 
 // ==================== INTERFACES ====================
 
@@ -95,6 +96,7 @@ export class AppointmentsService {
     @Inject(DATABASE_CONNECTION)
     private db: Database,
     private usersService: UsersService,
+    private scheduledMessagesService: ScheduledMessagesService,
   ) {}
 
   // ==================== APPOINTMENTS CRUD ====================
@@ -417,7 +419,21 @@ export class AppointmentsService {
       })
       .returning();
 
-    return result[0];
+    const appointment = result[0];
+
+    // Agendar notificações WhatsApp automáticas
+    try {
+      await this.scheduledMessagesService.scheduleAllAppointmentNotifications({
+        ...appointment,
+        salonId,
+        professionalName: professional.name,
+      });
+    } catch (error) {
+      // Log error but don't fail the appointment creation
+      console.error('Erro ao agendar notificações WhatsApp:', error);
+    }
+
+    return appointment;
   }
 
   /**
@@ -463,6 +479,8 @@ export class AppointmentsService {
    * Cancela um agendamento
    */
   async cancel(id: string, salonId: string, cancelledById: string, reason?: string): Promise<Appointment | null> {
+    const existing = await this.findById(id, salonId);
+
     const result = await this.db
       .update(appointments)
       .set({
@@ -474,7 +492,26 @@ export class AppointmentsService {
       .where(and(eq(appointments.id, id), eq(appointments.salonId, salonId)))
       .returning();
 
-    return result[0] || null;
+    const appointment = result[0];
+
+    if (appointment) {
+      // Cancelar notificações pendentes e agendar notificação de cancelamento
+      try {
+        await this.scheduledMessagesService.cancelAppointmentNotifications(id);
+        if (existing?.clientPhone) {
+          await this.scheduledMessagesService.scheduleAppointmentCancellation({
+            ...appointment,
+            salonId,
+            clientPhone: existing.clientPhone,
+            clientName: existing.clientName,
+          });
+        }
+      } catch (error) {
+        console.error('Erro ao processar notificações de cancelamento:', error);
+      }
+    }
+
+    return appointment || null;
   }
 
   // ==================== STATUS TRANSITIONS ====================
@@ -601,6 +638,9 @@ export class AppointmentsService {
     const existing = await this.findById(id, salonId);
     if (!existing) return null;
 
+    const oldDate = existing.date;
+    const oldTime = existing.time;
+
     const professionalId = newProfessionalId || existing.professionalId;
 
     // Check availability
@@ -629,7 +669,36 @@ export class AppointmentsService {
       .where(and(eq(appointments.id, id), eq(appointments.salonId, salonId)))
       .returning();
 
-    return result[0] || null;
+    const appointment = result[0];
+
+    if (appointment && existing.clientPhone) {
+      // Cancelar notificações antigas e reagendar novas
+      try {
+        await this.scheduledMessagesService.cancelAppointmentNotifications(id);
+        await this.scheduledMessagesService.scheduleAppointmentRescheduled(
+          { ...appointment, salonId, clientPhone: existing.clientPhone, clientName: existing.clientName },
+          oldDate,
+          oldTime,
+        );
+        // Reagendar lembretes para o novo horário
+        await this.scheduledMessagesService.scheduleReminder24h({
+          ...appointment,
+          salonId,
+          clientPhone: existing.clientPhone,
+          clientName: existing.clientName,
+        });
+        await this.scheduledMessagesService.scheduleReminder1h({
+          ...appointment,
+          salonId,
+          clientPhone: existing.clientPhone,
+          clientName: existing.clientName,
+        });
+      } catch (error) {
+        console.error('Erro ao processar notificações de reagendamento:', error);
+      }
+    }
+
+    return appointment || null;
   }
 
   // ==================== AVAILABILITY ====================

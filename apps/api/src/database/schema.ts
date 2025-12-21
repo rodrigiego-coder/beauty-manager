@@ -2964,3 +2964,105 @@ export type AiBlockedTermsLog = typeof aiBlockedTermsLog.$inferSelect;
 export type NewAiBlockedTermsLog = typeof aiBlockedTermsLog.$inferInsert;
 export type AiBriefing = typeof aiBriefings.$inferSelect;
 export type NewAiBriefing = typeof aiBriefings.$inferInsert;
+
+// ============================================
+// APPOINTMENT NOTIFICATIONS (Notificações WhatsApp)
+// ============================================
+
+/**
+ * Tipo de notificação de agendamento
+ */
+export const appointmentNotificationTypeEnum = pgEnum('appointment_notification_type', [
+  'APPOINTMENT_CONFIRMATION',
+  'APPOINTMENT_REMINDER_24H',
+  'APPOINTMENT_REMINDER_1H',
+  'APPOINTMENT_CANCELLED',
+  'APPOINTMENT_RESCHEDULED',
+  'APPOINTMENT_COMPLETED',
+  'CUSTOM',
+]);
+
+/**
+ * Status da notificação
+ */
+export const notificationStatusEnum = pgEnum('notification_status', [
+  'PENDING',
+  'SCHEDULED',
+  'SENDING',
+  'SENT',
+  'DELIVERED',
+  'READ',
+  'FAILED',
+  'CANCELLED',
+]);
+
+/**
+ * Notificações de agendamento (Outbox pattern)
+ * Worker processa esta tabela e envia as mensagens via WhatsApp
+ */
+export const appointmentNotifications = pgTable('appointment_notifications', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+
+  // Referência ao agendamento
+  appointmentId: uuid('appointment_id').references(() => appointments.id),
+
+  // Destinatário
+  recipientPhone: varchar('recipient_phone', { length: 20 }).notNull(),
+  recipientName: varchar('recipient_name', { length: 255 }),
+
+  // Tipo e conteúdo
+  notificationType: appointmentNotificationTypeEnum('notification_type').notNull(),
+  templateKey: varchar('template_key', { length: 100 }),
+  templateVariables: json('template_variables').$type<Record<string, string>>(),
+  customMessage: text('custom_message'),
+
+  // Agendamento
+  scheduledFor: timestamp('scheduled_for').notNull(),
+
+  // Status e rastreamento
+  status: notificationStatusEnum('status').default('PENDING').notNull(),
+  providerMessageId: varchar('provider_message_id', { length: 255 }),
+
+  // Tentativas e erros
+  attempts: integer('attempts').default(0).notNull(),
+  maxAttempts: integer('max_attempts').default(3).notNull(),
+  lastAttemptAt: timestamp('last_attempt_at'),
+  lastError: text('last_error'),
+
+  // Entrega
+  sentAt: timestamp('sent_at'),
+  deliveredAt: timestamp('delivered_at'),
+  readAt: timestamp('read_at'),
+
+  // Resposta do cliente (para confirmações)
+  clientResponse: varchar('client_response', { length: 50 }),
+  clientRespondedAt: timestamp('client_responded_at'),
+
+  // Auditoria
+  createdById: uuid('created_by_id').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  processedAt: timestamp('processed_at'),
+});
+
+// Types para Appointment Notifications
+export type AppointmentNotification = typeof appointmentNotifications.$inferSelect;
+export type NewAppointmentNotification = typeof appointmentNotifications.$inferInsert;
+export type AppointmentNotificationType =
+  | 'APPOINTMENT_CONFIRMATION'
+  | 'APPOINTMENT_REMINDER_24H'
+  | 'APPOINTMENT_REMINDER_1H'
+  | 'APPOINTMENT_CANCELLED'
+  | 'APPOINTMENT_RESCHEDULED'
+  | 'APPOINTMENT_COMPLETED'
+  | 'CUSTOM';
+export type NotificationStatus =
+  | 'PENDING'
+  | 'SCHEDULED'
+  | 'SENDING'
+  | 'SENT'
+  | 'DELIVERED'
+  | 'READ'
+  | 'FAILED'
+  | 'CANCELLED';
