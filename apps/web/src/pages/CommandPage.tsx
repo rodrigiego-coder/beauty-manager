@@ -36,7 +36,8 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import api, { getServiceRecipe } from '../services/api';
+import api, { getServiceRecipe, getTriageForAppointment } from '../services/api';
+import { TriageSummary } from '../components/TriageSummary';
 import { HairProfileModal } from '../components/HairProfileModal';
 import { ProductRecommendations } from '../components/ProductRecommendations';
 import { ClientLoyaltyCard } from '../components/ClientLoyaltyCard';
@@ -51,6 +52,7 @@ interface Command {
   code: string;
   status: 'OPEN' | 'IN_SERVICE' | 'WAITING_PAYMENT' | 'CLOSED' | 'CANCELED';
   clientId?: string;
+  appointmentId?: string;
   totalGross: string;
   totalDiscounts: string;
   totalNet: string;
@@ -288,6 +290,10 @@ export function CommandPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
+  // Triagem (pré-avaliação)
+  const [triage, setTriage] = useState<any>(null);
+  const [triageLoading, setTriageLoading] = useState(false);
+
   // Modais
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -421,11 +427,32 @@ export function CommandPage() {
       } else {
         setLinkedClient(null);
       }
+
+      // Carrega triagem se houver agendamento vinculado
+      if (response.data.appointmentId) {
+        loadTriage(response.data.appointmentId);
+      } else {
+        setTriage(null);
+      }
     } catch (err: any) {
       console.error('Erro ao carregar comanda:', err);
       setError(err.response?.data?.message || 'Erro ao carregar comanda');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Carrega triagem do agendamento
+  const loadTriage = async (appointmentId: string) => {
+    setTriageLoading(true);
+    try {
+      const data = await getTriageForAppointment(appointmentId);
+      setTriage(data);
+    } catch (error) {
+      console.error('Erro ao buscar triagem:', error);
+      setTriage(null);
+    } finally {
+      setTriageLoading(false);
     }
   };
 
@@ -1195,6 +1222,21 @@ export function CommandPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Coluna Principal */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Pré-Avaliação do Cliente (Triagem) - só aparece se a comanda tem appointmentId */}
+          {command?.appointmentId && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-gray-400" />
+                Pré-Avaliação do Cliente
+              </h3>
+              <TriageSummary
+                triage={triage}
+                loading={triageLoading}
+                onRefresh={() => command.appointmentId && loadTriage(command.appointmentId)}
+              />
+            </div>
+          )}
+
           {/* Itens */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">

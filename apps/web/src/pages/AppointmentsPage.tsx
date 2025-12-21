@@ -26,7 +26,8 @@ import {
   Flag,
   CalendarX,
 } from 'lucide-react';
-import api from '../services/api';
+import api, { getTriageForAppointment } from '../services/api';
+import { TriageSummary } from '../components/TriageSummary';
 
 // ==================== TYPES ====================
 
@@ -215,6 +216,8 @@ export function AppointmentsPage() {
   const [showBlocksModal, setShowBlocksModal] = useState(false);
   const [showBlockFormModal, setShowBlockFormModal] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [selectedTriage, setSelectedTriage] = useState<any>(null);
+  const [triageLoading, setTriageLoading] = useState(false);
 
   // Form state for create/edit
   const [formData, setFormData] = useState({
@@ -384,6 +387,28 @@ export function AppointmentsPage() {
 
     loadSlots();
   }, [formData.professionalId, formData.date, formData.serviceId]);
+
+  // Load triage when appointment is selected
+  useEffect(() => {
+    const loadTriage = async () => {
+      if (!selectedAppointment) {
+        setSelectedTriage(null);
+        return;
+      }
+      setTriageLoading(true);
+      try {
+        const data = await getTriageForAppointment(selectedAppointment.id);
+        setSelectedTriage(data);
+      } catch (error) {
+        console.error('Erro ao buscar triagem:', error);
+        setSelectedTriage(null);
+      } finally {
+        setTriageLoading(false);
+      }
+    };
+
+    loadTriage();
+  }, [selectedAppointment]);
 
   // ==================== NAVIGATION ====================
 
@@ -1273,6 +1298,30 @@ export function AppointmentsPage() {
             {apt.notes && (
               <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
                 {apt.notes}
+              </div>
+            )}
+
+            {/* Pré-Avaliação (Triagem) */}
+            {(selectedTriage || triageLoading) && (
+              <div className="border-t pt-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <FileText className="w-4 h-4 text-gray-400" />
+                  <span className="text-sm font-medium text-gray-700">Pré-Avaliação</span>
+                </div>
+                <TriageSummary
+                  triage={selectedTriage}
+                  loading={triageLoading}
+                  onRefresh={async () => {
+                    if (!selectedAppointment) return;
+                    setTriageLoading(true);
+                    try {
+                      const data = await getTriageForAppointment(selectedAppointment.id);
+                      setSelectedTriage(data);
+                    } finally {
+                      setTriageLoading(false);
+                    }
+                  }}
+                />
               </div>
             )}
 

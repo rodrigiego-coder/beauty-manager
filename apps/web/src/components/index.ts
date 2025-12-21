@@ -6,3 +6,4 @@ export { Sidebar } from './Sidebar';
 export { AuthGuard } from './AuthGuard';
 export { ClientLoyaltyCard } from './ClientLoyaltyCard';
 export { VoucherInput } from './VoucherInput';
+export { TriageSummary } from './TriageSummary';

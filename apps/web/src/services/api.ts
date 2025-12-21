@@ -263,4 +263,19 @@ export async function submitTriageAnswers(
   return data;
 }
 
+/**
+ * Busca triagem de um agendamento (autenticado)
+ */
+export async function getTriageForAppointment(appointmentId: string): Promise<any> {
+  try {
+    const { data } = await api.get(`/triage/appointment/${appointmentId}`);
+    return data;
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 export default api;
