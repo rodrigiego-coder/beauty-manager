@@ -219,4 +219,48 @@ export async function getBackbarProducts(): Promise<BackbarProduct[]> {
   return data;
 }
 
+// ============================================
+// API DE TRIAGEM (PRÉ-AVALIAÇÃO)
+// ============================================
+
+import type {
+  TriagePublicResponse,
+  TriageAnswer,
+  TriageSubmitResult,
+} from '../types/triage';
+
+/**
+ * Busca formulário público de triagem por token
+ * Não requer autenticação
+ */
+export async function getTriagePublicForm(token: string): Promise<TriagePublicResponse> {
+  try {
+    const { data } = await axios.get(
+      `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/triage/public/${token}`
+    );
+    return data;
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      return { error: 'Formulário não encontrado ou link inválido' };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Submete respostas de triagem via token público
+ * Não requer autenticação
+ */
+export async function submitTriageAnswers(
+  token: string,
+  answers: TriageAnswer[],
+  consentAccepted: boolean
+): Promise<TriageSubmitResult> {
+  const { data } = await axios.post(
+    `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/triage/public/${token}/submit`,
+    { answers, consentAccepted }
+  );
+  return data;
+}
+
 export default api;
