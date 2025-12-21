@@ -1,4 +1,4 @@
-import { Injectable, Inject, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, NotFoundException, Logger, forwardRef } from '@nestjs/common';
 import { eq, and, desc, gte, lte, sql, or, ne } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.module';
 import {
@@ -20,6 +20,7 @@ import {
 } from '../../database';
 import { UsersService } from '../users';
 import { ScheduledMessagesService } from '../notifications';
+import { TriageService } from '../triage/triage.service';
 
 // ==================== INTERFACES ====================
 
@@ -92,11 +93,15 @@ export interface BlockWithProfessional extends ProfessionalBlock {
 
 @Injectable()
 export class AppointmentsService {
+  private readonly logger = new Logger(AppointmentsService.name);
+
   constructor(
     @Inject(DATABASE_CONNECTION)
     private db: Database,
     private usersService: UsersService,
     private scheduledMessagesService: ScheduledMessagesService,
+    @Inject(forwardRef(() => TriageService))
+    private triageService: TriageService,
   ) {}
 
   // ==================== APPOINTMENTS CRUD ====================
@@ -421,16 +426,42 @@ export class AppointmentsService {
 
     const appointment = result[0];
 
+    // Verificar se serviço requer triagem e criar resposta
+    let triageLink: string | null = null;
+
+    try {
+      if (data.serviceId) {
+        const form = await this.triageService.getFormForService(salonId, data.serviceId);
+
+        if (form) {
+          const triageResponse = await this.triageService.createTriageResponse(
+            salonId,
+            appointment.id,
+            form.id,
+            data.clientId || undefined,
+          );
+
+          triageLink = triageResponse.publicLink;
+          this.logger.log(`Triagem criada para agendamento ${appointment.id}, link: ${triageLink}`);
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`Erro ao criar triagem para agendamento ${appointment.id}: ${error}`);
+    }
+
     // Agendar notificações WhatsApp automáticas
     try {
-      await this.scheduledMessagesService.scheduleAllAppointmentNotifications({
-        ...appointment,
-        salonId,
-        professionalName: professional.name,
-      });
+      await this.scheduledMessagesService.scheduleAllAppointmentNotifications(
+        {
+          ...appointment,
+          salonId,
+          professionalName: professional.name,
+        },
+        triageLink || undefined,
+      );
     } catch (error) {
       // Log error but don't fail the appointment creation
-      console.error('Erro ao agendar notificações WhatsApp:', error);
+      this.logger.error('Erro ao agendar notificações WhatsApp:', error);
     }
 
     return appointment;

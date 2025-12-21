@@ -2979,6 +2979,8 @@ export const appointmentNotificationTypeEnum = pgEnum('appointment_notification_
   'APPOINTMENT_CANCELLED',
   'APPOINTMENT_RESCHEDULED',
   'APPOINTMENT_COMPLETED',
+  'TRIAGE_COMPLETED',
+  'TRIAGE_REMINDER',
   'CUSTOM',
 ]);
 

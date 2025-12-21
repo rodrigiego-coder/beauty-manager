@@ -104,14 +104,27 @@ export class ScheduledMessagesProcessor {
     const vars = message.templateVariables || {};
 
     switch (message.notificationType) {
-      case 'APPOINTMENT_CONFIRMATION':
-        return `Olá ${vars.nome}! 👋
+      case 'APPOINTMENT_CONFIRMATION': {
+        let confirmationText = `Olá ${vars.nome}! 👋
 
 Seu agendamento foi registrado:
 
 📅 *${vars.data}* às *${vars.horario}*
 ✂️ ${vars.servico}
-💇 ${vars.profissional}
+💇 ${vars.profissional}`;
+
+        // Se tem link de triagem, adicionar
+        if (vars.triageLink) {
+          confirmationText += `
+
+📋 *IMPORTANTE - Pré-Avaliação Obrigatória:*
+Para sua segurança, preencha o formulário antes do atendimento:
+👉 ${vars.triageLink}
+
+⚠️ _Sem a pré-avaliação, o procedimento pode ser recusado._`;
+        }
+
+        confirmationText += `
 
 Por favor, confirme sua presença:
 👉 Responda *SIM* para confirmar
@@ -119,18 +132,37 @@ Por favor, confirme sua presença:
 
 Obrigado! 💜`;
 
-      case 'APPOINTMENT_REMINDER_24H':
-        return `Oi ${vars.nome}! 🕐
+        return confirmationText;
+      }
+
+      case 'APPOINTMENT_REMINDER_24H': {
+        let reminder24Text = `Oi ${vars.nome}! 🕐
 
 Lembrete: *Amanhã* você tem horário!
 
 📅 ${vars.data} às ${vars.horario}
 ✂️ ${vars.servico}
-💇 ${vars.profissional}
+💇 ${vars.profissional}`;
 
-Confirme sua presença respondendo *SIM*.
+        // Se tem triagem pendente, lembrar
+        if (vars.triagePending && vars.triageLink) {
+          reminder24Text += `
+
+⚠️ *Atenção:* Você ainda não preencheu a pré-avaliação!
+👉 ${vars.triageLink}
+_Preencha antes do seu horário._`;
+        }
+
+        reminder24Text += `
+
+Podemos contar com você?
+👉 *SIM* - Confirmado!
+👉 *NÃO* - Preciso reagendar
 
 Até lá! 💜`;
+
+        return reminder24Text;
+      }
 
       case 'APPOINTMENT_REMINDER_1H':
         return `Oi ${vars.nome}! ⏰
@@ -177,6 +209,28 @@ Obrigado pela visita hoje!
 Esperamos que você tenha gostado do seu ${vars.servico}.
 
 Até a próxima! 💜`;
+
+      case 'TRIAGE_COMPLETED': {
+        let triageText = `${vars.nome}, recebemos sua pré-avaliação! ✅
+
+`;
+        if (vars.hasRisks) {
+          triageText += `⚠️ *Identificamos alguns pontos de atenção.*
+Nossa equipe vai analisar e, se necessário, entraremos em contato antes do seu horário.
+
+`;
+        } else {
+          triageText += `✅ *Tudo certo!* Nenhuma restrição identificada.
+
+`;
+        }
+
+        triageText += `📅 Seu agendamento: ${vars.data} às ${vars.horario}
+
+Até lá! 💜`;
+
+        return triageText;
+      }
 
       case 'CUSTOM':
         return message.customMessage || '';

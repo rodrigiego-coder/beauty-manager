@@ -7,11 +7,14 @@ import {
   triageResponses,
   triageAnswers,
   appointments,
+  appointmentNotifications,
   TriageForm,
   TriageQuestion,
   TriageResponse,
 } from '../../database/schema';
 import { randomBytes } from 'crypto';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface TriageAnswerInput {
   questionId: string;
@@ -293,11 +296,65 @@ export class TriageService {
 
     this.logger.log(`Triagem ${responseId} concluída. Riscos: ${hasRisks}, Nível: ${overallRiskLevel}`);
 
+    // Notificar cliente que triagem foi recebida
+    try {
+      const [appointment] = await this.db
+        .select()
+        .from(appointments)
+        .where(eq(appointments.id, response.appointmentId))
+        .limit(1);
+
+      if (appointment?.clientPhone) {
+        const dateFormatted = format(new Date(appointment.date), "EEEE, dd 'de' MMMM", {
+          locale: ptBR,
+        });
+
+        await this.db.insert(appointmentNotifications).values({
+          salonId: response.salonId,
+          appointmentId: response.appointmentId,
+          recipientPhone: this.formatPhone(appointment.clientPhone),
+          recipientName: appointment.clientName,
+          notificationType: 'TRIAGE_COMPLETED',
+          templateVariables: {
+            nome: appointment.clientName || 'Cliente',
+            data: dateFormatted,
+            horario: appointment.time || appointment.startTime,
+            hasRisks: hasRisks ? 'true' : 'false',
+            riskLevel: overallRiskLevel,
+          },
+          scheduledFor: new Date(), // Enviar imediatamente
+          status: 'PENDING',
+        });
+
+        this.logger.log(`Notificação TRIAGE_COMPLETED agendada para ${appointment.clientPhone}`);
+      }
+
+      // Se tem riscos críticos, logar alerta
+      if (riskSummary.critical.length > 0) {
+        this.logger.warn(
+          `ALERTA: Triagem com risco CRÍTICO - Agendamento ${response.appointmentId}`
+        );
+      }
+    } catch (error) {
+      this.logger.warn(`Erro ao notificar conclusão de triagem: ${error}`);
+    }
+
     return {
       ...updatedResponse,
       blockers,
       canProceed: blockers.length === 0,
     };
+  }
+
+  /**
+   * Formata telefone para padrão internacional
+   */
+  private formatPhone(phone: string): string {
+    let cleaned = phone.replace(/\D/g, '');
+    if (cleaned.length <= 11) {
+      cleaned = '55' + cleaned;
+    }
+    return cleaned;
   }
 
   /**

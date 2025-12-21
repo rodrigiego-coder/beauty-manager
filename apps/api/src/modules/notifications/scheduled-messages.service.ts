@@ -17,13 +17,18 @@ export class ScheduledMessagesService {
   /**
    * Agenda mensagem de confirmação ao criar agendamento
    */
-  async scheduleAppointmentConfirmation(appointment: any): Promise<void> {
+  async scheduleAppointmentConfirmation(appointment: any, triageLink?: string): Promise<void> {
     if (!appointment.clientPhone) {
       this.logger.warn(`Agendamento ${appointment.id} sem telefone do cliente`);
       return;
     }
 
     const variables = this.buildTemplateVariables(appointment);
+
+    // Adicionar link de triagem às variáveis se existir
+    if (triageLink) {
+      variables.triageLink = triageLink;
+    }
 
     await this.createNotification({
       salonId: appointment.salonId,
@@ -36,13 +41,13 @@ export class ScheduledMessagesService {
       scheduledFor: new Date(), // Enviar imediatamente
     });
 
-    this.logger.log(`Confirmação agendada para ${appointment.clientPhone}`);
+    this.logger.log(`Confirmação agendada para ${appointment.clientPhone}${triageLink ? ' com link de triagem' : ''}`);
   }
 
   /**
    * Agenda lembrete 24h antes do agendamento
    */
-  async scheduleReminder24h(appointment: any): Promise<void> {
+  async scheduleReminder24h(appointment: any, triageLink?: string): Promise<void> {
     if (!appointment.clientPhone) return;
 
     const appointmentDateTime = this.parseAppointmentDateTime(appointment);
@@ -55,6 +60,12 @@ export class ScheduledMessagesService {
     }
 
     const variables = this.buildTemplateVariables(appointment);
+
+    // Se tem triagem, adicionar link (será verificado se pendente no momento do envio)
+    if (triageLink) {
+      variables.triageLink = triageLink;
+      variables.triagePending = 'true'; // Será verificado no momento do envio
+    }
 
     await this.createNotification({
       salonId: appointment.salonId,
@@ -154,11 +165,13 @@ export class ScheduledMessagesService {
 
   /**
    * Agenda todas as notificações de um agendamento
+   * @param appointment Dados do agendamento
+   * @param triageLink Link opcional para pré-avaliação
    */
-  async scheduleAllAppointmentNotifications(appointment: any): Promise<void> {
+  async scheduleAllAppointmentNotifications(appointment: any, triageLink?: string): Promise<void> {
     try {
-      await this.scheduleAppointmentConfirmation(appointment);
-      await this.scheduleReminder24h(appointment);
+      await this.scheduleAppointmentConfirmation(appointment, triageLink);
+      await this.scheduleReminder24h(appointment, triageLink);
       await this.scheduleReminder1h(appointment);
     } catch (error) {
       this.logger.error(`Erro ao agendar notificações para ${appointment.id}:`, error);
@@ -312,7 +325,7 @@ export class ScheduledMessagesService {
   /**
    * Monta variáveis do template
    */
-  private buildTemplateVariables(appointment: any): Record<string, string> {
+  private buildTemplateVariables(appointment: any): Record<string, any> {
     const dateFormatted = format(new Date(appointment.date), "EEEE, dd 'de' MMMM", {
       locale: ptBR,
     });
