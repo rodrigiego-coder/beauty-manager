@@ -8,6 +8,8 @@ import {
   X,
   AlertTriangle,
   RotateCcw,
+  FileText,
+  Beaker,
 } from 'lucide-react';
 import api from '../services/api';
 import {
@@ -19,6 +21,9 @@ import {
   getCategoryInfo,
   formatDuration,
 } from '../types/service';
+import { RecipeEditor } from '../components/RecipeEditor';
+
+type EditTab = 'dados' | 'receita';
 
 export function ServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
@@ -35,6 +40,7 @@ export function ServicesPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [editTab, setEditTab] = useState<EditTab>('dados');
 
   // Form
   const [formData, setFormData] = useState<CreateServiceData>({
@@ -121,6 +127,7 @@ export function ServicesPage() {
       commissionPercentage: parseFloat(service.commissionPercentage),
     });
     setFormErrors({});
+    setEditTab('dados');
     setShowEditModal(true);
   };
 
@@ -550,12 +557,15 @@ export function ServicesPage() {
         </div>
       )}
 
-      {/* Modal Editar Serviço */}
+      {/* Modal Editar Serviço com Tabs */}
       {showEditModal && selectedService && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+            {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">Editar Servico</h2>
+              <h2 className="text-xl font-semibold text-gray-900">
+                Editar: {selectedService.name}
+              </h2>
               <button
                 onClick={() => {
                   setShowEditModal(false);
@@ -566,129 +576,171 @@ export function ServicesPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nome *
-                </label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
-                    formErrors.name ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                />
-                {formErrors.name && (
-                  <p className="text-red-500 text-sm mt-1">{formErrors.name}</p>
-                )}
-              </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Descricao
-                </label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  rows={3}
-                />
-              </div>
+            {/* Tabs */}
+            <div className="flex border-b border-gray-200 px-6">
+              <button
+                onClick={() => setEditTab('dados')}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  editTab === 'dados'
+                    ? 'border-primary-600 text-primary-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                Dados do Servico
+              </button>
+              <button
+                onClick={() => setEditTab('receita')}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  editTab === 'receita'
+                    ? 'border-primary-600 text-primary-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Beaker className="w-4 h-4" />
+                Receita (BOM)
+              </button>
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Categoria *
-                </label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value as ServiceCategory })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                >
-                  {SERVICE_CATEGORIES.map((cat) => (
-                    <option key={cat.value} value={cat.value}>
-                      {cat.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {editTab === 'dados' ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Nome *
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
+                        formErrors.name ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    {formErrors.name && (
+                      <p className="text-red-500 text-sm mt-1">{formErrors.name}</p>
+                    )}
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Duracao (minutos) *
-                </label>
-                <input
-                  type="number"
-                  value={formData.durationMinutes}
-                  onChange={(e) => setFormData({ ...formData, durationMinutes: parseInt(e.target.value) || 0 })}
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
-                    formErrors.durationMinutes ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  min="1"
-                />
-                {formErrors.durationMinutes && (
-                  <p className="text-red-500 text-sm mt-1">{formErrors.durationMinutes}</p>
-                )}
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Descricao
+                    </label>
+                    <textarea
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      rows={3}
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Preco Base (R$) *
-                </label>
-                <input
-                  type="number"
-                  value={formData.basePrice}
-                  onChange={(e) => setFormData({ ...formData, basePrice: parseFloat(e.target.value) || 0 })}
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
-                    formErrors.basePrice ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  min="0.01"
-                  step="0.01"
-                />
-                {formErrors.basePrice && (
-                  <p className="text-red-500 text-sm mt-1">{formErrors.basePrice}</p>
-                )}
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Categoria *
+                    </label>
+                    <select
+                      value={formData.category}
+                      onChange={(e) => setFormData({ ...formData, category: e.target.value as ServiceCategory })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    >
+                      {SERVICE_CATEGORIES.map((cat) => (
+                        <option key={cat.value} value={cat.value}>
+                          {cat.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Comissao (%)
-                </label>
-                <input
-                  type="number"
-                  value={formData.commissionPercentage}
-                  onChange={(e) => setFormData({ ...formData, commissionPercentage: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  min="0"
-                  max="100"
-                  step="1"
-                />
-              </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Duracao (minutos) *
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.durationMinutes}
+                      onChange={(e) => setFormData({ ...formData, durationMinutes: parseInt(e.target.value) || 0 })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
+                        formErrors.durationMinutes ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      min="1"
+                    />
+                    {formErrors.durationMinutes && (
+                      <p className="text-red-500 text-sm mt-1">{formErrors.durationMinutes}</p>
+                    )}
+                  </div>
 
-              {formErrors.submit && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
-                  {formErrors.submit}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Preco Base (R$) *
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.basePrice}
+                      onChange={(e) => setFormData({ ...formData, basePrice: parseFloat(e.target.value) || 0 })}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
+                        formErrors.basePrice ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      min="0.01"
+                      step="0.01"
+                    />
+                    {formErrors.basePrice && (
+                      <p className="text-red-500 text-sm mt-1">{formErrors.basePrice}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Comissao (%)
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.commissionPercentage}
+                      onChange={(e) => setFormData({ ...formData, commissionPercentage: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      min="0"
+                      max="100"
+                      step="1"
+                    />
+                  </div>
+
+                  {formErrors.submit && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+                      {formErrors.submit}
+                    </div>
+                  )}
                 </div>
+              ) : (
+                <RecipeEditor
+                  serviceId={selectedService.id}
+                  serviceName={selectedService.name}
+                  servicePrice={parseFloat(selectedService.basePrice)}
+                />
               )}
             </div>
-            <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
-              <button
-                onClick={() => {
-                  setShowEditModal(false);
-                  setSelectedService(null);
-                }}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleUpdate}
-                disabled={submitting}
-                className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
-              >
-                {submitting ? 'Salvando...' : 'Salvar'}
-              </button>
-            </div>
+
+            {/* Footer - only show for Dados tab */}
+            {editTab === 'dados' && (
+              <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+                <button
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setSelectedService(null);
+                  }}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleUpdate}
+                  disabled={submitting}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
+                >
+                  {submitting ? 'Salvando...' : 'Salvar Dados'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

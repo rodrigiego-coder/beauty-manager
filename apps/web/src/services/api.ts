@@ -152,4 +152,71 @@ export async function sendMessage(phone: string, message: string): Promise<Messa
   return data;
 }
 
+// ============================================
+// API DE RECEITAS
+// ============================================
+
+import type {
+  ServiceRecipe,
+  SaveRecipeDto,
+  BackbarProduct,
+} from '../types/recipe';
+
+/**
+ * Busca a receita ativa de um serviço
+ */
+export async function getServiceRecipe(
+  serviceId: number
+): Promise<ServiceRecipe | null> {
+  try {
+    const { data } = await api.get(`/services/${serviceId}/recipe`);
+    return data;
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Busca histórico de receitas de um serviço
+ */
+export async function getServiceRecipeHistory(
+  serviceId: number
+): Promise<ServiceRecipe[]> {
+  const { data } = await api.get(`/services/${serviceId}/recipe/history`);
+  return data;
+}
+
+/**
+ * Salva receita de um serviço (cria nova versão se existir)
+ */
+export async function saveServiceRecipe(
+  serviceId: number,
+  recipeData: SaveRecipeDto
+): Promise<ServiceRecipe> {
+  const { data } = await api.put(`/services/${serviceId}/recipe`, recipeData);
+  return data;
+}
+
+/**
+ * Arquiva receita ativa de um serviço
+ */
+export async function deleteServiceRecipe(serviceId: number): Promise<void> {
+  await api.delete(`/services/${serviceId}/recipe`);
+}
+
+/**
+ * Busca produtos disponíveis para receita (apenas backbar)
+ */
+export async function getBackbarProducts(): Promise<BackbarProduct[]> {
+  const { data } = await api.get('/products', {
+    params: {
+      backbarOnly: 'true',
+    },
+  });
+  return data;
+}
+
 export default api;
