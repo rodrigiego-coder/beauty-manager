@@ -1,4 +1,4 @@
-import { Injectable, Inject, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { eq, and, desc, ne, inArray } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.module';
 import {
@@ -7,6 +7,7 @@ import {
   commandItems,
   commandPayments,
   commandEvents,
+  commandConsumptionSnapshots,
   users,
   services,
   clients,
@@ -33,6 +34,7 @@ import { ClientsService } from '../clients';
 import { CommissionsService } from '../commissions';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { ProductsService } from '../products';
+import { RecipesService } from '../recipes';
 import { ServiceConsumptionsService } from '../service-consumptions';
 
 // Interface para resultado de pagamento (exportada para controller)
@@ -54,6 +56,8 @@ interface CurrentUser {
 
 @Injectable()
 export class CommandsService {
+  private readonly logger = new Logger(CommandsService.name);
+
   constructor(
     @Inject(DATABASE_CONNECTION)
     private db: Database,
@@ -62,6 +66,7 @@ export class CommandsService {
     private commissionsService: CommissionsService,
     private loyaltyService: LoyaltyService,
     private productsService: ProductsService,
+    private recipesService: RecipesService,
     private serviceConsumptionsService: ServiceConsumptionsService,
   ) {}
 
@@ -608,7 +613,7 @@ export class CommandsService {
 
   /**
    * Encerra os serviços da comanda
-   * Consome automaticamente os produtos do BOM de cada serviço
+   * Consome automaticamente os produtos do BOM (receita versionada) de cada serviço
    */
   async closeService(commandId: string, currentUser: CurrentUser): Promise<Command> {
     const command = await this.findById(commandId);
@@ -625,70 +630,37 @@ export class CommandsService {
     }
 
     // ========================================
-    // PACOTE 3: Consumo automático de BOM
+    // PACOTE 5: Consumo automático via receitas versionadas
     // ========================================
     const items = await this.getItems(commandId);
     const serviceItems = items.filter(
       item => item.type === 'SERVICE' && !item.canceledAt && item.referenceId
     );
 
-    // Coletar IDs de serviços únicos
-    const serviceIds: number[] = [];
+    let recipeProcessedCount = 0;
+
+    // Processar consumo de receita para cada item de SERVIÇO
     for (const item of serviceItems) {
       const serviceId = parseInt(item.referenceId!, 10);
-      if (!isNaN(serviceId) && !serviceIds.includes(serviceId)) {
-        serviceIds.push(serviceId);
-      }
-    }
+      if (isNaN(serviceId)) continue;
 
-    // Carregar BOM de todos os serviços
-    let bomConsumedCount = 0;
-    let productsConsumedCount = 0;
-
-    if (serviceIds.length > 0) {
-      const allConsumptions = await this.serviceConsumptionsService.findByServiceIds(
-        serviceIds,
-        command.salonId,
-      );
-
-      // Agregar consumo por produto
-      // Map<productId, totalQuantity>
-      const consumptionMap = new Map<number, number>();
-
-      for (const item of serviceItems) {
-        const serviceId = parseInt(item.referenceId!, 10);
-        if (isNaN(serviceId)) continue;
-
-        const itemQty = parseFloat(item.quantity);
-        const serviceConsumptions = allConsumptions.filter(c => c.serviceId === serviceId);
-
-        for (const consumption of serviceConsumptions) {
-          const productId = consumption.productId;
-          const bomQty = parseFloat(consumption.quantity);
-          const totalQty = itemQty * bomQty;
-
-          const current = consumptionMap.get(productId) || 0;
-          consumptionMap.set(productId, current + totalQty);
-        }
-      }
-
-      // Executar consumo de estoque INTERNAL (sem try/catch - falha bloqueia closeService)
-      for (const [productId, totalQty] of consumptionMap.entries()) {
-        await this.productsService.adjustStockWithLocation({
-          productId,
+      try {
+        await this.processRecipeConsumption({
+          serviceId,
           salonId: command.salonId,
+          commandId: command.id,
+          commandItemId: item.id,
           userId: currentUser.id,
-          quantity: -totalQty, // negativo = saída
-          locationType: 'INTERNAL', // estoque do SALÃO (consumo interno)
-          movementType: 'SERVICE_CONSUMPTION',
-          reason: `Consumo automático BOM - Comanda ${command.cardNumber}`,
-          referenceType: 'command',
-          referenceId: command.id,
+          variantId: item.variantId || null,
         });
-        bomConsumedCount++;
+        recipeProcessedCount++;
+      } catch (error: any) {
+        // Logar warning mas NÃO bloquear fechamento do serviço
+        this.logger.warn(
+          `Erro no consumo de receita (não bloqueante): commandItemId=${item.id}, ` +
+          `serviceId=${serviceId}, erro=${error.message}`
+        );
       }
-
-      productsConsumedCount = consumptionMap.size;
     }
 
     // Atualiza status da comanda
@@ -709,12 +681,11 @@ export class CommandsService {
       totalNet: command.totalNet,
     });
 
-    // Registra evento BOM_CONSUMED se houve consumo
-    if (bomConsumedCount > 0) {
-      await this.addEvent(commandId, currentUser.id, 'BOM_CONSUMED', {
-        servicesCount: serviceIds.length,
-        productsConsumed: productsConsumedCount,
-        adjustmentsCreated: bomConsumedCount,
+    // Registra evento RECIPE_CONSUMED se houve processamento
+    if (recipeProcessedCount > 0) {
+      await this.addEvent(commandId, currentUser.id, 'RECIPE_CONSUMED', {
+        servicesCount: serviceItems.length,
+        itemsProcessed: recipeProcessedCount,
       });
     }
 
@@ -918,11 +889,55 @@ export class CommandsService {
       throw new NotFoundException('Comanda nao encontrada');
     }
 
+    // ========================================
+    // PACOTE 5.2.5: Processar receitas se serviço não foi encerrado
+    // ========================================
+    if (!command.serviceClosedAt) {
+      const items = await this.getItems(commandId);
+      const serviceItems = items.filter(
+        item => item.type === 'SERVICE' && !item.canceledAt && item.referenceId
+      );
+
+      let recipeProcessedCount = 0;
+
+      // Processar consumo de receita para cada item de SERVIÇO
+      for (const item of serviceItems) {
+        const serviceId = parseInt(item.referenceId!, 10);
+        if (isNaN(serviceId)) continue;
+
+        try {
+          await this.processRecipeConsumption({
+            serviceId,
+            salonId: command.salonId,
+            commandId: command.id,
+            commandItemId: item.id,
+            userId: currentUser.id,
+            variantId: item.variantId || null,
+          });
+          recipeProcessedCount++;
+        } catch (error: any) {
+          // Logar warning mas NÃO bloquear fechamento
+          this.logger.warn(
+            `[autoCloseCashier] Erro no consumo de receita (não bloqueante): ` +
+            `commandItemId=${item.id}, serviceId=${serviceId}, erro=${error.message}`
+          );
+        }
+      }
+
+      if (recipeProcessedCount > 0) {
+        this.logger.log(
+          `[autoCloseCashier] Processadas ${recipeProcessedCount} receitas para comanda ${command.cardNumber}`
+        );
+      }
+    }
+
     // Atualiza status para CLOSED (operação crítica)
     const [closedCommand] = await this.db
       .update(commands)
       .set({
         status: 'CLOSED',
+        serviceClosedAt: command.serviceClosedAt || new Date(), // marca serviço encerrado se não estava
+        serviceClosedById: command.serviceClosedById || currentUser.id,
         cashierClosedAt: new Date(),
         cashierClosedById: currentUser.id,
         updatedAt: new Date(),
@@ -1623,6 +1638,137 @@ export class CommandsService {
         updatedAt: new Date(),
       })
       .where(eq(commands.id, commandId));
+  }
+
+  /**
+   * Processa consumo automático de produtos da receita (BOM versionado)
+   * Chamado ao fechar serviço na comanda - cria snapshots imutáveis para auditoria
+   */
+  private async processRecipeConsumption(args: {
+    serviceId: number;
+    salonId: string;
+    commandId: string;
+    commandItemId: string;
+    userId: string;
+    variantId?: string | null;
+  }): Promise<void> {
+    const { serviceId, salonId, commandId, commandItemId, userId, variantId } = args;
+
+    // 1. IDEMPOTÊNCIA: Verificar se já processou este item
+    const existingSnapshots = await this.db
+      .select({ id: commandConsumptionSnapshots.id })
+      .from(commandConsumptionSnapshots)
+      .where(
+        and(
+          eq(commandConsumptionSnapshots.salonId, salonId),
+          eq(commandConsumptionSnapshots.commandId, commandId),
+          eq(commandConsumptionSnapshots.commandItemId, commandItemId)
+        )
+      )
+      .limit(1);
+
+    if (existingSnapshots.length > 0) {
+      this.logger.log(`Consumo já processado para commandItemId: ${commandItemId}, pulando.`);
+      return;
+    }
+
+    // 2. BUSCAR RECEITA ATIVA
+    const recipe = await this.recipesService.getActiveRecipe(serviceId, salonId);
+
+    if (!recipe || recipe.lines.length === 0) {
+      // Serviço não tem receita, OK - nada a consumir
+      return;
+    }
+
+    // 3. RESOLVER VARIAÇÃO (multiplicador)
+    let multiplier = 1;
+    let variantCode: string = 'DEFAULT';
+
+    if (variantId) {
+      const variant = recipe.variants.find(v => v.id === variantId);
+      if (variant) {
+        multiplier = variant.multiplier;
+        variantCode = variant.code;
+      }
+    } else {
+      // Usar variação default se existir
+      const defaultVariant = recipe.variants.find(v => v.isDefault);
+      if (defaultVariant) {
+        multiplier = defaultVariant.multiplier;
+        variantCode = defaultVariant.code;
+      }
+    }
+
+    // 4. PROCESSAR CADA LINHA DA RECEITA
+    for (const line of recipe.lines) {
+      try {
+        // Calcular quantidade aplicada
+        const quantityBase = line.quantityStandard + line.quantityBuffer;
+
+        // Regra de arredondamento:
+        // - UN (unidades): Math.ceil (arredondar para cima)
+        // - ML, G, KG, L (volumetria/peso): manter decimal com 3 casas
+        const quantityApplied = line.unit === 'UN'
+          ? Math.ceil(quantityBase * multiplier)
+          : Math.round((quantityBase * multiplier) * 1000) / 1000;
+
+        // 5. BAIXAR ESTOQUE INTERNO
+        let stockMovementId: string | null = null;
+
+        try {
+          const result = await this.productsService.adjustStockWithLocation({
+            productId: line.productId,
+            salonId,
+            userId,
+            quantity: -quantityApplied, // Negativo = saída
+            locationType: 'INTERNAL',
+            movementType: 'SERVICE_CONSUMPTION',
+            referenceType: 'command',
+            referenceId: commandId,
+            reason: `Consumo automático - ${recipe.serviceName} [${variantCode}] - Item: ${commandItemId}`,
+          });
+          stockMovementId = result.movement.id;
+        } catch (stockError: any) {
+          // Logar warning mas NÃO bloquear - continua criando snapshot
+          this.logger.warn(
+            `Erro ao baixar estoque: serviceId=${serviceId}, productId=${line.productId}, ` +
+            `commandId=${commandId}, commandItemId=${commandItemId}, erro=${stockError.message}`
+          );
+          // stockMovementId permanece null
+        }
+
+        // 6. CRIAR SNAPSHOT (auditoria imutável)
+        await this.db.insert(commandConsumptionSnapshots).values({
+          salonId,
+          commandId,
+          commandItemId,
+          serviceId,
+          recipeId: recipe.id,
+          recipeVersion: recipe.version,
+          variantCode: variantCode as any,
+          variantMultiplier: multiplier.toString(),
+          productId: line.productId,
+          productName: line.productName,
+          quantityStandard: line.quantityStandard.toString(),
+          quantityBuffer: line.quantityBuffer.toString(),
+          quantityApplied: quantityApplied.toString(),
+          unit: line.unit,
+          costAtTime: line.productCost.toString(),
+          totalCost: (quantityApplied * line.productCost).toString(),
+          stockMovementId,
+          postedAt: new Date(),
+        });
+
+      } catch (error: any) {
+        // Erro crítico na linha, logar e continuar para próxima
+        this.logger.error(
+          `Erro ao processar linha da receita: serviceId=${serviceId}, ` +
+          `productId=${line.productId}, commandItemId=${commandItemId}`,
+          error.stack
+        );
+        // Continua para próxima linha
+      }
+    }
   }
 
   /**

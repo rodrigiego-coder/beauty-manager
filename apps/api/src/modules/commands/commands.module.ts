@@ -6,6 +6,7 @@ import { ClientsModule } from '../clients';
 import { CommissionsModule } from '../commissions';
 import { LoyaltyModule } from '../loyalty';
 import { ProductsModule } from '../products';
+import { RecipesModule } from '../recipes';
 import { ServiceConsumptionsModule } from '../service-consumptions';
 
 @Module({
@@ -15,6 +16,7 @@ import { ServiceConsumptionsModule } from '../service-consumptions';
     forwardRef(() => CommissionsModule),
     forwardRef(() => LoyaltyModule),
     forwardRef(() => ProductsModule),
+    forwardRef(() => RecipesModule),
     forwardRef(() => ServiceConsumptionsModule),
   ],
   controllers: [CommandsController],
