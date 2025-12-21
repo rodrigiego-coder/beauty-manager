@@ -1252,6 +1252,18 @@ export const serviceConsumptions = pgTable('service_consumptions', {
 export const recipeStatusEnum = pgEnum('recipe_status', ['ACTIVE', 'ARCHIVED']);
 
 /**
+ * Enum para códigos de variação (Curto/Médio/Longo)
+ */
+export const variantCodeEnum = pgEnum('variant_code', [
+  'DEFAULT',
+  'SHORT',
+  'MEDIUM',
+  'LONG',
+  'EXTRA_LONG',
+  'CUSTOM',
+]);
+
+/**
  * Locais de estoque (flexível para múltiplos locais)
  */
 export const inventoryLocations = pgTable('inventory_locations', {
@@ -1277,6 +1289,11 @@ export const serviceRecipes = pgTable('service_recipes', {
   status: recipeStatusEnum('status').default('ACTIVE').notNull(),
   effectiveFrom: date('effective_from').defaultNow().notNull(),
   notes: text('notes'),
+
+  // Precificação calculada
+  estimatedCost: decimal('estimated_cost', { precision: 10, scale: 2 }),
+  targetMarginPercent: decimal('target_margin_percent', { precision: 5, scale: 2 }).default('60'),
+
   createdById: uuid('created_by_id').references(() => users.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -1290,6 +1307,7 @@ export const serviceRecipeLines = pgTable('service_recipe_lines', {
   id: uuid('id').defaultRandom().primaryKey(),
   recipeId: uuid('recipe_id').references(() => serviceRecipes.id, { onDelete: 'cascade' }).notNull(),
   productId: integer('product_id').references(() => products.id).notNull(),
+  productGroupId: uuid('product_group_id'), // Para substituições futuras (referência será adicionada depois)
   quantityStandard: decimal('quantity_standard', { precision: 10, scale: 3 }).notNull(), // quantidade ideal
   quantityBuffer: decimal('quantity_buffer', { precision: 10, scale: 3 }).default('0').notNull(), // folga
   unit: varchar('unit', { length: 10 }).notNull(), // ML, G, UN
@@ -1308,18 +1326,74 @@ export const commandConsumptionSnapshots = pgTable('command_consumption_snapshot
   salonId: uuid('salon_id').references(() => salons.id).notNull(),
   commandId: uuid('command_id').references(() => commands.id).notNull(),
   commandItemId: uuid('command_item_id').references(() => commandItems.id).notNull(),
+
+  // Referência da receita
   serviceId: integer('service_id').references(() => services.id).notNull(),
   recipeId: uuid('recipe_id').references(() => serviceRecipes.id),
   recipeVersion: integer('recipe_version'),
+  variantCode: variantCodeEnum('variant_code').default('DEFAULT'),
+  variantMultiplier: decimal('variant_multiplier', { precision: 3, scale: 2 }).default('1'),
+
+  // Produto consumido (snapshot)
   productId: integer('product_id').references(() => products.id).notNull(),
+  productName: varchar('product_name', { length: 255 }).notNull(),
+
+  // Quantidades
   quantityStandard: decimal('quantity_standard', { precision: 10, scale: 3 }).notNull(),
   quantityBuffer: decimal('quantity_buffer', { precision: 10, scale: 3 }).notNull(),
   quantityApplied: decimal('quantity_applied', { precision: 10, scale: 3 }).notNull(), // standard + buffer
   unit: varchar('unit', { length: 10 }).notNull(),
+
+  // Custos
   costAtTime: decimal('cost_at_time', { precision: 10, scale: 2 }).notNull(), // custo unitário
   totalCost: decimal('total_cost', { precision: 10, scale: 2 }).notNull(), // qty * cost
+
+  // Rastreabilidade
   stockMovementId: uuid('stock_movement_id').references(() => stockMovements.id),
   postedAt: timestamp('posted_at'), // quando baixou no estoque
+  cancelledAt: timestamp('cancelled_at'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+/**
+ * Variações da receita (Curto/Médio/Longo)
+ * Permite ajustar quantidades automaticamente por tamanho de cabelo
+ */
+export const recipeVariants = pgTable('recipe_variants', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  recipeId: uuid('recipe_id').references(() => serviceRecipes.id, { onDelete: 'cascade' }).notNull(),
+  code: variantCodeEnum('code').notNull(),
+  name: varchar('name', { length: 50 }).notNull(),
+  multiplier: decimal('multiplier', { precision: 3, scale: 2 }).default('1').notNull(),
+  isDefault: boolean('is_default').default(false).notNull(),
+  sortOrder: integer('sort_order').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+/**
+ * Grupos de produtos (para substituições)
+ * Permite definir produtos alternativos para uma mesma linha de receita
+ */
+export const productGroups = pgTable('product_groups', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  name: varchar('name', { length: 100 }).notNull(),
+  description: text('description'),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Itens do grupo de produtos
+ * Lista os produtos que fazem parte de um grupo de substituição
+ */
+export const productGroupItems = pgTable('product_group_items', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  groupId: uuid('group_id').references(() => productGroups.id, { onDelete: 'cascade' }).notNull(),
+  productId: integer('product_id').references(() => products.id).notNull(),
+  priority: integer('priority').default(1).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -1432,7 +1506,14 @@ export type ServiceRecipeLine = typeof serviceRecipeLines.$inferSelect;
 export type NewServiceRecipeLine = typeof serviceRecipeLines.$inferInsert;
 export type CommandConsumptionSnapshot = typeof commandConsumptionSnapshots.$inferSelect;
 export type NewCommandConsumptionSnapshot = typeof commandConsumptionSnapshots.$inferInsert;
+export type RecipeVariant = typeof recipeVariants.$inferSelect;
+export type NewRecipeVariant = typeof recipeVariants.$inferInsert;
+export type ProductGroup = typeof productGroups.$inferSelect;
+export type NewProductGroup = typeof productGroups.$inferInsert;
+export type ProductGroupItem = typeof productGroupItems.$inferSelect;
+export type NewProductGroupItem = typeof productGroupItems.$inferInsert;
 export type RecipeStatus = 'ACTIVE' | 'ARCHIVED';
+export type VariantCode = 'DEFAULT' | 'SHORT' | 'MEDIUM' | 'LONG' | 'EXTRA_LONG' | 'CUSTOM';
 
 /**
  * Enums para Comandas
@@ -1523,7 +1604,10 @@ export const commandItems = pgTable('command_items', {
   performerId: uuid('performer_id').references(() => users.id),
   addedById: uuid('added_by_id').references(() => users.id).notNull(),
   addedAt: timestamp('added_at').defaultNow().notNull(),
-  
+
+  // Variação da receita (para serviços com tamanho de cabelo)
+  variantId: uuid('variant_id').references(() => recipeVariants.id),
+
   canceledAt: timestamp('canceled_at'),
   canceledById: uuid('canceled_by_id').references(() => users.id),
   cancelReason: text('cancel_reason'),
