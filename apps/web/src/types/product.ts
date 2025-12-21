@@ -7,12 +7,19 @@ export interface Product {
   description: string | null;
   costPrice: string;
   salePrice: string;
-  currentStock: number;
-  minStock: number;
+  // Dual stock system
+  stockRetail: number;
+  stockInternal: number;
+  minStockRetail: number;
+  minStockInternal: number;
+  // Legacy fields (deprecated, kept for compatibility)
+  currentStock?: number;
+  minStock?: number;
   unit: ProductUnit;
   active: boolean;
   isRetail: boolean;
   isBackbar: boolean;
+  category?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -22,8 +29,10 @@ export interface CreateProductData {
   description?: string;
   costPrice: number;
   salePrice: number;
-  currentStock?: number;
-  minStock?: number;
+  stockRetail?: number;
+  stockInternal?: number;
+  minStockRetail?: number;
+  minStockInternal?: number;
   unit?: ProductUnit;
   isRetail?: boolean;
   isBackbar?: boolean;
@@ -34,8 +43,10 @@ export interface UpdateProductData {
   description?: string;
   costPrice?: number;
   salePrice?: number;
-  currentStock?: number;
-  minStock?: number;
+  stockRetail?: number;
+  stockInternal?: number;
+  minStockRetail?: number;
+  minStockInternal?: number;
   unit?: ProductUnit;
   active?: boolean;
   isRetail?: boolean;
@@ -52,6 +63,8 @@ export interface ProductStats {
   totalProducts: number;
   lowStockCount: number;
   totalStockValue: number;
+  retailStockValue: number;
+  internalStockValue: number;
 }
 
 export const PRODUCT_UNITS: { value: ProductUnit; label: string; abbreviation: string }[] = [
@@ -81,6 +94,25 @@ export function calculateMargin(costPrice: number, salePrice: number): number {
   return ((salePrice - costPrice) / costPrice) * 100;
 }
 
-export function isLowStock(product: Product): boolean {
-  return product.currentStock <= product.minStock;
+export type StockLocation = 'retail' | 'internal';
+
+export function isLowStock(product: Product, location?: StockLocation): boolean {
+  if (location === 'retail') {
+    return product.isRetail && product.stockRetail <= product.minStockRetail;
+  }
+  if (location === 'internal') {
+    return product.isBackbar && product.stockInternal <= product.minStockInternal;
+  }
+  // Check both locations
+  const retailLow = product.isRetail && product.stockRetail <= product.minStockRetail;
+  const internalLow = product.isBackbar && product.stockInternal <= product.minStockInternal;
+  return retailLow || internalLow;
+}
+
+export function isLowStockRetail(product: Product): boolean {
+  return product.isRetail && product.stockRetail <= product.minStockRetail;
+}
+
+export function isLowStockInternal(product: Product): boolean {
+  return product.isBackbar && product.stockInternal <= product.minStockInternal;
 }

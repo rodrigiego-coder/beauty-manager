@@ -6,6 +6,7 @@ import { ClientsModule } from '../clients';
 import { CommissionsModule } from '../commissions';
 import { LoyaltyModule } from '../loyalty';
 import { ProductsModule } from '../products';
+import { ServiceConsumptionsModule } from '../service-consumptions';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ProductsModule } from '../products';
     forwardRef(() => CommissionsModule),
     forwardRef(() => LoyaltyModule),
     forwardRef(() => ProductsModule),
+    forwardRef(() => ServiceConsumptionsModule),
   ],
   controllers: [CommandsController],
   providers: [CommandsService],

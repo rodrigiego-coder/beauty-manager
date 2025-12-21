@@ -293,12 +293,12 @@ export class ReportsService {
 
     if (productIds.length > 0) {
       const stockData = await this.db
-        .select({ id: products.id, stock: products.currentStock })
+        .select({ id: products.id, stockRetail: products.stockRetail, stockInternal: products.stockInternal })
         .from(products)
         .where(eq(products.salonId, salonId));
 
       for (const p of stockData) {
-        productsStock[String(p.id)] = p.stock;
+        productsStock[String(p.id)] = p.stockRetail + p.stockInternal;
       }
     }
 

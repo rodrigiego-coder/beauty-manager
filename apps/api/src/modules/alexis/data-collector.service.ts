@@ -135,7 +135,7 @@ export class DataCollectorService {
           description: p.description,
           price: p.salePrice,
           category: p.category || 'OUTROS',
-          inStock: (p.currentStock || 0) > 0,
+          inStock: (p.stockRetail + p.stockInternal) > 0,
         })),
         professionals: professionals.map((p) => ({
           id: p.id,
@@ -194,16 +194,22 @@ export class DataCollectorService {
             ),
           );
 
-        // Produtos com estoque baixo
-        const lowStock = await db
+        // Produtos com estoque baixo (verificar ambos os estoques)
+        const allProducts = await db
           .select()
           .from(products)
           .where(
             and(
               eq(products.salonId, salonId),
-              sql`${products.currentStock} <= ${products.minStock}`,
+              eq(products.active, true),
             ),
           );
+
+        const lowStock = allProducts.filter(p => {
+          const retailLow = p.isRetail && p.stockRetail <= p.minStockRetail;
+          const internalLow = p.isBackbar && p.stockInternal <= p.minStockInternal;
+          return retailLow || internalLow;
+        });
 
         return {
           todayRevenue: Number(revenueResult?.total || 0),
@@ -211,7 +217,7 @@ export class DataCollectorService {
           unconfirmedAppointments: todayAppointments.filter((a) => a.status === 'SCHEDULED').length,
           lowStockProducts: lowStock.map((p) => ({
             name: p.name,
-            stock: p.currentStock || 0,
+            stock: p.stockRetail + p.stockInternal,
           })),
         };
       }

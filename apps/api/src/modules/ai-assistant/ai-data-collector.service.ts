@@ -346,25 +346,29 @@ export class AIDataCollectorService {
   private async getLowStockProducts(
     salonId: string,
   ): Promise<Array<{ name: string; currentStock: number; minStock: number }>> {
+    // Buscar todos os produtos ativos do salão
     const result = await db
-      .select({
-        name: products.name,
-        currentStock: products.currentStock,
-        minStock: products.minStock,
-      })
+      .select()
       .from(products)
       .where(
         and(
           eq(products.salonId, salonId),
-          sql`${products.currentStock} <= ${products.minStock}`,
+          eq(products.active, true),
         ),
-      )
-      .limit(10);
+      );
 
-    return result.map((p) => ({
+    // Filtrar produtos com estoque baixo (retail ou internal)
+    const lowStock = result.filter(p => {
+      const retailLow = p.isRetail && p.stockRetail <= p.minStockRetail;
+      const internalLow = p.isBackbar && p.stockInternal <= p.minStockInternal;
+      return retailLow || internalLow;
+    }).slice(0, 10);
+
+    // Retornar formato compatível (usando retail como principal)
+    return lowStock.map((p) => ({
       name: p.name,
-      currentStock: p.currentStock || 0,
-      minStock: p.minStock || 0,
+      currentStock: p.stockRetail + p.stockInternal, // soma dos dois estoques
+      minStock: p.minStockRetail + p.minStockInternal,
     }));
   }
 

@@ -5,9 +5,13 @@ import {
   Database,
   products,
   stockAdjustments,
+  stockMovements,
   Product,
   NewProduct,
   StockAdjustment,
+  StockMovement,
+  LocationType,
+  MovementType,
 } from '../../database';
 
 export interface FindAllOptions {
@@ -16,12 +20,28 @@ export interface FindAllOptions {
   includeInactive?: boolean;
   lowStockOnly?: boolean;
   retailOnly?: boolean;
+  backbarOnly?: boolean;
 }
 
+// Interface legada para compatibilidade
 export interface AdjustStockData {
   quantity: number;
   type: 'IN' | 'OUT';
   reason: string;
+}
+
+// Nova interface para ajuste de estoque com localização
+export interface AdjustStockParams {
+  productId: number;
+  salonId: string;
+  userId: string;
+  quantity: number; // positivo = entrada, negativo = saída
+  locationType: LocationType;
+  movementType: MovementType;
+  reason: string;
+  referenceType?: string;
+  referenceId?: string;
+  transferGroupId?: string;
 }
 
 @Injectable()
@@ -35,7 +55,7 @@ export class ProductsService {
    * Lista todos os produtos do salão com filtros opcionais
    */
   async findAll(options: FindAllOptions): Promise<Product[]> {
-    const { salonId, search, includeInactive, lowStockOnly, retailOnly } = options;
+    const { salonId, search, includeInactive, lowStockOnly, retailOnly, backbarOnly } = options;
 
     // Construir condições
     const conditions = [eq(products.salonId, salonId)];
@@ -48,6 +68,11 @@ export class ProductsService {
     // Filtro de produtos vendáveis (retail)
     if (retailOnly) {
       conditions.push(eq(products.isRetail, true));
+    }
+
+    // Filtro de produtos de consumo interno (backbar)
+    if (backbarOnly) {
+      conditions.push(eq(products.isBackbar, true));
     }
 
     // Busca por nome ou descrição
@@ -67,9 +92,13 @@ export class ProductsService {
       .where(and(...conditions))
       .orderBy(products.name);
 
-    // Filtro de estoque baixo (feito em memória pois comparação entre colunas)
+    // Filtro de estoque baixo (verifica ambos os estoques)
     if (lowStockOnly) {
-      return result.filter(p => p.currentStock <= p.minStock);
+      return result.filter(p => {
+        const retailLow = p.isRetail && p.stockRetail <= p.minStockRetail;
+        const internalLow = p.isBackbar && p.stockInternal <= p.minStockInternal;
+        return retailLow || internalLow;
+      });
     }
 
     return result;
@@ -142,7 +171,81 @@ export class ProductsService {
   }
 
   /**
-   * Ajusta o estoque de um produto (entrada ou saída manual)
+   * Ajusta o estoque de um produto com localização (NOVO MÉTODO PRINCIPAL)
+   * @param params Parâmetros do ajuste de estoque
+   * @returns Produto atualizado e movimento registrado
+   */
+  async adjustStockWithLocation(params: AdjustStockParams): Promise<{ product: Product; movement: StockMovement }> {
+    const {
+      productId,
+      salonId,
+      userId,
+      quantity,
+      locationType,
+      movementType,
+      reason,
+      referenceType,
+      referenceId,
+      transferGroupId,
+    } = params;
+
+    // Buscar produto atual
+    const product = await this.findById(productId);
+    if (!product) {
+      throw new NotFoundException('Produto não encontrado');
+    }
+
+    // Verificar se o produto pertence ao salão
+    if (product.salonId !== salonId) {
+      throw new NotFoundException('Produto não encontrado');
+    }
+
+    // Determinar estoque atual e calcular novo estoque
+    const isRetailLocation = locationType === 'RETAIL';
+    const currentStock = isRetailLocation ? product.stockRetail : product.stockInternal;
+    const newStock = currentStock + quantity; // quantity já é positivo para entrada, negativo para saída
+
+    // Validar que não fica negativo
+    if (newStock < 0) {
+      throw new BadRequestException(
+        `Estoque ${isRetailLocation ? 'Retail' : 'Internal'} insuficiente. ` +
+        `Estoque atual: ${currentStock}, quantidade solicitada: ${Math.abs(quantity)}`
+      );
+    }
+
+    // Atualizar estoque do produto
+    const updateData = isRetailLocation
+      ? { stockRetail: newStock }
+      : { stockInternal: newStock };
+
+    const updatedProduct = await this.update(productId, updateData);
+
+    // Registrar movimento no histórico
+    const [movement] = await this.db
+      .insert(stockMovements)
+      .values({
+        productId,
+        salonId,
+        locationType,
+        delta: quantity,
+        movementType,
+        referenceType: referenceType || null,
+        referenceId: referenceId || null,
+        transferGroupId: transferGroupId || null,
+        reason: reason || null,
+        createdByUserId: userId,
+      })
+      .returning();
+
+    return {
+      product: updatedProduct!,
+      movement,
+    };
+  }
+
+  /**
+   * Ajusta o estoque de um produto (MÉTODO LEGADO - mantido para compatibilidade)
+   * Por padrão, usa RETAIL e ADJUSTMENT
    */
   async adjustStock(
     id: number,
@@ -163,8 +266,8 @@ export class ProductsService {
       throw new NotFoundException('Produto não encontrado');
     }
 
-    // Calcular novo estoque
-    const previousStock = product.currentStock;
+    // Calcular novo estoque (usando stockRetail como padrão para compatibilidade)
+    const previousStock = product.stockRetail;
     let newStock: number;
 
     if (type === 'IN') {
@@ -179,10 +282,10 @@ export class ProductsService {
       newStock = previousStock - quantity;
     }
 
-    // Atualizar estoque do produto
-    const updatedProduct = await this.update(id, { currentStock: newStock });
+    // Atualizar estoque do produto (stockRetail)
+    const updatedProduct = await this.update(id, { stockRetail: newStock });
 
-    // Registrar ajuste no histórico
+    // Registrar ajuste no histórico legado
     const [adjustment] = await this.db
       .insert(stockAdjustments)
       .values({
@@ -197,6 +300,22 @@ export class ProductsService {
       })
       .returning();
 
+    // Também registrar no novo sistema de movimentos
+    const delta = type === 'IN' ? quantity : -quantity;
+    const movementType: MovementType = type === 'IN' ? 'PURCHASE' : 'ADJUSTMENT';
+
+    await this.db
+      .insert(stockMovements)
+      .values({
+        productId: id,
+        salonId,
+        locationType: 'RETAIL',
+        delta,
+        movementType,
+        reason,
+        createdByUserId: userId,
+      });
+
     return {
       product: updatedProduct!,
       adjustment,
@@ -204,7 +323,7 @@ export class ProductsService {
   }
 
   /**
-   * Lista produtos com estoque baixo (current_stock <= min_stock)
+   * Lista produtos com estoque baixo (verifica ambos os estoques)
    */
   async findLowStock(salonId: string): Promise<Product[]> {
     const allProducts = await this.db
@@ -215,8 +334,12 @@ export class ProductsService {
         eq(products.active, true)
       ));
 
-    // Filtra produtos onde currentStock <= minStock
-    return allProducts.filter(p => p.currentStock <= p.minStock);
+    // Filtra produtos onde qualquer estoque está baixo
+    return allProducts.filter(p => {
+      const retailLow = p.isRetail && p.stockRetail <= p.minStockRetail;
+      const internalLow = p.isBackbar && p.stockInternal <= p.minStockInternal;
+      return retailLow || internalLow;
+    });
   }
 
   /**
@@ -226,6 +349,8 @@ export class ProductsService {
     totalProducts: number;
     lowStockCount: number;
     totalStockValue: number;
+    retailStockValue: number;
+    internalStockValue: number;
   }> {
     const allProducts = await this.db
       .select()
@@ -235,22 +360,33 @@ export class ProductsService {
         eq(products.active, true)
       ));
 
-    const lowStockCount = allProducts.filter(p => p.currentStock <= p.minStock).length;
+    const lowStockCount = allProducts.filter(p => {
+      const retailLow = p.isRetail && p.stockRetail <= p.minStockRetail;
+      const internalLow = p.isBackbar && p.stockInternal <= p.minStockInternal;
+      return retailLow || internalLow;
+    }).length;
 
-    // Calcular valor total em estoque (currentStock * costPrice)
-    const totalStockValue = allProducts.reduce((acc, p) => {
-      return acc + (p.currentStock * parseFloat(p.costPrice));
-    }, 0);
+    // Calcular valor total em estoque (ambos os estoques)
+    let retailStockValue = 0;
+    let internalStockValue = 0;
+
+    allProducts.forEach(p => {
+      const costPrice = parseFloat(p.costPrice);
+      retailStockValue += p.stockRetail * costPrice;
+      internalStockValue += p.stockInternal * costPrice;
+    });
 
     return {
       totalProducts: allProducts.length,
       lowStockCount,
-      totalStockValue,
+      totalStockValue: Math.round((retailStockValue + internalStockValue) * 100) / 100,
+      retailStockValue: Math.round(retailStockValue * 100) / 100,
+      internalStockValue: Math.round(internalStockValue * 100) / 100,
     };
   }
 
   /**
-   * Busca histórico de ajustes de estoque de um produto
+   * Busca histórico de ajustes de estoque de um produto (legado)
    */
   async getAdjustmentHistory(productId: number): Promise<StockAdjustment[]> {
     return this.db
@@ -258,5 +394,75 @@ export class ProductsService {
       .from(stockAdjustments)
       .where(eq(stockAdjustments.productId, productId))
       .orderBy(stockAdjustments.createdAt);
+  }
+
+  /**
+   * Busca histórico de movimentos de estoque de um produto (novo)
+   */
+  async getMovementHistory(productId: number): Promise<StockMovement[]> {
+    return this.db
+      .select()
+      .from(stockMovements)
+      .where(eq(stockMovements.productId, productId))
+      .orderBy(stockMovements.createdAt);
+  }
+
+  /**
+   * Transfere estoque entre localizações (RETAIL <-> INTERNAL)
+   */
+  async transferStock(
+    productId: number,
+    salonId: string,
+    userId: string,
+    quantity: number,
+    fromLocation: LocationType,
+    toLocation: LocationType,
+    reason?: string,
+  ): Promise<{ product: Product; movements: StockMovement[] }> {
+    if (fromLocation === toLocation) {
+      throw new BadRequestException('Origem e destino devem ser diferentes');
+    }
+
+    if (quantity <= 0) {
+      throw new BadRequestException('Quantidade deve ser positiva');
+    }
+
+    // Gerar ID de grupo para vincular os dois movimentos
+    const transferGroupId = crypto.randomUUID();
+
+    // Saída da origem
+    await this.adjustStockWithLocation({
+      productId,
+      salonId,
+      userId,
+      quantity: -quantity, // negativo = saída
+      locationType: fromLocation,
+      movementType: 'TRANSFER',
+      reason: reason || `Transferência para ${toLocation}`,
+      transferGroupId,
+    });
+
+    // Entrada no destino
+    const { product: finalProduct } = await this.adjustStockWithLocation({
+      productId,
+      salonId,
+      userId,
+      quantity: quantity, // positivo = entrada
+      locationType: toLocation,
+      movementType: 'TRANSFER',
+      reason: reason || `Transferência de ${fromLocation}`,
+      transferGroupId,
+    });
+
+    // Buscar ambos os movimentos
+    const movements = await this.db
+      .select()
+      .from(stockMovements)
+      .where(eq(stockMovements.transferGroupId, transferGroupId));
+
+    return {
+      product: finalProduct,
+      movements,
+    };
   }
 }

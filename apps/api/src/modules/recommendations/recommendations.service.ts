@@ -249,14 +249,14 @@ export class RecommendationsService {
           if (addedProductIds.has(recProduct.productId)) continue;
 
           const product = productMap.get(recProduct.productId);
-          if (!product || product.currentStock <= 0) continue;
+          if (!product || (product.stockRetail + product.stockInternal) <= 0) continue;
 
           recommendations.push({
             productId: product.id,
             productName: product.name,
             productDescription: product.description,
             salePrice: product.salePrice,
-            currentStock: product.currentStock,
+            currentStock: product.stockRetail + product.stockInternal,
             reason: recProduct.reason,
             priority: recProduct.priority,
             matchedCriteria,
@@ -272,7 +272,7 @@ export class RecommendationsService {
     // Também busca produtos diretamente relacionados ao perfil
     const profileBasedProducts = products.filter(product => {
       if (addedProductIds.has(product.id)) return false;
-      if (product.currentStock <= 0) return false;
+      if ((product.stockRetail + product.stockInternal) <= 0) return false;
 
       const hairTypes = (product.hairTypes as string[]) || [];
       const concerns = (product.concerns as string[]) || [];
@@ -303,7 +303,7 @@ export class RecommendationsService {
         productName: product.name,
         productDescription: product.description,
         salePrice: product.salePrice,
-        currentStock: product.currentStock,
+        currentStock: product.stockRetail + product.stockInternal,
         reason: 'Produto indicado para seu perfil capilar',
         priority: 0,
         matchedCriteria,

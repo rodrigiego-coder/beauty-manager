@@ -520,13 +520,18 @@ export class DashboardService {
         ),
       );
 
+    // Filtrar produtos com estoque baixo (retail ou internal)
     return allProducts
-      .filter(p => p.currentStock <= p.minStock)
+      .filter(p => {
+        const retailLow = p.isRetail && p.stockRetail <= p.minStockRetail;
+        const internalLow = p.isBackbar && p.stockInternal <= p.minStockInternal;
+        return retailLow || internalLow;
+      })
       .map(p => ({
         id: p.id,
         name: p.name,
-        currentStock: p.currentStock,
-        minStock: p.minStock,
+        currentStock: p.stockRetail + p.stockInternal,
+        minStock: p.minStockRetail + p.minStockInternal,
       }))
       .sort((a, b) => a.currentStock - b.currentStock);
   }

@@ -33,6 +33,7 @@ import { ClientsService } from '../clients';
 import { CommissionsService } from '../commissions';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { ProductsService } from '../products';
+import { ServiceConsumptionsService } from '../service-consumptions';
 
 // Interface para resultado de pagamento (exportada para controller)
 export interface AddPaymentResult {
@@ -61,6 +62,7 @@ export class CommandsService {
     private commissionsService: CommissionsService,
     private loyaltyService: LoyaltyService,
     private productsService: ProductsService,
+    private serviceConsumptionsService: ServiceConsumptionsService,
   ) {}
 
   /**
@@ -327,16 +329,26 @@ export class CommandsService {
         throw new BadRequestException('Produto nao pertence a este salao');
       }
 
-      await this.productsService.adjustStock(
+      // Validação: produto deve ser vendável (isRetail = true)
+      if (!product.isRetail) {
+        throw new BadRequestException(
+          `Produto "${product.name}" não está habilitado para venda. ` +
+          `Habilite a opção "Venda na loja" para vendê-lo.`
+        );
+      }
+
+      // Baixar estoque RETAIL (loja)
+      await this.productsService.adjustStockWithLocation({
         productId,
-        command.salonId,
-        currentUser.id,
-        {
-          quantity,
-          type: 'OUT',
-          reason: `Venda - Comanda ${command.cardNumber}`,
-        }
-      );
+        salonId: command.salonId,
+        userId: currentUser.id,
+        quantity: -quantity, // negativo = saída
+        locationType: 'RETAIL', // estoque da LOJA (venda)
+        movementType: 'SALE',
+        reason: `Venda - Comanda ${command.cardNumber}`,
+        referenceType: 'command',
+        referenceId: command.id,
+      });
     }
 
     // Adiciona o item
@@ -419,28 +431,26 @@ export class CommandsService {
     const discount = data.discount ?? parseFloat(existingItem.discount || '0');
     const totalPrice = (quantity * unitPrice) - discount;
 
-    // Se for PRODUTO e quantidade mudou, ajustar estoque
+    // Se for PRODUTO e quantidade mudou, ajustar estoque RETAIL
     if (existingItem.type === 'PRODUCT' && existingItem.referenceId && quantity !== oldQuantity) {
       const productId = parseInt(existingItem.referenceId, 10);
       if (!isNaN(productId)) {
         const diff = quantity - oldQuantity;
-        if (diff > 0) {
-          // Aumentou quantidade = baixar mais estoque
-          await this.productsService.adjustStock(
-            productId,
-            command.salonId,
-            currentUser.id,
-            { quantity: diff, type: 'OUT', reason: `Ajuste qty - Comanda ${command.cardNumber}` }
-          );
-        } else if (diff < 0) {
-          // Diminuiu quantidade = devolver estoque
-          await this.productsService.adjustStock(
-            productId,
-            command.salonId,
-            currentUser.id,
-            { quantity: Math.abs(diff), type: 'IN', reason: `Devolução qty - Comanda ${command.cardNumber}` }
-          );
-        }
+        // diff positivo = aumentou quantidade (saída adicional)
+        // diff negativo = diminuiu quantidade (devolução)
+        await this.productsService.adjustStockWithLocation({
+          productId,
+          salonId: command.salonId,
+          userId: currentUser.id,
+          quantity: -diff, // negativo de diff: aumentou=saída, diminuiu=entrada
+          locationType: 'RETAIL',
+          movementType: diff > 0 ? 'SALE' : 'RETURN',
+          reason: diff > 0
+            ? `Ajuste qty (+${diff}) - Comanda ${command.cardNumber}`
+            : `Devolução qty (${diff}) - Comanda ${command.cardNumber}`,
+          referenceType: 'command',
+          referenceId: command.id,
+        });
       }
     }
 
@@ -510,17 +520,22 @@ export class CommandsService {
       throw new BadRequestException('Item ja foi cancelado');
     }
 
-    // Se for PRODUTO, devolver estoque
+    // Se for PRODUTO, devolver estoque RETAIL
     if (existingItem.type === 'PRODUCT' && existingItem.referenceId) {
       const productId = parseInt(existingItem.referenceId, 10);
       if (!isNaN(productId)) {
         const qty = parseFloat(existingItem.quantity);
-        await this.productsService.adjustStock(
+        await this.productsService.adjustStockWithLocation({
           productId,
-          command.salonId,
-          currentUser.id,
-          { quantity: qty, type: 'IN', reason: `Cancelamento item - Comanda ${command.cardNumber}` }
-        );
+          salonId: command.salonId,
+          userId: currentUser.id,
+          quantity: qty, // positivo = entrada (devolução)
+          locationType: 'RETAIL',
+          movementType: 'RETURN',
+          reason: `Cancelamento item - Comanda ${command.cardNumber}`,
+          referenceType: 'command',
+          referenceId: command.id,
+        });
       }
     }
 
@@ -593,6 +608,7 @@ export class CommandsService {
 
   /**
    * Encerra os serviços da comanda
+   * Consome automaticamente os produtos do BOM de cada serviço
    */
   async closeService(commandId: string, currentUser: CurrentUser): Promise<Command> {
     const command = await this.findById(commandId);
@@ -608,6 +624,74 @@ export class CommandsService {
       throw new BadRequestException('Servicos ja foram encerrados');
     }
 
+    // ========================================
+    // PACOTE 3: Consumo automático de BOM
+    // ========================================
+    const items = await this.getItems(commandId);
+    const serviceItems = items.filter(
+      item => item.type === 'SERVICE' && !item.canceledAt && item.referenceId
+    );
+
+    // Coletar IDs de serviços únicos
+    const serviceIds: number[] = [];
+    for (const item of serviceItems) {
+      const serviceId = parseInt(item.referenceId!, 10);
+      if (!isNaN(serviceId) && !serviceIds.includes(serviceId)) {
+        serviceIds.push(serviceId);
+      }
+    }
+
+    // Carregar BOM de todos os serviços
+    let bomConsumedCount = 0;
+    let productsConsumedCount = 0;
+
+    if (serviceIds.length > 0) {
+      const allConsumptions = await this.serviceConsumptionsService.findByServiceIds(
+        serviceIds,
+        command.salonId,
+      );
+
+      // Agregar consumo por produto
+      // Map<productId, totalQuantity>
+      const consumptionMap = new Map<number, number>();
+
+      for (const item of serviceItems) {
+        const serviceId = parseInt(item.referenceId!, 10);
+        if (isNaN(serviceId)) continue;
+
+        const itemQty = parseFloat(item.quantity);
+        const serviceConsumptions = allConsumptions.filter(c => c.serviceId === serviceId);
+
+        for (const consumption of serviceConsumptions) {
+          const productId = consumption.productId;
+          const bomQty = parseFloat(consumption.quantity);
+          const totalQty = itemQty * bomQty;
+
+          const current = consumptionMap.get(productId) || 0;
+          consumptionMap.set(productId, current + totalQty);
+        }
+      }
+
+      // Executar consumo de estoque INTERNAL (sem try/catch - falha bloqueia closeService)
+      for (const [productId, totalQty] of consumptionMap.entries()) {
+        await this.productsService.adjustStockWithLocation({
+          productId,
+          salonId: command.salonId,
+          userId: currentUser.id,
+          quantity: -totalQty, // negativo = saída
+          locationType: 'INTERNAL', // estoque do SALÃO (consumo interno)
+          movementType: 'SERVICE_CONSUMPTION',
+          reason: `Consumo automático BOM - Comanda ${command.cardNumber}`,
+          referenceType: 'command',
+          referenceId: command.id,
+        });
+        bomConsumedCount++;
+      }
+
+      productsConsumedCount = consumptionMap.size;
+    }
+
+    // Atualiza status da comanda
     const [updatedCommand] = await this.db
       .update(commands)
       .set({
@@ -619,11 +703,20 @@ export class CommandsService {
       .where(eq(commands.id, commandId))
       .returning();
 
-    // Registra evento
+    // Registra evento SERVICE_CLOSED
     await this.addEvent(commandId, currentUser.id, 'SERVICE_CLOSED', {
       totalGross: command.totalGross,
       totalNet: command.totalNet,
     });
+
+    // Registra evento BOM_CONSUMED se houve consumo
+    if (bomConsumedCount > 0) {
+      await this.addEvent(commandId, currentUser.id, 'BOM_CONSUMED', {
+        servicesCount: serviceIds.length,
+        productsConsumed: productsConsumedCount,
+        adjustmentsCreated: bomConsumedCount,
+      });
+    }
 
     return updatedCommand;
   }
@@ -1168,20 +1261,84 @@ export class CommandsService {
         const productId = parseInt(item.referenceId!, 10);
         if (!isNaN(productId)) {
           const qty = parseFloat(item.quantity);
-          await this.productsService.adjustStock(
+          // Devolver estoque RETAIL (produto vendido)
+          await this.productsService.adjustStockWithLocation({
             productId,
-            command.salonId,
-            currentUser.id,
-            {
-              quantity: qty,
-              type: 'IN',
-              reason: `Cancelamento comanda ${command.cardNumber}`,
-            }
-          );
+            salonId: command.salonId,
+            userId: currentUser.id,
+            quantity: qty, // positivo = entrada (devolução)
+            locationType: 'RETAIL',
+            movementType: 'RETURN',
+            reason: `Cancelamento comanda ${command.cardNumber}`,
+            referenceType: 'command',
+            referenceId: command.id,
+          });
         }
       } catch (err) {
         console.error(`[cancel] Erro ao devolver estoque do item ${item.id}:`, err);
         // Continua mesmo se falhar (não bloqueia cancelamento)
+      }
+    }
+
+    // ========================================
+    // PACOTE 3: Reverter BOM se serviços foram encerrados
+    // ========================================
+    let bomRevertedCount = 0;
+    if (command.serviceClosedAt) {
+      const serviceItems = items.filter(
+        item => item.type === 'SERVICE' && !item.canceledAt && item.referenceId
+      );
+
+      // Coletar IDs de serviços únicos
+      const serviceIds: number[] = [];
+      for (const item of serviceItems) {
+        const serviceId = parseInt(item.referenceId!, 10);
+        if (!isNaN(serviceId) && !serviceIds.includes(serviceId)) {
+          serviceIds.push(serviceId);
+        }
+      }
+
+      if (serviceIds.length > 0) {
+        const allConsumptions = await this.serviceConsumptionsService.findByServiceIds(
+          serviceIds,
+          command.salonId,
+        );
+
+        // Agregar consumo por produto (mesma lógica do closeService)
+        const consumptionMap = new Map<number, number>();
+
+        for (const item of serviceItems) {
+          const serviceId = parseInt(item.referenceId!, 10);
+          if (isNaN(serviceId)) continue;
+
+          const itemQty = parseFloat(item.quantity);
+          const serviceConsumptions = allConsumptions.filter(c => c.serviceId === serviceId);
+
+          for (const consumption of serviceConsumptions) {
+            const productId = consumption.productId;
+            const bomQty = parseFloat(consumption.quantity);
+            const totalQty = itemQty * bomQty;
+
+            const current = consumptionMap.get(productId) || 0;
+            consumptionMap.set(productId, current + totalQty);
+          }
+        }
+
+        // Reverter consumo de estoque INTERNAL (sem try/catch - falha bloqueia cancel)
+        for (const [productId, totalQty] of consumptionMap.entries()) {
+          await this.productsService.adjustStockWithLocation({
+            productId,
+            salonId: command.salonId,
+            userId: currentUser.id,
+            quantity: totalQty, // positivo = entrada (reversão)
+            locationType: 'INTERNAL', // estoque do SALÃO (consumo interno)
+            movementType: 'RETURN',
+            reason: `Cancelamento comanda ${command.cardNumber} - Reversão BOM`,
+            referenceType: 'command',
+            referenceId: command.id,
+          });
+          bomRevertedCount++;
+        }
       }
     }
 
@@ -1201,6 +1358,7 @@ export class CommandsService {
       to: 'CANCELED',
       reason,
       stockReturned: productItems.length,
+      bomReverted: bomRevertedCount,
     });
 
     return canceledCommand;

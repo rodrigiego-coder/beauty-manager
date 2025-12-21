@@ -53,17 +53,38 @@ export class AutomationsService {
       .from(products)
       .where(eq(products.active, true));
 
-    const lowStockProducts = allProducts.filter(p => p.currentStock <= p.minStock);
+    // Verificar ambos os estoques (retail e internal)
+    const lowStockProducts = allProducts.filter(p => {
+      const retailLow = p.isRetail && p.stockRetail <= p.minStockRetail;
+      const internalLow = p.isBackbar && p.stockInternal <= p.minStockInternal;
+      return retailLow || internalLow;
+    });
     let notificationsCreated = 0;
 
     for (const product of lowStockProducts) {
-      await this.notificationsService.createStockLowNotification(
-        product.id,
-        product.name,
-        product.currentStock,
-        product.minStock,
-      );
-      notificationsCreated++;
+      // Determinar qual estoque está baixo para a notificação
+      const retailLow = product.isRetail && product.stockRetail <= product.minStockRetail;
+      const internalLow = product.isBackbar && product.stockInternal <= product.minStockInternal;
+
+      if (retailLow) {
+        await this.notificationsService.createStockLowNotification(
+          product.id,
+          `${product.name} (Retail)`,
+          product.stockRetail,
+          product.minStockRetail,
+        );
+        notificationsCreated++;
+      }
+
+      if (internalLow) {
+        await this.notificationsService.createStockLowNotification(
+          product.id,
+          `${product.name} (Internal)`,
+          product.stockInternal,
+          product.minStockInternal,
+        );
+        notificationsCreated++;
+      }
     }
 
     this.logger.log(`${notificationsCreated} notificacoes de estoque baixo criadas`);

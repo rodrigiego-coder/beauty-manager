@@ -30,15 +30,27 @@ export class CreateProductDto {
   @IsNotEmpty({ message: 'Preço de venda é obrigatório' })
   salePrice!: number;
 
-  @IsNumber({}, { message: 'Estoque atual deve ser um número' })
-  @Min(0, { message: 'Estoque atual não pode ser negativo' })
+  // Dual stock system - Estoque Loja (Retail)
+  @IsNumber({}, { message: 'Estoque Loja deve ser um número' })
+  @Min(0, { message: 'Estoque Loja não pode ser negativo' })
   @IsOptional()
-  currentStock?: number;
+  stockRetail?: number;
 
-  @IsNumber({}, { message: 'Estoque mínimo deve ser um número' })
-  @Min(0, { message: 'Estoque mínimo não pode ser negativo' })
+  @IsNumber({}, { message: 'Estoque Mínimo Loja deve ser um número' })
+  @Min(0, { message: 'Estoque Mínimo Loja não pode ser negativo' })
   @IsOptional()
-  minStock?: number;
+  minStockRetail?: number;
+
+  // Dual stock system - Estoque Salão (Internal)
+  @IsNumber({}, { message: 'Estoque Salão deve ser um número' })
+  @Min(0, { message: 'Estoque Salão não pode ser negativo' })
+  @IsOptional()
+  stockInternal?: number;
+
+  @IsNumber({}, { message: 'Estoque Mínimo Salão deve ser um número' })
+  @Min(0, { message: 'Estoque Mínimo Salão não pode ser negativo' })
+  @IsOptional()
+  minStockInternal?: number;
 
   @IsString({ message: 'Unidade deve ser uma string' })
   @IsIn(['UN', 'ML', 'KG', 'L', 'G'], { message: 'Unidade deve ser UN, ML, KG, L ou G' })
@@ -75,15 +87,27 @@ export class UpdateProductDto {
   @IsOptional()
   salePrice?: number;
 
-  @IsNumber({}, { message: 'Estoque atual deve ser um número' })
-  @Min(0, { message: 'Estoque atual não pode ser negativo' })
+  // Dual stock system - Estoque Loja (Retail)
+  @IsNumber({}, { message: 'Estoque Loja deve ser um número' })
+  @Min(0, { message: 'Estoque Loja não pode ser negativo' })
   @IsOptional()
-  currentStock?: number;
+  stockRetail?: number;
 
-  @IsNumber({}, { message: 'Estoque mínimo deve ser um número' })
-  @Min(0, { message: 'Estoque mínimo não pode ser negativo' })
+  @IsNumber({}, { message: 'Estoque Mínimo Loja deve ser um número' })
+  @Min(0, { message: 'Estoque Mínimo Loja não pode ser negativo' })
   @IsOptional()
-  minStock?: number;
+  minStockRetail?: number;
+
+  // Dual stock system - Estoque Salão (Internal)
+  @IsNumber({}, { message: 'Estoque Salão deve ser um número' })
+  @Min(0, { message: 'Estoque Salão não pode ser negativo' })
+  @IsOptional()
+  stockInternal?: number;
+
+  @IsNumber({}, { message: 'Estoque Mínimo Salão deve ser um número' })
+  @Min(0, { message: 'Estoque Mínimo Salão não pode ser negativo' })
+  @IsOptional()
+  minStockInternal?: number;
 
   @IsString({ message: 'Unidade deve ser uma string' })
   @IsIn(['UN', 'ML', 'KG', 'L', 'G'], { message: 'Unidade deve ser UN, ML, KG, L ou G' })

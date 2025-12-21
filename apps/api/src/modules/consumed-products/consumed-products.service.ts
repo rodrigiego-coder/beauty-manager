@@ -65,24 +65,25 @@ export class ConsumedProductsService {
       throw new BadRequestException('Produto esta inativo');
     }
 
-    // Verifica estoque disponível
-    if (product.currentStock < data.quantityUsed) {
+    // Verifica estoque disponível (usa stockInternal para consumo de serviço)
+    if (product.stockInternal < data.quantityUsed) {
       throw new BadRequestException(
-        `Estoque insuficiente. Disponivel: ${product.currentStock} ${product.unit}`,
+        `Estoque interno insuficiente. Disponivel: ${product.stockInternal} ${product.unit}`,
       );
     }
 
-    // Desconta do estoque via ProductsService (registra em stock_adjustments)
-    await this.productsService.adjustStock(
-      data.productId,
-      data.salonId,
-      data.userId,
-      {
-        quantity: data.quantityUsed,
-        type: 'OUT',
-        reason: 'SERVICE_CONSUMPTION',
-      },
-    );
+    // Desconta do estoque INTERNAL via ProductsService (registra em stock_movements)
+    await this.productsService.adjustStockWithLocation({
+      productId: data.productId,
+      salonId: data.salonId,
+      userId: data.userId,
+      quantity: -data.quantityUsed, // negativo = saída
+      locationType: 'INTERNAL',
+      movementType: 'SERVICE_CONSUMPTION',
+      reason: 'Consumo em serviço',
+      referenceType: 'appointment',
+      referenceId: data.appointmentId,
+    });
 
     // Registra o consumo com o custo no momento
     const consumed: NewConsumedProduct = {
@@ -209,17 +210,16 @@ export class ConsumedProductsService {
       return false;
     }
 
-    // Estorna o estoque via ProductsService (registra em stock_adjustments)
-    await this.productsService.adjustStock(
-      consumed.productId,
-      ctx.salonId,
-      ctx.userId,
-      {
-        quantity: parseFloat(consumed.quantityUsed),
-        type: 'IN',
-        reason: 'SERVICE_CONSUMPTION_REVERT',
-      },
-    );
+    // Estorna o estoque INTERNAL via ProductsService (registra em stock_movements)
+    await this.productsService.adjustStockWithLocation({
+      productId: consumed.productId,
+      salonId: ctx.salonId,
+      userId: ctx.userId,
+      quantity: parseFloat(consumed.quantityUsed), // positivo = entrada (estorno)
+      locationType: 'INTERNAL',
+      movementType: 'RETURN',
+      reason: 'Estorno de consumo em serviço',
+    });
 
     // Remove o registro
     await this.db.delete(consumedProducts).where(eq(consumedProducts.id, id));

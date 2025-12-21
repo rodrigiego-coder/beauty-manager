@@ -28,6 +28,7 @@ import { SubscriptionGuard } from './modules/subscriptions/subscription.guard';
 import { DashboardModule } from './modules/dashboard';
 import { CommandsModule } from './modules/commands';
 import { ServicesModule } from './modules/services';
+import { ServiceConsumptionsModule } from './modules/service-consumptions';
 import { CashRegistersModule } from './modules/cash-registers';
 import { CommissionsModule } from './modules/commissions';
 import { TeamModule } from './modules/team';
@@ -100,6 +101,7 @@ import { BillingModule } from './modules/billing';
     // Modulo de comandas
     CommandsModule,
     ServicesModule, // Modulo de servicos
+    ServiceConsumptionsModule, // Modulo de consumo de produtos por servico (BOM)
     // Modulo de caixa
     CashRegistersModule,
     // Modulo de formas de pagamento

@@ -982,11 +982,14 @@ export const products = pgTable('products', {
   description: text('description'),
   costPrice: decimal('cost_price', { precision: 10, scale: 2 }).notNull(),
   salePrice: decimal('sale_price', { precision: 10, scale: 2 }).notNull(),
-  currentStock: integer('current_stock').default(0).notNull(),
-  minStock: integer('min_stock').default(0).notNull(),
+  // Estoques separados (PACOTE 1 - Estoque Moderno)
+  stockRetail: integer('stock_retail').default(0).notNull(),
+  stockInternal: integer('stock_internal').default(0).notNull(),
+  minStockRetail: integer('min_stock_retail').default(0).notNull(),
+  minStockInternal: integer('min_stock_internal').default(0).notNull(),
   unit: unitEnum('unit').default('UN').notNull(),
   active: boolean('active').default(true).notNull(),
-  // Flags Retail/Backbar (PACOTE 2-A)
+  // Flags Retail/Backbar (indica onde o produto pode ser usado)
   isRetail: boolean('is_retail').default(true).notNull(),
   isBackbar: boolean('is_backbar').default(false).notNull(),
   // Campos de Inteligência de Produto
@@ -1003,12 +1006,30 @@ export const products = pgTable('products', {
 });
 
 /**
- * Enum para tipo de ajuste de estoque
+ * Enum para tipo de ajuste de estoque (LEGADO - manter para compatibilidade)
  */
 export const stockAdjustmentTypeEnum = pgEnum('stock_adjustment_type', ['IN', 'OUT']);
 
 /**
- * Tabela de Ajustes de Estoque (histórico)
+ * Enum para localização do estoque (RETAIL = venda, INTERNAL = consumo interno)
+ */
+export const stockLocationTypeEnum = pgEnum('stock_location_type', ['RETAIL', 'INTERNAL']);
+
+/**
+ * Enum para tipo de movimento de estoque
+ */
+export const movementTypeEnum = pgEnum('movement_type', [
+  'SALE',                // Venda para cliente
+  'SERVICE_CONSUMPTION', // Consumo em serviço
+  'PURCHASE',            // Compra/entrada
+  'TRANSFER',            // Transferência entre locações
+  'ADJUSTMENT',          // Ajuste manual
+  'RETURN',              // Devolução
+  'CANCELED',            // Cancelamento (estorno)
+]);
+
+/**
+ * Tabela de Ajustes de Estoque (LEGADO - manter para compatibilidade)
  */
 export const stockAdjustments = pgTable('stock_adjustments', {
   id: serial('id').primaryKey(),
@@ -1020,6 +1041,25 @@ export const stockAdjustments = pgTable('stock_adjustments', {
   previousStock: integer('previous_stock').notNull(),
   newStock: integer('new_stock').notNull(),
   reason: text('reason').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+/**
+ * Tabela de Movimentos de Estoque (NOVO - substitui stockAdjustments)
+ * Registra todas as movimentações de estoque com localização (RETAIL/INTERNAL)
+ */
+export const stockMovements = pgTable('stock_movements', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  productId: integer('product_id').references(() => products.id).notNull(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  locationType: stockLocationTypeEnum('location_type').notNull(),
+  delta: integer('delta').notNull(), // positivo = entrada, negativo = saída
+  movementType: movementTypeEnum('movement_type').notNull(),
+  referenceType: varchar('reference_type', { length: 50 }), // 'command', 'appointment', 'purchase', etc.
+  referenceId: uuid('reference_id'), // ID do registro relacionado
+  transferGroupId: uuid('transfer_group_id'), // Agrupa transferências entre locações
+  reason: text('reason'),
+  createdByUserId: uuid('created_by_user_id').references(() => users.id).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -1187,6 +1227,102 @@ export const supportSessions = pgTable('support_sessions', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+/**
+ * Tabela de Consumo de Produtos por Serviço (BOM - Bill of Materials)
+ * Define quais produtos são consumidos automaticamente ao executar um serviço
+ */
+export const serviceConsumptions = pgTable('service_consumptions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  serviceId: integer('service_id').references(() => services.id).notNull(),
+  productId: integer('product_id').references(() => products.id).notNull(),
+  quantity: decimal('quantity', { precision: 10, scale: 3 }).notNull(),
+  unit: varchar('unit', { length: 5 }).default('UN').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// =====================================================
+// SISTEMA DE RECEITAS E CONSUMO AUTOMÁTICO
+// =====================================================
+
+/**
+ * Enum para status da receita
+ */
+export const recipeStatusEnum = pgEnum('recipe_status', ['ACTIVE', 'ARCHIVED']);
+
+/**
+ * Locais de estoque (flexível para múltiplos locais)
+ */
+export const inventoryLocations = pgTable('inventory_locations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  code: varchar('code', { length: 20 }).notNull(), // 'LOJA', 'SALAO', 'ALMOXARIFADO'
+  name: varchar('name', { length: 100 }).notNull(),
+  description: text('description'),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Receitas de serviços (cabeçalho com versionamento)
+ * Cada serviço pode ter múltiplas versões de receita, apenas uma ACTIVE
+ */
+export const serviceRecipes = pgTable('service_recipes', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  serviceId: integer('service_id').references(() => services.id).notNull(),
+  version: integer('version').default(1).notNull(),
+  status: recipeStatusEnum('status').default('ACTIVE').notNull(),
+  effectiveFrom: date('effective_from').defaultNow().notNull(),
+  notes: text('notes'),
+  createdById: uuid('created_by_id').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Linhas da receita (produtos e quantidades)
+ * Cada linha representa um produto com quantidade padrão e buffer
+ */
+export const serviceRecipeLines = pgTable('service_recipe_lines', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  recipeId: uuid('recipe_id').references(() => serviceRecipes.id, { onDelete: 'cascade' }).notNull(),
+  productId: integer('product_id').references(() => products.id).notNull(),
+  quantityStandard: decimal('quantity_standard', { precision: 10, scale: 3 }).notNull(), // quantidade ideal
+  quantityBuffer: decimal('quantity_buffer', { precision: 10, scale: 3 }).default('0').notNull(), // folga
+  unit: varchar('unit', { length: 10 }).notNull(), // ML, G, UN
+  isRequired: boolean('is_required').default(true).notNull(),
+  notes: text('notes'), // "cabelo longo usa mais"
+  sortOrder: integer('sort_order').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+/**
+ * Snapshot do consumo aplicado automaticamente (imutável, para auditoria)
+ * Registra exatamente o que foi consumido em cada serviço de uma comanda
+ */
+export const commandConsumptionSnapshots = pgTable('command_consumption_snapshots', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  commandId: uuid('command_id').references(() => commands.id).notNull(),
+  commandItemId: uuid('command_item_id').references(() => commandItems.id).notNull(),
+  serviceId: integer('service_id').references(() => services.id).notNull(),
+  recipeId: uuid('recipe_id').references(() => serviceRecipes.id),
+  recipeVersion: integer('recipe_version'),
+  productId: integer('product_id').references(() => products.id).notNull(),
+  quantityStandard: decimal('quantity_standard', { precision: 10, scale: 3 }).notNull(),
+  quantityBuffer: decimal('quantity_buffer', { precision: 10, scale: 3 }).notNull(),
+  quantityApplied: decimal('quantity_applied', { precision: 10, scale: 3 }).notNull(), // standard + buffer
+  unit: varchar('unit', { length: 10 }).notNull(),
+  costAtTime: decimal('cost_at_time', { precision: 10, scale: 2 }).notNull(), // custo unitário
+  totalCost: decimal('total_cost', { precision: 10, scale: 2 }).notNull(), // qty * cost
+  stockMovementId: uuid('stock_movement_id').references(() => stockMovements.id),
+  postedAt: timestamp('posted_at'), // quando baixou no estoque
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // Types inferidos do schema
 export type Salon = typeof salons.$inferSelect;
 export type NewSalon = typeof salons.$inferInsert;
@@ -1202,6 +1338,12 @@ export type Product = typeof products.$inferSelect;
 export type NewProduct = typeof products.$inferInsert;
 export type StockAdjustment = typeof stockAdjustments.$inferSelect;
 export type NewStockAdjustment = typeof stockAdjustments.$inferInsert;
+
+// Tipos para o novo sistema de movimentos de estoque
+export type StockMovement = typeof stockMovements.$inferSelect;
+export type NewStockMovement = typeof stockMovements.$inferInsert;
+export type LocationType = 'RETAIL' | 'INTERNAL';
+export type MovementType = 'SALE' | 'SERVICE_CONSUMPTION' | 'PURCHASE' | 'TRANSFER' | 'ADJUSTMENT' | 'RETURN' | 'CANCELED';
 export type Service = typeof services.$inferSelect;
 export type NewService = typeof services.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;
@@ -1222,6 +1364,8 @@ export type AuditLog = typeof auditLogs.$inferSelect;
 export type NewAuditLog = typeof auditLogs.$inferInsert;
 export type SupportSession = typeof supportSessions.$inferSelect;
 export type NewSupportSession = typeof supportSessions.$inferInsert;
+export type ServiceConsumption = typeof serviceConsumptions.$inferSelect;
+export type NewServiceConsumption = typeof serviceConsumptions.$inferInsert;
 
 // Types para Sistema de Assinaturas (Novo)
 export type Plan = typeof plans.$inferSelect;
@@ -1278,6 +1422,17 @@ export type ProductRecommendationRule = typeof productRecommendationRules.$infer
 export type NewProductRecommendationRule = typeof productRecommendationRules.$inferInsert;
 export type ProductRecommendationLog = typeof productRecommendationsLog.$inferSelect;
 export type NewProductRecommendationLog = typeof productRecommendationsLog.$inferInsert;
+
+// Types para Sistema de Receitas e Consumo Automático
+export type InventoryLocation = typeof inventoryLocations.$inferSelect;
+export type NewInventoryLocation = typeof inventoryLocations.$inferInsert;
+export type ServiceRecipe = typeof serviceRecipes.$inferSelect;
+export type NewServiceRecipe = typeof serviceRecipes.$inferInsert;
+export type ServiceRecipeLine = typeof serviceRecipeLines.$inferSelect;
+export type NewServiceRecipeLine = typeof serviceRecipeLines.$inferInsert;
+export type CommandConsumptionSnapshot = typeof commandConsumptionSnapshots.$inferSelect;
+export type NewCommandConsumptionSnapshot = typeof commandConsumptionSnapshots.$inferInsert;
+export type RecipeStatus = 'ACTIVE' | 'ARCHIVED';
 
 /**
  * Enums para Comandas

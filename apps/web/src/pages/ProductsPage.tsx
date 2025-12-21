@@ -11,7 +11,8 @@ import {
   ArrowUpDown,
   TrendingUp,
   BoxesIcon,
-  DollarSign,
+  Store,
+  Scissors,
 } from 'lucide-react';
 import api from '../services/api';
 import {
@@ -24,7 +25,9 @@ import {
   PRODUCT_UNITS,
   getUnitAbbreviation,
   calculateMargin,
-  isLowStock,
+  isLowStockRetail,
+  isLowStockInternal,
+  StockLocation,
 } from '../types/product';
 
 export function ProductsPage() {
@@ -33,6 +36,9 @@ export function ProductsPage() {
   const [stats, setStats] = useState<ProductStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Tab ativa (retail = Loja/Venda, internal = Consumo/Salão)
+  const [activeTab, setActiveTab] = useState<StockLocation>('retail');
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
@@ -52,8 +58,10 @@ export function ProductsPage() {
     description: '',
     costPrice: 0,
     salePrice: 0,
-    currentStock: 0,
-    minStock: 0,
+    stockRetail: 0,
+    stockInternal: 0,
+    minStockRetail: 0,
+    minStockInternal: 0,
     unit: 'UN',
     isRetail: true,
     isBackbar: false,
@@ -105,10 +113,15 @@ export function ProductsPage() {
   };
 
   const filteredProducts = products.filter((product) => {
+    // Filter by search term
     const matchesSearch =
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (product.description && product.description.toLowerCase().includes(searchTerm.toLowerCase()));
-    return matchesSearch;
+
+    // Filter by active tab
+    const matchesTab = activeTab === 'retail' ? product.isRetail : product.isBackbar;
+
+    return matchesSearch && matchesTab;
   });
 
   const formatCurrency = (value: string | number) => {
@@ -153,12 +166,11 @@ export function ProductsPage() {
       errors.reason = 'Motivo deve ter pelo menos 3 caracteres';
     }
 
-    if (
-      adjustFormData.type === 'OUT' &&
-      selectedProduct &&
-      adjustFormData.quantity > selectedProduct.currentStock
-    ) {
-      errors.quantity = `Quantidade maior que o estoque disponivel (${selectedProduct.currentStock})`;
+    if (adjustFormData.type === 'OUT' && selectedProduct) {
+      const currentStock = activeTab === 'retail' ? selectedProduct.stockRetail : selectedProduct.stockInternal;
+      if (adjustFormData.quantity > currentStock) {
+        errors.quantity = `Quantidade maior que o estoque disponivel (${currentStock})`;
+      }
     }
 
     setAdjustFormErrors(errors);
@@ -171,11 +183,13 @@ export function ProductsPage() {
       description: '',
       costPrice: 0,
       salePrice: 0,
-      currentStock: 0,
-      minStock: 0,
+      stockRetail: 0,
+      stockInternal: 0,
+      minStockRetail: 0,
+      minStockInternal: 0,
       unit: 'UN',
-      isRetail: true,
-      isBackbar: false,
+      isRetail: activeTab === 'retail',
+      isBackbar: activeTab === 'internal',
     });
     setFormErrors({});
     setShowCreateModal(true);
@@ -188,8 +202,10 @@ export function ProductsPage() {
       description: product.description || '',
       costPrice: parseFloat(product.costPrice),
       salePrice: parseFloat(product.salePrice),
-      currentStock: product.currentStock,
-      minStock: product.minStock,
+      stockRetail: product.stockRetail,
+      stockInternal: product.stockInternal,
+      minStockRetail: product.minStockRetail,
+      minStockInternal: product.minStockInternal,
       unit: product.unit,
       isRetail: product.isRetail,
       isBackbar: product.isBackbar,
@@ -251,14 +267,26 @@ export function ProductsPage() {
       if (formData.salePrice !== parseFloat(selectedProduct.salePrice)) {
         updateData.salePrice = formData.salePrice;
       }
-      if (formData.currentStock !== selectedProduct.currentStock) {
-        updateData.currentStock = formData.currentStock;
+      if (formData.stockRetail !== selectedProduct.stockRetail) {
+        updateData.stockRetail = formData.stockRetail;
       }
-      if (formData.minStock !== selectedProduct.minStock) {
-        updateData.minStock = formData.minStock;
+      if (formData.stockInternal !== selectedProduct.stockInternal) {
+        updateData.stockInternal = formData.stockInternal;
+      }
+      if (formData.minStockRetail !== selectedProduct.minStockRetail) {
+        updateData.minStockRetail = formData.minStockRetail;
+      }
+      if (formData.minStockInternal !== selectedProduct.minStockInternal) {
+        updateData.minStockInternal = formData.minStockInternal;
       }
       if (formData.unit !== selectedProduct.unit) {
         updateData.unit = formData.unit;
+      }
+      if (formData.isRetail !== selectedProduct.isRetail) {
+        updateData.isRetail = formData.isRetail;
+      }
+      if (formData.isBackbar !== selectedProduct.isBackbar) {
+        updateData.isBackbar = formData.isBackbar;
       }
 
       await api.patch(`/products/${selectedProduct.id}`, updateData);
@@ -325,10 +353,24 @@ export function ProductsPage() {
 
   const getNewStockPreview = (): number => {
     if (!selectedProduct) return 0;
+    const currentStock = activeTab === 'retail' ? selectedProduct.stockRetail : selectedProduct.stockInternal;
     if (adjustFormData.type === 'IN') {
-      return selectedProduct.currentStock + adjustFormData.quantity;
+      return currentStock + adjustFormData.quantity;
     }
-    return Math.max(0, selectedProduct.currentStock - adjustFormData.quantity);
+    return Math.max(0, currentStock - adjustFormData.quantity);
+  };
+
+  // Helper to get current stock based on active tab
+  const getCurrentStock = (product: Product): number => {
+    return activeTab === 'retail' ? product.stockRetail : product.stockInternal;
+  };
+
+  const getMinStock = (product: Product): number => {
+    return activeTab === 'retail' ? product.minStockRetail : product.minStockInternal;
+  };
+
+  const isProductLowStock = (product: Product): boolean => {
+    return activeTab === 'retail' ? isLowStockRetail(product) : isLowStockInternal(product);
   };
 
   if (loading) {
@@ -364,7 +406,7 @@ export function ProductsPage() {
 
       {/* Cards de Resumo */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-100 rounded-lg">
@@ -393,17 +435,55 @@ export function ProductsPage() {
 
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <DollarSign className="w-5 h-5 text-green-600" />
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Store className="w-5 h-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-500">Valor em Estoque</p>
-                <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalStockValue)}</p>
+                <p className="text-sm text-gray-500">Estoque Loja</p>
+                <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.retailStockValue || 0)}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <Scissors className="w-5 h-5 text-green-600" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Estoque Salão</p>
+                <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.internalStockValue || 0)}</p>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Tabs: Loja/Venda vs Consumo/Salão */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-1 inline-flex">
+        <button
+          onClick={() => setActiveTab('retail')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+            activeTab === 'retail'
+              ? 'bg-primary-600 text-white'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          <Store className="w-4 h-4" />
+          Loja / Venda
+        </button>
+        <button
+          onClick={() => setActiveTab('internal')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+            activeTab === 'internal'
+              ? 'bg-primary-600 text-white'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          <Scissors className="w-4 h-4" />
+          Consumo / Salão
+        </button>
+      </div>
 
       {/* Filtros */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
@@ -493,14 +573,21 @@ export function ProductsPage() {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {filteredProducts.map((product) => {
-                  const lowStock = isLowStock(product);
+                  const lowStock = isProductLowStock(product);
                   const margin = calculateMargin(parseFloat(product.costPrice), parseFloat(product.salePrice));
+                  const stock = getCurrentStock(product);
+                  const minStock = getMinStock(product);
 
                   return (
                     <tr key={product.id} className={!product.active ? 'bg-gray-50' : ''}>
                       <td className="px-6 py-4">
                         <div>
-                          <div className="font-medium text-gray-900">{product.name}</div>
+                          <div className="font-medium text-gray-900">
+                            {product.name}
+                            {product.isRetail && product.isBackbar && (
+                              <span className="ml-2 text-xs text-gray-400">(Ambos)</span>
+                            )}
+                          </div>
                           {product.description && (
                             <div className="text-sm text-gray-500 truncate max-w-xs">
                               {product.description}
@@ -512,12 +599,12 @@ export function ProductsPage() {
                         <div className={`flex items-center gap-1 ${lowStock ? 'text-red-600' : 'text-gray-900'}`}>
                           {lowStock && <AlertTriangle className="w-4 h-4" />}
                           <span className="font-medium">
-                            {product.currentStock} {getUnitAbbreviation(product.unit)}
+                            {stock} {getUnitAbbreviation(product.unit)}
                           </span>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-700">
-                        {product.minStock} {getUnitAbbreviation(product.unit)}
+                        {minStock} {getUnitAbbreviation(product.unit)}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-700">
                         {formatCurrency(product.costPrice)}
@@ -706,33 +793,6 @@ export function ProductsPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Estoque Atual
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.currentStock}
-                    onChange={(e) => setFormData({ ...formData, currentStock: parseInt(e.target.value) || 0 })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    min="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Estoque Minimo
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.minStock}
-                    onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    min="0"
-                  />
-                </div>
-              </div>
-
               {/* Flags Retail/Backbar */}
               <div className="border-t border-gray-200 pt-4 mt-4">
                 <p className="text-sm font-medium text-gray-700 mb-3">Tipo de Produto</p>
@@ -744,7 +804,7 @@ export function ProductsPage() {
                       onChange={(e) => setFormData({ ...formData, isRetail: e.target.checked })}
                       className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
                     />
-                    <span className="text-sm text-gray-700">Vendavel (Retail)</span>
+                    <span className="text-sm text-gray-700">Disponível para venda (Loja)</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -753,10 +813,82 @@ export function ProductsPage() {
                       onChange={(e) => setFormData({ ...formData, isBackbar: e.target.checked })}
                       className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
                     />
-                    <span className="text-sm text-gray-700">Uso no salao (Backbar)</span>
+                    <span className="text-sm text-gray-700">Usado em serviços (Salão)</span>
                   </label>
                 </div>
               </div>
+
+              {/* Estoque Loja (Retail) */}
+              {formData.isRetail && (
+                <div className="border border-purple-200 rounded-lg p-4 bg-purple-50">
+                  <p className="text-sm font-medium text-purple-700 mb-3 flex items-center gap-2">
+                    <Store className="w-4 h-4" />
+                    Estoque Loja (Venda)
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Estoque Atual
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.stockRetail}
+                        onChange={(e) => setFormData({ ...formData, stockRetail: parseInt(e.target.value) || 0 })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        min="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Estoque Mínimo
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.minStockRetail}
+                        onChange={(e) => setFormData({ ...formData, minStockRetail: parseInt(e.target.value) || 0 })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Estoque Salão (Internal) */}
+              {formData.isBackbar && (
+                <div className="border border-green-200 rounded-lg p-4 bg-green-50">
+                  <p className="text-sm font-medium text-green-700 mb-3 flex items-center gap-2">
+                    <Scissors className="w-4 h-4" />
+                    Estoque Salão (Consumo)
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Estoque Atual
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.stockInternal}
+                        onChange={(e) => setFormData({ ...formData, stockInternal: parseInt(e.target.value) || 0 })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        min="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Estoque Mínimo
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.minStockInternal}
+                        onChange={(e) => setFormData({ ...formData, minStockInternal: parseInt(e.target.value) || 0 })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {formErrors.submit && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
@@ -900,33 +1032,6 @@ export function ProductsPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Estoque Atual
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.currentStock}
-                    onChange={(e) => setFormData({ ...formData, currentStock: parseInt(e.target.value) || 0 })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    min="0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Estoque Minimo
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.minStock}
-                    onChange={(e) => setFormData({ ...formData, minStock: parseInt(e.target.value) || 0 })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    min="0"
-                  />
-                </div>
-              </div>
-
               {/* Flags Retail/Backbar */}
               <div className="border-t border-gray-200 pt-4 mt-4">
                 <p className="text-sm font-medium text-gray-700 mb-3">Tipo de Produto</p>
@@ -938,7 +1043,7 @@ export function ProductsPage() {
                       onChange={(e) => setFormData({ ...formData, isRetail: e.target.checked })}
                       className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
                     />
-                    <span className="text-sm text-gray-700">Vendavel (Retail)</span>
+                    <span className="text-sm text-gray-700">Disponível para venda (Loja)</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -947,10 +1052,82 @@ export function ProductsPage() {
                       onChange={(e) => setFormData({ ...formData, isBackbar: e.target.checked })}
                       className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
                     />
-                    <span className="text-sm text-gray-700">Uso no salao (Backbar)</span>
+                    <span className="text-sm text-gray-700">Usado em serviços (Salão)</span>
                   </label>
                 </div>
               </div>
+
+              {/* Estoque Loja (Retail) */}
+              {formData.isRetail && (
+                <div className="border border-purple-200 rounded-lg p-4 bg-purple-50">
+                  <p className="text-sm font-medium text-purple-700 mb-3 flex items-center gap-2">
+                    <Store className="w-4 h-4" />
+                    Estoque Loja (Venda)
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Estoque Atual
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.stockRetail}
+                        onChange={(e) => setFormData({ ...formData, stockRetail: parseInt(e.target.value) || 0 })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        min="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Estoque Mínimo
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.minStockRetail}
+                        onChange={(e) => setFormData({ ...formData, minStockRetail: parseInt(e.target.value) || 0 })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Estoque Salão (Internal) */}
+              {formData.isBackbar && (
+                <div className="border border-green-200 rounded-lg p-4 bg-green-50">
+                  <p className="text-sm font-medium text-green-700 mb-3 flex items-center gap-2">
+                    <Scissors className="w-4 h-4" />
+                    Estoque Salão (Consumo)
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Estoque Atual
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.stockInternal}
+                        onChange={(e) => setFormData({ ...formData, stockInternal: parseInt(e.target.value) || 0 })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        min="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Estoque Mínimo
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.minStockInternal}
+                        onChange={(e) => setFormData({ ...formData, minStockInternal: parseInt(e.target.value) || 0 })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {formErrors.submit && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
@@ -998,10 +1175,20 @@ export function ProductsPage() {
             </div>
             <div className="p-6 space-y-4">
               {/* Info do Produto */}
-              <div className="bg-gray-50 rounded-lg p-4">
+              <div className={`rounded-lg p-4 ${activeTab === 'retail' ? 'bg-purple-50' : 'bg-green-50'}`}>
                 <p className="font-medium text-gray-900">{selectedProduct.name}</p>
                 <p className="text-sm text-gray-500">
-                  Estoque atual: <span className="font-medium text-gray-900">{selectedProduct.currentStock} {getUnitAbbreviation(selectedProduct.unit)}</span>
+                  {activeTab === 'retail' ? (
+                    <>
+                      <Store className="w-4 h-4 inline mr-1" />
+                      Estoque Loja: <span className="font-medium text-gray-900">{selectedProduct.stockRetail} {getUnitAbbreviation(selectedProduct.unit)}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Scissors className="w-4 h-4 inline mr-1" />
+                      Estoque Salão: <span className="font-medium text-gray-900">{selectedProduct.stockInternal} {getUnitAbbreviation(selectedProduct.unit)}</span>
+                    </>
+                  )}
                 </p>
               </div>
 
@@ -1123,9 +1310,14 @@ export function ProductsPage() {
                 Tem certeza que deseja desativar o produto{' '}
                 <span className="font-medium">{selectedProduct.name}</span>?
               </p>
-              <p className="text-sm text-gray-500 mb-2">
-                Estoque atual: <span className="font-medium">{selectedProduct.currentStock} {getUnitAbbreviation(selectedProduct.unit)}</span>
-              </p>
+              <div className="text-sm text-gray-500 mb-2 space-y-1">
+                {selectedProduct.isRetail && (
+                  <p>Estoque Loja: <span className="font-medium">{selectedProduct.stockRetail} {getUnitAbbreviation(selectedProduct.unit)}</span></p>
+                )}
+                {selectedProduct.isBackbar && (
+                  <p>Estoque Salão: <span className="font-medium">{selectedProduct.stockInternal} {getUnitAbbreviation(selectedProduct.unit)}</span></p>
+                )}
+              </div>
               <p className="text-sm text-gray-500">
                 O produto nao aparecera mais na lista de lancamento de comandas.
               </p>
