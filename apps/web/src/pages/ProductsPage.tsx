@@ -13,6 +13,7 @@ import {
   BoxesIcon,
   Store,
   Scissors,
+  ArrowLeftRight,
 } from 'lucide-react';
 import api from '../services/api';
 import {
@@ -76,6 +77,16 @@ export function ProductsPage() {
     reason: '',
   });
   const [adjustFormErrors, setAdjustFormErrors] = useState<Record<string, string>>({});
+
+  // Modal de transferência entre localizações
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferFormData, setTransferFormData] = useState({
+    quantity: 1,
+    fromLocation: 'RETAIL' as 'RETAIL' | 'INTERNAL',
+    toLocation: 'INTERNAL' as 'RETAIL' | 'INTERNAL',
+    reason: '',
+  });
+  const [transferFormErrors, setTransferFormErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadProducts();
@@ -349,6 +360,74 @@ export function ProductsPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Validar formulário de transferência
+  const validateTransferForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    if (transferFormData.quantity < 1) {
+      errors.quantity = 'Quantidade deve ser pelo menos 1';
+    }
+
+    if (transferFormData.fromLocation === transferFormData.toLocation) {
+      errors.direction = 'Origem e destino devem ser diferentes';
+    }
+
+    // Verificar estoque disponível na origem
+    if (selectedProduct) {
+      const sourceStock = transferFormData.fromLocation === 'RETAIL'
+        ? selectedProduct.stockRetail
+        : selectedProduct.stockInternal;
+      if (transferFormData.quantity > sourceStock) {
+        errors.quantity = `Estoque insuficiente. Disponível: ${sourceStock}`;
+      }
+    }
+
+    setTransferFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Executar transferência
+  const handleTransfer = async () => {
+    if (!validateTransferForm() || !selectedProduct) return;
+
+    try {
+      setSubmitting(true);
+      await api.post(`/products/${selectedProduct.id}/transfer`, transferFormData);
+      setShowTransferModal(false);
+      setSelectedProduct(null);
+      setTransferFormData({
+        quantity: 1,
+        fromLocation: 'RETAIL',
+        toLocation: 'INTERNAL',
+        reason: '',
+      });
+      loadProducts();
+      loadStats();
+    } catch (err: any) {
+      console.error('Erro ao transferir estoque:', err);
+      const message = err.response?.data?.message || 'Erro ao transferir estoque';
+      setTransferFormErrors({ submit: message });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Abrir modal de transferência
+  const openTransferModal = (product: Product) => {
+    setSelectedProduct(product);
+    // Definir direção baseada na tab ativa
+    const from = activeTab === 'retail' ? 'RETAIL' : 'INTERNAL';
+    const to = activeTab === 'retail' ? 'INTERNAL' : 'RETAIL';
+    setTransferFormData({
+      quantity: 1,
+      fromLocation: from,
+      toLocation: to,
+      reason: '',
+    });
+    setTransferFormErrors({});
+    setShowTransferModal(true);
   };
 
   const getNewStockPreview = (): number => {
@@ -641,6 +720,13 @@ export function ProductsPage() {
                                 title="Ajustar Estoque"
                               >
                                 <ArrowUpDown className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => openTransferModal(product)}
+                                className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                                title="Transferir entre Loja/Salão"
+                              >
+                                <ArrowLeftRight className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => handleOpenEditModal(product)}
@@ -1338,6 +1424,186 @@ export function ProductsPage() {
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
               >
                 {submitting ? 'Desativando...' : 'Confirmar Desativacao'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Transferir Estoque */}
+      {showTransferModal && selectedProduct && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                  <ArrowLeftRight className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Transferir Estoque</h2>
+                  <p className="text-sm text-gray-500">{selectedProduct.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowTransferModal(false);
+                  setSelectedProduct(null);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Estoque atual */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                <div className="text-center">
+                  <p className="text-sm text-gray-500 mb-1">Estoque Loja</p>
+                  <p className={`text-2xl font-bold ${transferFormData.fromLocation === 'RETAIL' ? 'text-purple-600' : 'text-gray-900'}`}>
+                    {selectedProduct.stockRetail}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-500 mb-1">Estoque Salão</p>
+                  <p className={`text-2xl font-bold ${transferFormData.fromLocation === 'INTERNAL' ? 'text-purple-600' : 'text-gray-900'}`}>
+                    {selectedProduct.stockInternal}
+                  </p>
+                </div>
+              </div>
+
+              {/* Direção da transferência */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Direção da Transferência
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setTransferFormData({
+                      ...transferFormData,
+                      fromLocation: 'RETAIL',
+                      toLocation: 'INTERNAL',
+                    })}
+                    className={`p-3 rounded-lg border-2 text-center transition-all ${
+                      transferFormData.fromLocation === 'RETAIL'
+                        ? 'border-purple-500 bg-purple-50 text-purple-700'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <Store className="w-5 h-5 mx-auto mb-1" />
+                    <span className="text-sm font-medium">Loja → Salão</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTransferFormData({
+                      ...transferFormData,
+                      fromLocation: 'INTERNAL',
+                      toLocation: 'RETAIL',
+                    })}
+                    className={`p-3 rounded-lg border-2 text-center transition-all ${
+                      transferFormData.fromLocation === 'INTERNAL'
+                        ? 'border-purple-500 bg-purple-50 text-purple-700'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <Scissors className="w-5 h-5 mx-auto mb-1" />
+                    <span className="text-sm font-medium">Salão → Loja</span>
+                  </button>
+                </div>
+                {transferFormErrors.direction && (
+                  <p className="mt-1 text-sm text-red-600">{transferFormErrors.direction}</p>
+                )}
+              </div>
+
+              {/* Quantidade */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Quantidade a Transferir
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={transferFormData.quantity}
+                  onChange={(e) => setTransferFormData({
+                    ...transferFormData,
+                    quantity: parseInt(e.target.value) || 0,
+                  })}
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent ${
+                    transferFormErrors.quantity ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {transferFormErrors.quantity && (
+                  <p className="mt-1 text-sm text-red-600">{transferFormErrors.quantity}</p>
+                )}
+              </div>
+
+              {/* Motivo (opcional) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Motivo <span className="text-gray-400">(opcional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={transferFormData.reason}
+                  onChange={(e) => setTransferFormData({
+                    ...transferFormData,
+                    reason: e.target.value,
+                  })}
+                  placeholder="Ex: Reposição para o salão"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Preview do resultado */}
+              {transferFormData.quantity > 0 && (
+                <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                  <p className="text-sm font-medium text-purple-700 mb-2">Resultado após transferência:</p>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Loja:</span>{' '}
+                      <span className="font-medium">
+                        {transferFormData.fromLocation === 'RETAIL'
+                          ? selectedProduct.stockRetail - transferFormData.quantity
+                          : selectedProduct.stockRetail + transferFormData.quantity}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Salão:</span>{' '}
+                      <span className="font-medium">
+                        {transferFormData.fromLocation === 'INTERNAL'
+                          ? selectedProduct.stockInternal - transferFormData.quantity
+                          : selectedProduct.stockInternal + transferFormData.quantity}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Erro de submissão */}
+              {transferFormErrors.submit && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-600">{transferFormErrors.submit}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowTransferModal(false);
+                  setSelectedProduct(null);
+                }}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleTransfer}
+                disabled={submitting || transferFormData.quantity < 1}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+              >
+                {submitting ? 'Transferindo...' : 'Confirmar Transferência'}
               </button>
             </div>
           </div>

@@ -156,3 +156,25 @@ export class StockEntryDto {
   @IsOptional()
   description?: string;
 }
+
+// DTO para transferência de estoque entre localizações (RETAIL <-> INTERNAL)
+export class TransferStockDto {
+  @IsNumber({}, { message: 'Quantidade deve ser um número' })
+  @Min(1, { message: 'Quantidade deve ser pelo menos 1' })
+  @IsNotEmpty({ message: 'Quantidade é obrigatória' })
+  quantity!: number;
+
+  @IsString({ message: 'Origem deve ser uma string' })
+  @IsIn(['RETAIL', 'INTERNAL'], { message: 'Origem deve ser RETAIL ou INTERNAL' })
+  @IsNotEmpty({ message: 'Origem é obrigatória' })
+  fromLocation!: 'RETAIL' | 'INTERNAL';
+
+  @IsString({ message: 'Destino deve ser uma string' })
+  @IsIn(['RETAIL', 'INTERNAL'], { message: 'Destino deve ser RETAIL ou INTERNAL' })
+  @IsNotEmpty({ message: 'Destino é obrigatório' })
+  toLocation!: 'RETAIL' | 'INTERNAL';
+
+  @IsString({ message: 'Motivo deve ser uma string' })
+  @IsOptional()
+  reason?: string;
+}

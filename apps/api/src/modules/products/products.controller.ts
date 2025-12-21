@@ -12,7 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
-import { CreateProductDto, UpdateProductDto, AdjustStockDto } from './dto';
+import { CreateProductDto, UpdateProductDto, AdjustStockDto, TransferStockDto } from './dto';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -141,6 +141,34 @@ export class ProductsController {
       user.salonId,
       user.id,
       data,
+    );
+  }
+
+  /**
+   * POST /products/:id/transfer
+   * Transfere estoque entre localizações (RETAIL <-> INTERNAL)
+   */
+  @Post(':id/transfer')
+  @Roles('OWNER', 'MANAGER')
+  async transferStock(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() data: TransferStockDto,
+  ) {
+    // Verificar se produto pertence ao salão
+    const existing = await this.productsService.findById(id);
+    if (!existing || existing.salonId !== user.salonId) {
+      throw new NotFoundException('Produto nao encontrado');
+    }
+
+    return this.productsService.transferStock(
+      id,
+      user.salonId,
+      user.id,
+      data.quantity,
+      data.fromLocation,
+      data.toLocation,
+      data.reason,
     );
   }
 
