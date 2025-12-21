@@ -369,6 +369,7 @@ export class CommandsService {
         totalPrice: totalPrice.toString(),
         performerId: data.performerId || null,
         referenceId: data.referenceId || null,
+        variantId: data.variantId || null, // Variante da receita (tamanho cabelo)
         addedById: currentUser.id,
       })
       .returning();

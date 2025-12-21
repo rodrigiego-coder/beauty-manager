@@ -85,6 +85,11 @@ export class AddItemDto {
   @IsNotEmpty({ message: 'referenceId e obrigatorio para itens do tipo PRODUCT' })
   @IsNumberString({}, { message: 'ID de referencia deve ser um numero inteiro' })
   referenceId?: string;
+
+  // Variante da receita (para serviços com tamanho de cabelo)
+  @IsUUID('4', { message: 'ID da variante deve ser um UUID valido' })
+  @IsOptional()
+  variantId?: string;
 }
 
 // DTO para atualizar item

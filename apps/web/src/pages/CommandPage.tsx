@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import api from '../services/api';
+import api, { getServiceRecipe } from '../services/api';
 import { HairProfileModal } from '../components/HairProfileModal';
 import { ProductRecommendations } from '../components/ProductRecommendations';
 import { ClientLoyaltyCard } from '../components/ClientLoyaltyCard';
@@ -325,6 +325,11 @@ export function CommandPage() {
   const [itemPrice, setItemPrice] = useState('');
   const [availableServices, setAvailableServices] = useState<any[]>([]);
   const [availableProducts, setAvailableProducts] = useState<any[]>([]);
+
+  // Estados para seleção de variante do serviço (tamanho do cabelo)
+  const [serviceVariants, setServiceVariants] = useState<{ id: string; code: string; name: string; multiplier: number; isDefault: boolean }[]>([]);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  const [loadingVariants, setLoadingVariants] = useState(false);
 
   // Estados do cliente vinculado
   const [linkedClient, setLinkedClient] = useState<Client | null>(null);
@@ -905,14 +910,19 @@ export function CommandPage() {
         description: selectedItem.name,
         quantity: parseInt(itemQuantity),
         unitPrice: parseFloat(itemPrice.replace(',', '.')),
-        // HOTFIX: enviar referenceId para baixa de estoque quando PRODUCT
-        referenceId: itemType === 'PRODUCT' ? selectedItem.id.toString() : undefined,
+        // Enviar referenceId para SERVICE e PRODUCT (necessário para consumo de receita)
+        referenceId: selectedItem.id.toString(),
+        // Enviar variantId se serviço tiver variantes selecionada
+        variantId: itemType === 'SERVICE' && selectedVariantId ? selectedVariantId : undefined,
       });
 
       setShowAddItemModal(false);
       setSelectedItem(null);
       setItemQuantity('1');
       setItemPrice('');
+      // Limpar variantes após adicionar
+      setServiceVariants([]);
+      setSelectedVariantId(null);
       await loadCommand();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Erro ao adicionar item');
@@ -929,10 +939,35 @@ export function CommandPage() {
   };
 
   // Selecionar item da lista
-  const handleSelectItem = (item: any, type: 'SERVICE' | 'PRODUCT') => {
+  const handleSelectItem = async (item: any, type: 'SERVICE' | 'PRODUCT') => {
     setSelectedItem(item);
     setItemType(type);
     setItemPrice(type === 'SERVICE' ? item.basePrice : item.salePrice);
+
+    // Limpar variantes anteriores
+    setServiceVariants([]);
+    setSelectedVariantId(null);
+
+    // Se for serviço, buscar variantes da receita
+    if (type === 'SERVICE' && item.id) {
+      setLoadingVariants(true);
+      try {
+        const recipe = await getServiceRecipe(item.id);
+        if (recipe?.variants && recipe.variants.length > 0) {
+          setServiceVariants(recipe.variants);
+          // Selecionar variante default automaticamente
+          const defaultVariant = recipe.variants.find(v => v.isDefault);
+          if (defaultVariant) {
+            setSelectedVariantId(defaultVariant.id);
+          }
+        }
+      } catch (err) {
+        // Silenciar erro - serviço pode não ter receita
+        console.log('Serviço sem receita ou erro ao buscar:', err);
+      } finally {
+        setLoadingVariants(false);
+      }
+    }
   };
 
   // Ação: Remover Item
@@ -1706,6 +1741,46 @@ export function CommandPage() {
               <div className="bg-gray-50 rounded-lg p-4 mb-4">
                 <p className="text-sm text-gray-500 mb-1">Item selecionado:</p>
                 <p className="font-semibold text-gray-900">{selectedItem.name}</p>
+              </div>
+            )}
+
+            {/* Seletor de Variante - aparece apenas se serviço tem variantes */}
+            {itemType === 'SERVICE' && selectedItem && (loadingVariants || serviceVariants.length > 0) && (
+              <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-100">
+                <label className="block text-sm font-medium text-purple-700 mb-2">
+                  📐 Comprimento do cabelo:
+                </label>
+
+                {loadingVariants ? (
+                  <div className="flex items-center gap-2 text-purple-500">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-sm">Carregando opções...</span>
+                  </div>
+                ) : (
+                  <div className="flex gap-2 flex-wrap">
+                    {serviceVariants.map((variant) => (
+                      <button
+                        key={variant.id}
+                        type="button"
+                        onClick={() => setSelectedVariantId(variant.id)}
+                        className={`px-4 py-2 rounded-lg border-2 transition-all font-medium text-sm ${
+                          selectedVariantId === variant.id
+                            ? 'bg-purple-600 text-white border-purple-600 shadow-md'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-purple-400 hover:bg-purple-50'
+                        }`}
+                      >
+                        {variant.name}
+                        {variant.isDefault && (
+                          <span className="ml-1 text-xs opacity-75">⭐</span>
+                        )}
+                        <span className="block text-xs opacity-75">
+                          {variant.multiplier < 1 ? '−' : variant.multiplier > 1 ? '+' : ''}
+                          {Math.round((variant.multiplier - 1) * 100)}% consumo
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
