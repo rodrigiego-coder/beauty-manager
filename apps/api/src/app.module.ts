@@ -56,6 +56,7 @@ import { PaymentMethodsModule } from './modules/payment-methods/payment-methods.
 import { PaymentDestinationsModule } from './modules/payment-destinations/payment-destinations.module';
 import { AsaasModule } from './modules/asaas';
 import { BillingModule } from './modules/billing';
+import { TriageModule } from './modules/triage/triage.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -89,6 +90,7 @@ import { BillingModule } from './modules/billing';
     UsersModule,
     SalonsModule,
     AppointmentsModule,
+    TriageModule, // Módulo de Pré-Avaliação Digital (triagem)
     AiReceptionistModule,
     ProductsModule,
     TransactionsModule,

@@ -3066,3 +3066,169 @@ export type NotificationStatus =
   | 'READ'
   | 'FAILED'
   | 'CANCELLED';
+
+// ============================================
+// SISTEMA DE TRIAGEM (Pré-Avaliação Digital)
+// ============================================
+
+/**
+ * Categoria de risco para perguntas de triagem
+ */
+export const triageRiskCategoryEnum = pgEnum('triage_risk_category', [
+  'CHEMICAL_HISTORY',  // Histórico químico
+  'HEALTH_CONDITION',  // Condições de saúde
+  'HAIR_INTEGRITY',    // Integridade do fio
+  'ALLERGY',           // Alergias
+  'CUSTOM',            // Personalizada
+]);
+
+/**
+ * Nível de risco
+ */
+export const riskLevelEnum = pgEnum('risk_level', [
+  'CRITICAL',   // Vermelho - Proíbe o procedimento
+  'HIGH',       // Laranja - Requer atenção especial
+  'MEDIUM',     // Amarelo - Cuidado
+  'LOW',        // Verde - Informativo
+]);
+
+/**
+ * Formulários de triagem por tipo de serviço
+ */
+export const triageForms = pgTable('triage_forms', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+
+  // Identificação
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+
+  // Vinculação a serviços
+  serviceCategory: varchar('service_category', { length: 100 }),
+  serviceIds: json('service_ids').$type<number[]>(),
+
+  // Versionamento
+  version: integer('version').default(1).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+
+  // Termo de responsabilidade
+  consentTitle: varchar('consent_title', { length: 255 }).default('TERMO DE RESPONSABILIDADE E VERACIDADE'),
+  consentText: text('consent_text').notNull(),
+  requiresConsent: boolean('requires_consent').default(true).notNull(),
+
+  // Auditoria
+  createdById: uuid('created_by_id').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Perguntas do formulário de triagem
+ */
+export const triageQuestions = pgTable('triage_questions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  formId: uuid('form_id').references(() => triageForms.id, { onDelete: 'cascade' }).notNull(),
+
+  // Categorização
+  category: triageRiskCategoryEnum('category').notNull(),
+  categoryLabel: varchar('category_label', { length: 150 }),
+
+  // Pergunta
+  questionText: text('question_text').notNull(),
+  helpText: text('help_text'),
+
+  // Tipo de resposta
+  answerType: varchar('answer_type', { length: 20 }).default('BOOLEAN').notNull(),
+  options: json('options').$type<string[]>(),
+
+  // Risco associado
+  riskLevel: riskLevelEnum('risk_level').default('MEDIUM').notNull(),
+  riskTriggerValue: varchar('risk_trigger_value', { length: 50 }).default('SIM'),
+  riskMessage: text('risk_message'),
+
+  // Ação quando risco detectado
+  blocksProcedure: boolean('blocks_procedure').default(false),
+  requiresNote: boolean('requires_note').default(false),
+
+  // Ordenação
+  sortOrder: integer('sort_order').default(0).notNull(),
+  isRequired: boolean('is_required').default(true).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+/**
+ * Respostas do cliente por agendamento
+ */
+export const triageResponses = pgTable('triage_responses', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+
+  // Vínculos
+  appointmentId: uuid('appointment_id').references(() => appointments.id).notNull(),
+  formId: uuid('form_id').references(() => triageForms.id).notNull(),
+  clientId: uuid('client_id').references(() => clients.id),
+
+  // Dados do formulário no momento (snapshot)
+  formVersion: integer('form_version').notNull(),
+
+  // Status
+  status: varchar('status', { length: 20 }).default('PENDING').notNull(),
+
+  // Análise de risco
+  hasRisks: boolean('has_risks').default(false),
+  riskSummary: json('risk_summary').$type<{
+    critical: any[];
+    high: any[];
+    medium: any[];
+    low: any[];
+  }>(),
+  overallRiskLevel: riskLevelEnum('overall_risk_level'),
+
+  // Consentimento
+  consentAccepted: boolean('consent_accepted').default(false),
+  consentAcceptedAt: timestamp('consent_accepted_at'),
+  consentIpAddress: varchar('consent_ip_address', { length: 45 }),
+
+  // Metadados
+  completedAt: timestamp('completed_at'),
+  completedVia: varchar('completed_via', { length: 20 }),
+  expiresAt: timestamp('expires_at'),
+
+  // Token para acesso público
+  accessToken: varchar('access_token', { length: 64 }),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Respostas individuais de cada pergunta
+ */
+export const triageAnswers = pgTable('triage_answers', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  responseId: uuid('response_id').references(() => triageResponses.id, { onDelete: 'cascade' }).notNull(),
+  questionId: uuid('question_id').references(() => triageQuestions.id).notNull(),
+
+  // Resposta
+  answerValue: varchar('answer_value', { length: 255 }),
+  answerText: text('answer_text'),
+
+  // Risco detectado nesta resposta
+  triggeredRisk: boolean('triggered_risk').default(false),
+  riskLevel: riskLevelEnum('risk_level'),
+  riskMessage: text('risk_message'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Types para Sistema de Triagem
+export type TriageForm = typeof triageForms.$inferSelect;
+export type NewTriageForm = typeof triageForms.$inferInsert;
+export type TriageQuestion = typeof triageQuestions.$inferSelect;
+export type NewTriageQuestion = typeof triageQuestions.$inferInsert;
+export type TriageResponse = typeof triageResponses.$inferSelect;
+export type NewTriageResponse = typeof triageResponses.$inferInsert;
+export type TriageAnswer = typeof triageAnswers.$inferSelect;
+export type NewTriageAnswer = typeof triageAnswers.$inferInsert;
