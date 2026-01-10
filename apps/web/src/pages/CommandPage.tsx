@@ -75,6 +75,18 @@ interface CommandItem {
   performerId?: string;
   addedAt: string;
   canceledAt?: string;
+  // Package fields
+  paidByPackage?: boolean;
+  clientPackageId?: number;
+  clientPackageUsageId?: number;
+}
+
+// Package availability info
+interface PackageAvailability {
+  hasPackage: boolean;
+  clientPackageId?: number;
+  remainingSessions?: number;
+  packageName?: string;
 }
 
 interface CommandPayment {
@@ -336,6 +348,10 @@ export function CommandPage() {
   const [serviceVariants, setServiceVariants] = useState<{ id: string; code: string; name: string; multiplier: number; isDefault: boolean }[]>([]);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [loadingVariants, setLoadingVariants] = useState(false);
+
+  // Estados para pacote de sessões do cliente
+  const [packageAvailability, setPackageAvailability] = useState<PackageAvailability | null>(null);
+  const [loadingPackage, setLoadingPackage] = useState(false);
 
   // Estados do cliente vinculado
   const [linkedClient, setLinkedClient] = useState<Client | null>(null);
@@ -974,10 +990,15 @@ export function CommandPage() {
     // Limpar variantes anteriores
     setServiceVariants([]);
     setSelectedVariantId(null);
+    // Limpar pacote anterior
+    setPackageAvailability(null);
 
-    // Se for serviço, buscar variantes da receita
+    // Se for serviço, buscar variantes da receita e verificar pacotes
     if (type === 'SERVICE' && item.id) {
       setLoadingVariants(true);
+      setLoadingPackage(true);
+
+      // Buscar variantes da receita
       try {
         const recipe = await getServiceRecipe(item.id);
         if (recipe?.variants && recipe.variants.length > 0) {
@@ -993,6 +1014,33 @@ export function CommandPage() {
         console.log('Serviço sem receita ou erro ao buscar:', err);
       } finally {
         setLoadingVariants(false);
+      }
+
+      // Verificar se cliente tem pacote para este serviço
+      if (command?.clientId) {
+        try {
+          const response = await api.post('/client-packages/check-service', {
+            clientId: command.clientId,
+            serviceId: item.id,
+          });
+
+          if (response.data.hasPackage) {
+            setPackageAvailability({
+              hasPackage: true,
+              clientPackageId: response.data.clientPackage?.id,
+              remainingSessions: response.data.remainingSessions,
+            });
+          } else {
+            setPackageAvailability({ hasPackage: false });
+          }
+        } catch (err) {
+          console.log('Erro ao verificar pacote:', err);
+          setPackageAvailability(null);
+        } finally {
+          setLoadingPackage(false);
+        }
+      } else {
+        setLoadingPackage(false);
       }
     }
   };
@@ -1274,18 +1322,40 @@ export function CommandPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {activeItems.map((item) => (
-                      <tr key={item.id} className="hover:bg-gray-50">
+                      <tr key={item.id} className={`hover:bg-gray-50 ${item.paidByPackage ? 'bg-emerald-50/50' : ''}`}>
                         <td className="py-3 pr-4">
-                          <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${item.type === 'SERVICE' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
-                            {item.type === 'SERVICE' ? <Scissors className="w-4 h-4" /> : <Package className="w-4 h-4" />}
-                          </span>
+                          <div className="flex items-center gap-1">
+                            <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full ${item.type === 'SERVICE' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
+                              {item.type === 'SERVICE' ? <Scissors className="w-4 h-4" /> : <Package className="w-4 h-4" />}
+                            </span>
+                            {item.paidByPackage && (
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-600" title="Pago pelo pacote">
+                                <Gift className="w-3 h-3" />
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 pr-4">
                           <p className="font-medium text-gray-900">{item.description}</p>
+                          {item.paidByPackage && (
+                            <span className="text-xs text-emerald-600 font-medium">🎁 Pacote</span>
+                          )}
                         </td>
                         <td className="py-3 pr-4 text-center text-gray-900">{item.quantity}</td>
-                        <td className="py-3 pr-4 text-right text-gray-500">{formatCurrency(item.unitPrice)}</td>
-                        <td className="py-3 pr-4 text-right font-semibold text-gray-900">{formatCurrency(item.totalPrice)}</td>
+                        <td className="py-3 pr-4 text-right text-gray-500">
+                          {item.paidByPackage ? (
+                            <span className="text-emerald-600">Pacote</span>
+                          ) : (
+                            formatCurrency(item.unitPrice)
+                          )}
+                        </td>
+                        <td className="py-3 pr-4 text-right font-semibold">
+                          {item.paidByPackage ? (
+                            <span className="text-emerald-600">R$ 0,00</span>
+                          ) : (
+                            <span className="text-gray-900">{formatCurrency(item.totalPrice)}</span>
+                          )}
+                        </td>
                         {isEditable && (
                           <td className="py-3 text-center">
                             <div className="flex items-center justify-center gap-1">
@@ -1784,6 +1854,50 @@ export function CommandPage() {
                 <p className="text-sm text-gray-500 mb-1">Item selecionado:</p>
                 <p className="font-semibold text-gray-900">{selectedItem.name}</p>
               </div>
+            )}
+
+            {/* Badge de Pacote Disponível */}
+            {itemType === 'SERVICE' && selectedItem && (
+              loadingPackage ? (
+                <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex items-center gap-2 text-gray-500">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span className="text-sm">Verificando pacotes...</span>
+                  </div>
+                </div>
+              ) : packageAvailability?.hasPackage ? (
+                <div className={`mb-4 p-3 rounded-lg border ${
+                  packageAvailability.remainingSessions === 1
+                    ? 'bg-amber-50 border-amber-300'
+                    : 'bg-emerald-50 border-emerald-200'
+                }`}>
+                  {packageAvailability.remainingSessions === 1 ? (
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 text-amber-600" />
+                      <div>
+                        <p className="font-semibold text-amber-800">
+                          ⚠️ ÚLTIMA SESSÃO
+                        </p>
+                        <p className="text-sm text-amber-700">
+                          Esta é a última sessão disponível no pacote. Será consumida ao adicionar.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Gift className="w-5 h-5 text-emerald-600" />
+                      <div>
+                        <p className="font-semibold text-emerald-800">
+                          🎁 PACOTE: {packageAvailability.remainingSessions} sessões disponíveis
+                        </p>
+                        <p className="text-sm text-emerald-700">
+                          Este serviço será pago pelo pacote do cliente (R$ 0,00)
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : null
             )}
 
             {/* Seletor de Variante - aparece apenas se serviço tem variantes */}

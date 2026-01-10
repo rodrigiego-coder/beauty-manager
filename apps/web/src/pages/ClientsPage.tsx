@@ -21,6 +21,7 @@ import {
   UserCheck,
   DollarSign,
   Receipt,
+  Gift,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../services/api';
@@ -32,6 +33,7 @@ import type {
   UpdateClientData,
 } from '../types/client';
 import { formatPhone, getInitials, getStatusBadge } from '../types/client';
+import { ClientPackagesCard } from '../components/ClientPackagesCard';
 
 export function ClientsPage() {
   // State para dados
@@ -913,6 +915,18 @@ export function ClientsPage() {
                 </div>
               ) : clientHistory ? (
                 <div className="space-y-6">
+                  {/* Pacotes Ativos */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3 flex items-center gap-2">
+                      <Gift className="w-4 h-4" />
+                      Pacotes de Sessões
+                    </h3>
+                    <ClientPackagesCard
+                      clientId={selectedClient.id}
+                      clientName={selectedClient.name || undefined}
+                    />
+                  </div>
+
                   {/* Estatísticas */}
                   <div className="grid grid-cols-3 gap-4">
                     <div className="bg-blue-50 rounded-lg p-4">
