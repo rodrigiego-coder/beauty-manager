@@ -212,6 +212,64 @@ export class PublicBookingController {
   }
 
   /**
+   * Verifica elegibilidade do cliente antes de criar hold
+   */
+  @Post(':salonSlug/check-eligibility')
+  async checkClientEligibility(
+    @Param('salonSlug') salonSlug: string,
+    @Body() body: { clientPhone: string; serviceId?: number },
+  ) {
+    const salon = await this.findSalonBySlug(salonSlug);
+    await this.checkBookingEnabled(salon.id);
+
+    const eligibility = await this.rulesService.checkBookingEligibility(
+      salon.id,
+      body.clientPhone,
+      body.serviceId,
+    );
+
+    // Busca configuracoes para calcular deposito
+    const settings = await this.settingsService.getSettings(salon.id);
+    let depositRequired = eligibility.requiresDeposit || false;
+    let depositAmount: number | null = null;
+
+    // Se cliente tem regra de deposito OU configuracao global exige
+    if (eligibility.requiresDeposit || settings.depositType !== 'NONE') {
+      depositRequired = true;
+
+      // Busca servico para calcular valor
+      if (body.serviceId) {
+        const [service] = await this.db
+          .select()
+          .from(schema.services)
+          .where(eq(schema.services.id, body.serviceId))
+          .limit(1);
+
+        if (service) {
+          if (eligibility.requiresDeposit) {
+            // Cliente com regra especifica: 20% do valor
+            depositAmount = parseFloat(service.basePrice) * 0.2;
+          } else {
+            // Configuracao global
+            depositAmount = await this.depositsService.calculateDepositAmount(
+              salon.id,
+              parseFloat(service.basePrice),
+            );
+          }
+        }
+      }
+    }
+
+    return {
+      canBook: eligibility.canBook,
+      reason: eligibility.reason,
+      requiresDeposit: depositRequired,
+      depositAmount,
+      isClientBlocked: !eligibility.canBook && eligibility.reason?.includes('bloqueado'),
+    };
+  }
+
+  /**
    * Cria uma reserva temporária (hold)
    */
   @Post(':salonSlug/hold')

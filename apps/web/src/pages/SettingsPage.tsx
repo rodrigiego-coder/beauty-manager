@@ -41,7 +41,7 @@ interface SalonData {
 
 type OperationMode = 'SECRETARY_ONLY' | 'SECRETARY_AND_ONLINE' | 'SECRETARY_WITH_LINK';
 type DepositType = 'NONE' | 'FIXED' | 'PERCENTAGE';
-type DepositAppliesTo = 'ALL' | 'NEW_CLIENTS' | 'SPECIFIC_SERVICES';
+type DepositAppliesTo = 'ALL' | 'NEW_CLIENTS' | 'SPECIFIC_SERVICES' | 'SELECTED_CLIENTS';
 
 interface OnlineBookingSettings {
   enabled: boolean;
@@ -693,7 +693,17 @@ export function SettingsPage() {
                           <option value="ALL">Todos os agendamentos</option>
                           <option value="NEW_CLIENTS">Apenas novos clientes</option>
                           <option value="SPECIFIC_SERVICES">Servicos especificos</option>
+                          <option value="SELECTED_CLIENTS">Clientes selecionados manualmente</option>
                         </select>
+                        {bookingSettings.depositAppliesTo === 'SELECTED_CLIENTS' && (
+                          <p className="mt-2 text-sm text-gray-500">
+                            Configure quais clientes precisam pagar taxa na{' '}
+                            <Link to="/clientes" className="text-primary-600 hover:text-primary-700 font-medium">
+                              pagina de Clientes
+                            </Link>
+                            , editando cada cliente e marcando "Exigir pagamento antecipado".
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>

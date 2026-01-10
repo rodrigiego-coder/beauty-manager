@@ -22,6 +22,9 @@ import {
   DollarSign,
   Receipt,
   Gift,
+  Ban,
+  CreditCard,
+  Globe,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../services/api';
@@ -58,6 +61,16 @@ export function ClientsPage() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [clientHistory, setClientHistory] = useState<ClientHistory | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // State para booking rules
+  const [bookingRules, setBookingRules] = useState({
+    requiresDeposit: false,
+    blockedFromOnline: false,
+    depositNotes: '',
+    blockNotes: '',
+  });
+  const [loadingBookingRules, setLoadingBookingRules] = useState(false);
+  const [savingBookingRules, setSavingBookingRules] = useState(false);
 
   // State para formulário
   const [formData, setFormData] = useState<CreateClientData>({
@@ -134,7 +147,7 @@ export function ClientsPage() {
     setShowCreateModal(true);
   };
 
-  const handleOpenEditModal = (client: Client) => {
+  const handleOpenEditModal = async (client: Client) => {
     setSelectedClient(client);
     setFormData({
       name: client.name || '',
@@ -145,6 +158,47 @@ export function ClientsPage() {
       aiActive: client.aiActive,
     });
     setShowEditModal(true);
+
+    // Carrega regras de booking
+    await loadBookingRules(client.id);
+  };
+
+  const loadBookingRules = async (clientId: string) => {
+    setLoadingBookingRules(true);
+    try {
+      const { data } = await api.get(`/clients/${clientId}/booking-rules`);
+      setBookingRules({
+        requiresDeposit: data.requiresDeposit || false,
+        blockedFromOnline: data.blockedFromOnline || false,
+        depositNotes: data.depositNotes || '',
+        blockNotes: data.blockNotes || '',
+      });
+    } catch (err) {
+      console.error('Erro ao carregar regras de booking:', err);
+      setBookingRules({
+        requiresDeposit: false,
+        blockedFromOnline: false,
+        depositNotes: '',
+        blockNotes: '',
+      });
+    } finally {
+      setLoadingBookingRules(false);
+    }
+  };
+
+  const handleSaveBookingRules = async () => {
+    if (!selectedClient) return;
+
+    setSavingBookingRules(true);
+    try {
+      await api.patch(`/clients/${selectedClient.id}/booking-rules`, bookingRules);
+      await loadClients(); // Recarrega lista para atualizar badges
+    } catch (err: any) {
+      console.error('Erro ao salvar regras de booking:', err);
+      alert(err.response?.data?.message || 'Erro ao salvar regras de booking');
+    } finally {
+      setSavingBookingRules(false);
+    }
   };
 
   const handleOpenDeleteModal = (client: Client) => {
@@ -440,6 +494,8 @@ export function ClientsPage() {
                           className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium ${
                             !client.active
                               ? 'bg-gray-400'
+                              : client.blockedFromOnline
+                              ? 'bg-red-500'
                               : client.churnRisk
                               ? 'bg-amber-500'
                               : 'bg-primary-600'
@@ -448,7 +504,21 @@ export function ClientsPage() {
                           {getInitials(client.name)}
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900">{client.name || 'Sem nome'}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-gray-900">{client.name || 'Sem nome'}</p>
+                            {client.requiresDeposit && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700" title="Taxa obrigatoria para agendar online">
+                                <CreditCard className="w-3 h-3" />
+                                Taxa
+                              </span>
+                            )}
+                            {client.blockedFromOnline && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700" title="Bloqueado de agendar online">
+                                <Ban className="w-3 h-3" />
+                                Bloqueado
+                              </span>
+                            )}
+                          </div>
                           {client.technicalNotes && (
                             <p className="text-xs text-gray-500 truncate max-w-[200px]">
                               {client.technicalNotes}
@@ -814,6 +884,95 @@ export function ClientsPage() {
                     O cliente poderá ser atendido automaticamente pelo robô
                   </p>
                 </label>
+              </div>
+
+              {/* Secao: Regras de Agendamento Online */}
+              <div className="border-t border-gray-200 pt-4 mt-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <Globe className="w-5 h-5 text-gray-600" />
+                  <h3 className="font-medium text-gray-900">Regras de Agendamento Online</h3>
+                </div>
+
+                {loadingBookingRules ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="w-5 h-5 animate-spin text-primary-600" />
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Toggle: Exigir taxa */}
+                    <div className="flex items-center justify-between p-4 bg-red-50 rounded-lg border border-red-100">
+                      <div className="flex items-center gap-3">
+                        <CreditCard className="w-5 h-5 text-red-600" />
+                        <div>
+                          <p className="font-medium text-gray-900">Exigir pagamento antecipado</p>
+                          <p className="text-xs text-gray-500">Cliente devera pagar taxa para agendar online</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBookingRules({ ...bookingRules, requiresDeposit: !bookingRules.requiresDeposit })}
+                        className={`w-12 h-6 rounded-full transition-colors ${bookingRules.requiresDeposit ? 'bg-red-600' : 'bg-gray-300'}`}
+                      >
+                        <div className={`w-5 h-5 bg-white rounded-full shadow transform transition-transform ${bookingRules.requiresDeposit ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+
+                    {bookingRules.requiresDeposit && (
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Motivo (opcional)</label>
+                        <input
+                          type="text"
+                          value={bookingRules.depositNotes}
+                          onChange={(e) => setBookingRules({ ...bookingRules, depositNotes: e.target.value })}
+                          placeholder="Ex: Historico de faltas"
+                          className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
+                        />
+                      </div>
+                    )}
+
+                    {/* Toggle: Bloquear */}
+                    <div className="flex items-center justify-between p-4 bg-gray-100 rounded-lg border border-gray-200">
+                      <div className="flex items-center gap-3">
+                        <Ban className="w-5 h-5 text-gray-600" />
+                        <div>
+                          <p className="font-medium text-gray-900">Bloquear agendamento online</p>
+                          <p className="text-xs text-gray-500">Cliente nao podera agendar pela internet</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBookingRules({ ...bookingRules, blockedFromOnline: !bookingRules.blockedFromOnline })}
+                        className={`w-12 h-6 rounded-full transition-colors ${bookingRules.blockedFromOnline ? 'bg-gray-700' : 'bg-gray-300'}`}
+                      >
+                        <div className={`w-5 h-5 bg-white rounded-full shadow transform transition-transform ${bookingRules.blockedFromOnline ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+
+                    {bookingRules.blockedFromOnline && (
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Motivo do bloqueio (opcional)</label>
+                        <input
+                          type="text"
+                          value={bookingRules.blockNotes}
+                          onChange={(e) => setBookingRules({ ...bookingRules, blockNotes: e.target.value })}
+                          placeholder="Ex: Cliente nao compareceu 3 vezes"
+                          className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
+                        />
+                      </div>
+                    )}
+
+                    {/* Botao salvar regras */}
+                    <button
+                      type="button"
+                      onClick={handleSaveBookingRules}
+                      disabled={savingBookingRules}
+                      className="w-full px-4 py-2 text-sm border border-primary-200 text-primary-700 rounded-lg hover:bg-primary-50 font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {savingBookingRules && <Loader2 className="w-4 h-4 animate-spin" />}
+                      Salvar Regras de Agendamento
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="pt-4 flex gap-3">

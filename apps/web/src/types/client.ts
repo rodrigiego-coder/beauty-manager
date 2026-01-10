@@ -13,6 +13,9 @@ export interface Client {
   active: boolean;
   createdAt: string;
   updatedAt: string;
+  // Booking rules
+  requiresDeposit?: boolean;
+  blockedFromOnline?: boolean;
 }
 
 export interface CreateClientData {
