@@ -1,4 +1,7 @@
-import { IsString, IsOptional, IsEnum, IsArray, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsArray, Matches } from 'class-validator';
+
+// Regex para UUID genérico (aceita qualquer versão/formato)
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Enums para perfil capilar
@@ -81,7 +84,7 @@ export type HairConcern = typeof HairConcernsOptions[number];
  * DTO para criação/atualização de perfil capilar
  */
 export class CreateHairProfileDto {
-  @IsUUID()
+  @Matches(UUID_REGEX, { message: 'clientId deve ser um UUID válido' })
   clientId!: string;
 
   @IsOptional()
