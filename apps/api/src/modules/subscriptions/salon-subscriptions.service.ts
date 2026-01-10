@@ -30,29 +30,49 @@ export class SalonSubscriptionsService {
     plan: Plan | null;
     limits: { users: number; clients: number };
   }> {
-    const result = await db
-      .select({
-        subscription: salonSubscriptions,
-        plan: plans,
-      })
-      .from(salonSubscriptions)
-      .innerJoin(plans, eq(salonSubscriptions.planId, plans.id))
-      .where(eq(salonSubscriptions.salonId, salonId))
-      .limit(1);
+    try {
+      // Primeiro busca a assinatura
+      const subscriptionResult = await db
+        .select()
+        .from(salonSubscriptions)
+        .where(eq(salonSubscriptions.salonId, salonId))
+        .limit(1);
 
-    if (result.length === 0) {
+      if (subscriptionResult.length === 0) {
+        return { subscription: null, plan: null, limits: { users: 1, clients: 50 } };
+      }
+
+      const subscription = subscriptionResult[0];
+
+      // Depois busca o plano separadamente (evita problemas de INNER JOIN)
+      let plan: Plan | null = null;
+      if (subscription.planId) {
+        const planResult = await db
+          .select()
+          .from(plans)
+          .where(eq(plans.id, subscription.planId))
+          .limit(1);
+        plan = planResult[0] || null;
+      }
+
+      // Se não encontrar o plano, usa valores padrão
+      const defaultLimits = { users: 1, clients: 50 };
+
+      return {
+        subscription,
+        plan,
+        limits: plan
+          ? {
+              users: subscription.maxUsersOverride || plan.maxUsers,
+              clients: plan.maxClients,
+            }
+          : defaultLimits,
+      };
+    } catch (error) {
+      // Em caso de erro no banco, retorna como se não tivesse assinatura
+      console.error(`Erro ao buscar assinatura do salão ${salonId}:`, error);
       return { subscription: null, plan: null, limits: { users: 1, clients: 50 } };
     }
-
-    const { subscription, plan } = result[0];
-    return {
-      subscription,
-      plan,
-      limits: {
-        users: subscription.maxUsersOverride || plan.maxUsers,
-        clients: plan.maxClients,
-      },
-    };
   }
 
   /**

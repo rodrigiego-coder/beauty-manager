@@ -187,7 +187,9 @@ export function DashboardPage() {
       setCommandError(null);
       setCommandSuccess(null);
 
-      const response = await api.get(`/commands/quick-access/${code}`);
+      const response = await api.get(`/commands/quick-access/${code}`, {
+        timeout: 15000, // 15 segundos de timeout
+      });
       const data = response.data;
 
       if (data.action === 'OPEN_EXISTING') {
@@ -204,7 +206,27 @@ export function DashboardPage() {
 
     } catch (err: any) {
       console.error('Erro ao buscar comanda:', err);
-      setCommandError(err.response?.data?.message || 'Erro ao buscar comanda');
+
+      // Tratamento específico para diferentes tipos de erro
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        setCommandError('Tempo limite excedido. Tente novamente.');
+      } else if (err.response?.status === 403) {
+        // Erro de assinatura
+        const subError = err.response?.data;
+        if (subError?.error === 'SUBSCRIPTION_INVALID') {
+          setCommandError(subError.message || 'Assinatura inválida. Verifique seu plano.');
+        } else {
+          setCommandError('Acesso negado. Verifique suas permissões.');
+        }
+      } else if (err.response?.status === 400) {
+        // BadRequest - caixa fechado, número inválido, etc.
+        setCommandError(err.response?.data?.message || 'Dados inválidos');
+      } else if (!err.response) {
+        // Erro de rede
+        setCommandError('Erro de conexão. Verifique sua internet.');
+      } else {
+        setCommandError(err.response?.data?.message || 'Erro ao buscar comanda');
+      }
     } finally {
       setCommandLoading(false);
     }
