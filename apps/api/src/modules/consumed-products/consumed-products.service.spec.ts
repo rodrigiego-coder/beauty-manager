@@ -16,8 +16,10 @@ describe('ConsumedProductsService', () => {
     description: 'Shampoo para uso profissional',
     costPrice: '25.00',
     salePrice: '50.00',
-    currentStock: 10,
-    minStock: 2,
+    stockInternal: 10,
+    stockRetail: 5,
+    minStockInternal: 2,
+    minStockRetail: 1,
     unit: 'UN',
     active: true,
     hairTypes: [],
@@ -69,6 +71,7 @@ describe('ConsumedProductsService', () => {
     const mockProductsService = {
       findById: jest.fn(),
       adjustStock: jest.fn(),
+      adjustStockWithLocation: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -104,7 +107,7 @@ describe('ConsumedProductsService', () => {
     it('deve registrar consumo com sucesso', async () => {
       // Arrange
       productsService.findById.mockResolvedValue(mockProduct as any);
-      productsService.adjustStock.mockResolvedValue(mockProduct as any);
+      productsService.adjustStockWithLocation.mockResolvedValue({ product: mockProduct, movement: {} } as any);
       mockDb.returning.mockResolvedValue([mockConsumedProduct]);
 
       // Act
@@ -112,16 +115,17 @@ describe('ConsumedProductsService', () => {
 
       // Assert
       expect(productsService.findById).toHaveBeenCalledWith(registerData.productId);
-      expect(productsService.adjustStock).toHaveBeenCalledWith(
-        registerData.productId,
-        registerData.salonId,
-        registerData.userId,
-        {
-          quantity: registerData.quantityUsed,
-          type: 'OUT',
-          reason: 'SERVICE_CONSUMPTION',
-        },
-      );
+      expect(productsService.adjustStockWithLocation).toHaveBeenCalledWith({
+        productId: registerData.productId,
+        salonId: registerData.salonId,
+        userId: registerData.userId,
+        quantity: -registerData.quantityUsed,
+        locationType: 'INTERNAL',
+        movementType: 'SERVICE_CONSUMPTION',
+        reason: 'Consumo em serviço',
+        referenceType: 'appointment',
+        referenceId: registerData.appointmentId,
+      });
       expect(mockDb.insert).toHaveBeenCalled();
       expect(result).toEqual(mockConsumedProduct);
     });
@@ -133,7 +137,7 @@ describe('ConsumedProductsService', () => {
       // Act & Assert
       await expect(service.register(registerData)).rejects.toThrow(NotFoundException);
       await expect(service.register(registerData)).rejects.toThrow('Produto nao encontrado');
-      expect(productsService.adjustStock).not.toHaveBeenCalled();
+      expect(productsService.adjustStockWithLocation).not.toHaveBeenCalled();
     });
 
     it('deve lançar NotFoundException quando produto pertence a outro salão (multi-tenant)', async () => {
@@ -144,7 +148,7 @@ describe('ConsumedProductsService', () => {
       // Act & Assert
       await expect(service.register(registerData)).rejects.toThrow(NotFoundException);
       await expect(service.register(registerData)).rejects.toThrow('Produto nao encontrado');
-      expect(productsService.adjustStock).not.toHaveBeenCalled();
+      expect(productsService.adjustStockWithLocation).not.toHaveBeenCalled();
     });
 
     it('deve lançar BadRequestException quando produto está inativo', async () => {
@@ -155,25 +159,25 @@ describe('ConsumedProductsService', () => {
       // Act & Assert
       await expect(service.register(registerData)).rejects.toThrow(BadRequestException);
       await expect(service.register(registerData)).rejects.toThrow('Produto esta inativo');
-      expect(productsService.adjustStock).not.toHaveBeenCalled();
+      expect(productsService.adjustStockWithLocation).not.toHaveBeenCalled();
     });
 
     it('deve lançar BadRequestException quando estoque é insuficiente', async () => {
       // Arrange
-      const productWithLowStock = { ...mockProduct, currentStock: 1 };
+      const productWithLowStock = { ...mockProduct, stockInternal: 1 };
       productsService.findById.mockResolvedValue(productWithLowStock as any);
 
       const dataWithHighQuantity = { ...registerData, quantityUsed: 5 };
 
       // Act & Assert
       await expect(service.register(dataWithHighQuantity)).rejects.toThrow(BadRequestException);
-      await expect(service.register(dataWithHighQuantity)).rejects.toThrow('Estoque insuficiente');
-      expect(productsService.adjustStock).not.toHaveBeenCalled();
+      await expect(service.register(dataWithHighQuantity)).rejects.toThrow('Estoque interno insuficiente');
+      expect(productsService.adjustStockWithLocation).not.toHaveBeenCalled();
     });
 
     it('deve incluir unidade do produto na mensagem de estoque insuficiente', async () => {
       // Arrange
-      const productWithLowStock = { ...mockProduct, currentStock: 1, unit: 'ML' };
+      const productWithLowStock = { ...mockProduct, stockInternal: 1, unit: 'ML' };
       productsService.findById.mockResolvedValue(productWithLowStock as any);
 
       const dataWithHighQuantity = { ...registerData, quantityUsed: 5 };
@@ -203,7 +207,7 @@ describe('ConsumedProductsService', () => {
       // Arrange
       mockDb.limit.mockResolvedValue([mockConsumedProduct]);
       productsService.findById.mockResolvedValue(mockProduct as any);
-      productsService.adjustStock.mockResolvedValue(mockProduct as any);
+      productsService.adjustStockWithLocation.mockResolvedValue({ product: mockProduct, movement: {} } as any);
 
       // Act
       const result = await service.remove(1, removeCtx);
@@ -212,16 +216,15 @@ describe('ConsumedProductsService', () => {
       expect(result).toBe(true);
       expect(mockDb.select).toHaveBeenCalled();
       expect(productsService.findById).toHaveBeenCalledWith(mockConsumedProduct.productId);
-      expect(productsService.adjustStock).toHaveBeenCalledWith(
-        mockConsumedProduct.productId,
-        removeCtx.salonId,
-        removeCtx.userId,
-        {
-          quantity: parseFloat(mockConsumedProduct.quantityUsed),
-          type: 'IN',
-          reason: 'SERVICE_CONSUMPTION_REVERT',
-        },
-      );
+      expect(productsService.adjustStockWithLocation).toHaveBeenCalledWith({
+        productId: mockConsumedProduct.productId,
+        salonId: removeCtx.salonId,
+        userId: removeCtx.userId,
+        quantity: parseFloat(mockConsumedProduct.quantityUsed),
+        locationType: 'INTERNAL',
+        movementType: 'RETURN',
+        reason: 'Estorno de consumo em serviço',
+      });
       expect(mockDb.delete).toHaveBeenCalled();
     });
 
@@ -235,7 +238,7 @@ describe('ConsumedProductsService', () => {
       // Assert
       expect(result).toBe(false);
       expect(productsService.findById).not.toHaveBeenCalled();
-      expect(productsService.adjustStock).not.toHaveBeenCalled();
+      expect(productsService.adjustStockWithLocation).not.toHaveBeenCalled();
     });
 
     it('deve retornar false quando produto não existe mais', async () => {
@@ -248,7 +251,7 @@ describe('ConsumedProductsService', () => {
 
       // Assert
       expect(result).toBe(false);
-      expect(productsService.adjustStock).not.toHaveBeenCalled();
+      expect(productsService.adjustStockWithLocation).not.toHaveBeenCalled();
     });
 
     it('deve retornar false quando produto pertence a outro salão (multi-tenant)', async () => {
@@ -262,24 +265,21 @@ describe('ConsumedProductsService', () => {
 
       // Assert
       expect(result).toBe(false);
-      expect(productsService.adjustStock).not.toHaveBeenCalled();
+      expect(productsService.adjustStockWithLocation).not.toHaveBeenCalled();
     });
 
-    it('deve converter quantityUsed de string para número ao chamar adjustStock', async () => {
+    it('deve converter quantityUsed de string para número ao chamar adjustStockWithLocation', async () => {
       // Arrange
       const consumedWithDecimal = { ...mockConsumedProduct, quantityUsed: '2.5' };
       mockDb.limit.mockResolvedValue([consumedWithDecimal]);
       productsService.findById.mockResolvedValue(mockProduct as any);
-      productsService.adjustStock.mockResolvedValue(mockProduct as any);
+      productsService.adjustStockWithLocation.mockResolvedValue({ product: mockProduct, movement: {} } as any);
 
       // Act
       await service.remove(1, removeCtx);
 
       // Assert
-      expect(productsService.adjustStock).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
+      expect(productsService.adjustStockWithLocation).toHaveBeenCalledWith(
         expect.objectContaining({
           quantity: 2.5,
         }),
