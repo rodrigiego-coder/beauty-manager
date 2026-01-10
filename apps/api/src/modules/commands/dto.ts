@@ -42,7 +42,7 @@ export class OpenCommandDto {
   @IsOptional()
   cardNumber?: string;
 
-  @IsUUID('4', { message: 'ID do cliente deve ser um UUID valido' })
+  @IsUUID(undefined, { message: 'ID do cliente deve ser um UUID valido' })
   @IsOptional()
   clientId?: string;
 
@@ -76,7 +76,7 @@ export class AddItemDto {
   @IsOptional()
   discount?: number;
 
-  @IsUUID('4', { message: 'ID do profissional deve ser um UUID valido' })
+  @IsUUID(undefined, { message: 'ID do profissional deve ser um UUID valido' })
   @IsOptional()
   performerId?: string;
 
@@ -87,7 +87,7 @@ export class AddItemDto {
   referenceId?: string;
 
   // Variante da receita (para serviços com tamanho de cabelo)
-  @IsUUID('4', { message: 'ID da variante deve ser um UUID valido' })
+  @IsUUID(undefined, { message: 'ID da variante deve ser um UUID valido' })
   @IsOptional()
   variantId?: string;
 }
@@ -109,7 +109,7 @@ export class UpdateItemDto {
   @IsOptional()
   discount?: number;
 
-  @IsUUID('4', { message: 'ID do profissional deve ser um UUID valido' })
+  @IsUUID(undefined, { message: 'ID do profissional deve ser um UUID valido' })
   @IsOptional()
   performerId?: string;
 }
@@ -141,12 +141,12 @@ export class AddPaymentDto {
   method?: PaymentMethod;
 
   // Novo formato: ID da forma de pagamento configurada
-  @IsUUID('4', { message: 'ID da forma de pagamento deve ser um UUID valido' })
+  @IsUUID(undefined, { message: 'ID da forma de pagamento deve ser um UUID valido' })
   @IsOptional()
   paymentMethodId?: string;
 
   // Novo: ID do destino do pagamento (opcional)
-  @IsUUID('4', { message: 'ID do destino deve ser um UUID valido' })
+  @IsUUID(undefined, { message: 'ID do destino deve ser um UUID valido' })
   @IsOptional()
   paymentDestinationId?: string;
 
@@ -176,7 +176,7 @@ export class AddNoteDto {
 
 // DTO para vincular cliente
 export class LinkClientDto {
-  @IsUUID('4', { message: 'ID do cliente deve ser um UUID valido' })
+  @IsUUID(undefined, { message: 'ID do cliente deve ser um UUID valido' })
   @IsNotEmpty({ message: 'ID do cliente e obrigatorio' })
   clientId!: string;
 }
