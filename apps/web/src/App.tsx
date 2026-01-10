@@ -40,6 +40,7 @@ import AlexisConversationsPage from './pages/AlexisConversationsPage';
 import AlexisSettingsPage from './pages/AlexisSettingsPage';
 import AlexisLogsPage from './pages/AlexisLogsPage';
 import { TriagePublicPage } from './pages/public/TriagePublicPage';
+import { OnlineBookingPage } from './pages/public/OnlineBookingPage';
 
 type UserRole = 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST' | 'SUPER_ADMIN';
 
@@ -69,6 +70,7 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/cart/:code" element={<CartLinkPublicPage />} />
           <Route path="/pre-avaliacao/:token" element={<TriagePublicPage />} />
+          <Route path="/agendar/:salonSlug" element={<OnlineBookingPage />} />
 
           {/* Rotas protegidas */}
           <Route

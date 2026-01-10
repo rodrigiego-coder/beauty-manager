@@ -181,6 +181,39 @@ export const subscriptionEventTypeEnum = pgEnum('subscription_event_type', [
   'CANCELED',
 ]);
 
+// ==================== ENUMS PARA AGENDAMENTO ONLINE ====================
+
+// Enum para Status de Hold (reserva temporária)
+export const holdStatusEnum = pgEnum('hold_status', [
+  'ACTIVE',
+  'CONVERTED',
+  'EXPIRED',
+  'RELEASED',
+]);
+
+// Enum para Tipo de OTP
+export const otpTypeEnum = pgEnum('otp_type', [
+  'PHONE_VERIFICATION',
+  'BOOKING_CONFIRMATION',
+  'CANCEL_BOOKING',
+]);
+
+// Enum para Status de Depósito
+export const depositStatusEnum = pgEnum('deposit_status', [
+  'PENDING',
+  'PAID',
+  'REFUNDED',
+  'FORFEITED',
+]);
+
+// Enum para Tipo de Regra de Booking
+export const bookingRuleTypeEnum = pgEnum('booking_rule_type', [
+  'BLOCKED',
+  'VIP_ONLY',
+  'DEPOSIT_REQUIRED',
+  'RESTRICTED_SERVICES',
+]);
+
 /**
  * Interface para tipagem do work_schedule
  */
@@ -259,6 +292,7 @@ export const subscriptionPlans = pgTable('subscription_plans', {
 export const salons = pgTable('salons', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
+  slug: varchar('slug', { length: 100 }).unique(), // URL amigável para booking online
   address: text('address'),
   taxId: varchar('tax_id', { length: 20 }), // CNPJ
   phone: varchar('phone', { length: 20 }),
@@ -497,6 +531,23 @@ export const appointments = pgTable('appointments', {
   cancellationReason: text('cancellation_reason'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  // ==================== CAMPOS PARA AGENDAMENTO ONLINE ====================
+  // Referência ao hold temporário que originou
+  holdId: uuid('hold_id'),
+  // Referência ao depósito (se exigido)
+  depositId: uuid('deposit_id'),
+  // Verificação de telefone
+  verifiedPhone: boolean('verified_phone').default(false),
+  // Token de acesso do cliente (para cancelamento/reagendamento)
+  clientAccessToken: uuid('client_access_token'),
+  clientAccessTokenExpiresAt: timestamp('client_access_token_expires_at'),
+  // Rastreamento online
+  bookedOnlineAt: timestamp('booked_online_at'),
+  clientIp: varchar('client_ip', { length: 45 }),
+  // Reagendamento
+  rescheduledFromId: uuid('rescheduled_from_id'),
+  rescheduledToId: uuid('rescheduled_to_id'),
+  rescheduleCount: integer('reschedule_count').default(0),
 });
 
 /**
@@ -3385,3 +3436,217 @@ export type TriageOverride = typeof triageOverrides.$inferSelect;
 export type NewTriageOverride = typeof triageOverrides.$inferInsert;
 export type StockAdjustmentPending = typeof stockAdjustmentsPending.$inferSelect;
 export type NewStockAdjustmentPending = typeof stockAdjustmentsPending.$inferInsert;
+
+// ==================== MÓDULO DE AGENDAMENTO ONLINE ====================
+
+/**
+ * Configurações de Agendamento Online por Salão
+ * Controla todas as regras e preferências do sistema de booking online
+ */
+export const onlineBookingSettings = pgTable('online_booking_settings', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull().unique(),
+
+  // Habilitação geral
+  enabled: boolean('enabled').default(false).notNull(),
+
+  // Antecedência de agendamento
+  minAdvanceHours: integer('min_advance_hours').default(2).notNull(),
+  maxAdvanceDays: integer('max_advance_days').default(30).notNull(),
+
+  // Duração do hold (reserva temporária)
+  holdDurationMinutes: integer('hold_duration_minutes').default(10).notNull(),
+
+  // Política de cancelamento
+  cancellationHours: integer('cancellation_hours').default(24).notNull(),
+  allowRescheduling: boolean('allow_rescheduling').default(true).notNull(),
+  maxReschedules: integer('max_reschedules').default(2).notNull(),
+
+  // Verificação de telefone
+  requirePhoneVerification: boolean('require_phone_verification').default(true).notNull(),
+
+  // Depósito/sinal
+  requireDeposit: boolean('require_deposit').default(false).notNull(),
+  depositType: varchar('deposit_type', { length: 20 }).default('FIXED'), // FIXED, PERCENTAGE
+  depositValue: decimal('deposit_value', { precision: 10, scale: 2 }).default('0'),
+  depositMinServices: decimal('deposit_min_services', { precision: 10, scale: 2 }).default('100'),
+
+  // Regras para novos clientes
+  allowNewClients: boolean('allow_new_clients').default(true).notNull(),
+  newClientRequiresApproval: boolean('new_client_requires_approval').default(false).notNull(),
+  newClientDepositRequired: boolean('new_client_deposit_required').default(false).notNull(),
+
+  // Limites
+  maxDailyBookings: integer('max_daily_bookings'),
+  maxWeeklyBookingsPerClient: integer('max_weekly_bookings_per_client').default(3),
+
+  // Mensagens customizadas
+  welcomeMessage: text('welcome_message'),
+  confirmationMessage: text('confirmation_message'),
+  cancellationMessage: text('cancellation_message'),
+
+  // Termos e condições
+  termsUrl: varchar('terms_url', { length: 500 }),
+  requireTermsAcceptance: boolean('require_terms_acceptance').default(false),
+
+  // Integração WhatsApp
+  sendWhatsappConfirmation: boolean('send_whatsapp_confirmation').default(true),
+  sendWhatsappReminder: boolean('send_whatsapp_reminder').default(true),
+  reminderHoursBefore: integer('reminder_hours_before').default(24),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Holds (reservas temporárias) de Agendamento
+ * Bloqueia horário por tempo limitado enquanto cliente completa booking
+ */
+export const appointmentHolds = pgTable('appointment_holds', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+
+  // Horário reservado
+  professionalId: uuid('professional_id').references(() => users.id).notNull(),
+  serviceId: integer('service_id').references(() => services.id).notNull(),
+  date: varchar('date', { length: 10 }).notNull(),
+  startTime: varchar('start_time', { length: 5 }).notNull(),
+  endTime: varchar('end_time', { length: 5 }).notNull(),
+
+  // Dados do cliente (pode ser temporário)
+  clientPhone: varchar('client_phone', { length: 20 }).notNull(),
+  clientName: varchar('client_name', { length: 255 }),
+  clientId: uuid('client_id').references(() => clients.id),
+
+  // Status e controle
+  status: holdStatusEnum('status').default('ACTIVE').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+
+  // Se convertido em agendamento
+  appointmentId: uuid('appointment_id').references(() => appointments.id),
+  convertedAt: timestamp('converted_at'),
+
+  // Rastreamento
+  sessionId: varchar('session_id', { length: 100 }),
+  clientIp: varchar('client_ip', { length: 45 }),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Regras de Booking por Cliente
+ * Permite bloquear ou aplicar regras especiais para clientes específicos
+ */
+export const clientBookingRules = pgTable('client_booking_rules', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+
+  // Identificação do cliente (phone ou clientId)
+  clientPhone: varchar('client_phone', { length: 20 }),
+  clientId: uuid('client_id').references(() => clients.id),
+
+  // Tipo de regra
+  ruleType: bookingRuleTypeEnum('rule_type').notNull(),
+
+  // Configuração da regra
+  reason: text('reason'),
+  restrictedServiceIds: json('restricted_service_ids').$type<number[]>(),
+
+  // Validade
+  startsAt: timestamp('starts_at').defaultNow().notNull(),
+  expiresAt: timestamp('expires_at'),
+
+  // Quem criou
+  createdById: uuid('created_by_id').references(() => users.id).notNull(),
+
+  // Status
+  isActive: boolean('is_active').default(true).notNull(),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Depósitos de Agendamento
+ * Registra sinais/depósitos pagos para confirmar agendamentos
+ */
+export const appointmentDeposits = pgTable('appointment_deposits', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+
+  // Vinculação
+  appointmentId: uuid('appointment_id').references(() => appointments.id),
+  holdId: uuid('hold_id').references(() => appointmentHolds.id),
+  clientId: uuid('client_id').references(() => clients.id),
+
+  // Valor
+  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
+
+  // Status do depósito
+  status: depositStatusEnum('status').default('PENDING').notNull(),
+
+  // Dados do pagamento
+  paymentMethod: paymentMethodEnum('payment_method'),
+  paymentReference: varchar('payment_reference', { length: 255 }),
+  mercadoPagoPaymentId: varchar('mercado_pago_payment_id', { length: 100 }),
+  pixCode: text('pix_code'),
+  pixQrCodeBase64: text('pix_qr_code_base64'),
+
+  // Datas
+  paidAt: timestamp('paid_at'),
+  refundedAt: timestamp('refunded_at'),
+  forfeitedAt: timestamp('forfeited_at'),
+  expiresAt: timestamp('expires_at'),
+
+  // Motivo (para refund/forfeit)
+  notes: text('notes'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Códigos OTP para verificação
+ * Usados para verificar telefone e confirmar ações sensíveis
+ */
+export const otpCodes = pgTable('otp_codes', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+
+  // Tipo de verificação
+  type: otpTypeEnum('type').notNull(),
+
+  // Destino
+  phone: varchar('phone', { length: 20 }).notNull(),
+
+  // Código
+  code: varchar('code', { length: 6 }).notNull(),
+
+  // Controle
+  expiresAt: timestamp('expires_at').notNull(),
+  usedAt: timestamp('used_at'),
+  attempts: integer('attempts').default(0).notNull(),
+  maxAttempts: integer('max_attempts').default(3).notNull(),
+
+  // Vinculação opcional
+  holdId: uuid('hold_id').references(() => appointmentHolds.id),
+  appointmentId: uuid('appointment_id').references(() => appointments.id),
+
+  // Rastreamento
+  clientIp: varchar('client_ip', { length: 45 }),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Types para Agendamento Online
+export type OnlineBookingSettings = typeof onlineBookingSettings.$inferSelect;
+export type NewOnlineBookingSettings = typeof onlineBookingSettings.$inferInsert;
+export type AppointmentHold = typeof appointmentHolds.$inferSelect;
+export type NewAppointmentHold = typeof appointmentHolds.$inferInsert;
+export type ClientBookingRule = typeof clientBookingRules.$inferSelect;
+export type NewClientBookingRule = typeof clientBookingRules.$inferInsert;
+export type AppointmentDeposit = typeof appointmentDeposits.$inferSelect;
+export type NewAppointmentDeposit = typeof appointmentDeposits.$inferInsert;
+export type OtpCode = typeof otpCodes.$inferSelect;
+export type NewOtpCode = typeof otpCodes.$inferInsert;

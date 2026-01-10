@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtModule } from '@nestjs/jwt';
@@ -57,6 +58,7 @@ import { PaymentDestinationsModule } from './modules/payment-destinations/paymen
 import { AsaasModule } from './modules/asaas';
 import { BillingModule } from './modules/billing';
 import { TriageModule } from './modules/triage/triage.module';
+import { OnlineBookingModule } from './modules/online-booking/online-booking.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -132,6 +134,8 @@ import { TriageModule } from './modules/triage/triage.module';
     CalendarModule,
     // Módulo de Automação WhatsApp/SMS
     AutomationModule,
+    // Módulo WhatsApp (Evolution API)
+    WhatsAppModule,
     // Módulo de Inteligência de Produto
     HairProfileModule,
     RecommendationsModule,
@@ -150,7 +154,9 @@ import { TriageModule } from './modules/triage/triage.module';
     AlexisModule,
     // Módulos de Pacotes de Serviços
     PackagesModule,
-    ClientPackagesModule],
+    ClientPackagesModule,
+    // Módulo de Agendamento Online
+    OnlineBookingModule],
   controllers: [AppController],
   providers: [
     // Interceptor global de auditoria

@@ -1,0 +1,747 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  Ip,
+  BadRequestException,
+  NotFoundException,
+  Logger,
+  Inject,
+} from '@nestjs/common';
+import { eq, and, or } from 'drizzle-orm';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import * as schema from '../../database/schema';
+import {
+  CreateHoldDto,
+  SendOtpDto,
+  VerifyOtpDto,
+  GetAvailableSlotsDto,
+  CreateOnlineBookingDto,
+  CancelOnlineBookingDto,
+  OtpType,
+  AvailableSlot,
+  HoldResponse,
+  BookingConfirmation,
+} from './dto';
+import { OnlineBookingSettingsService } from './online-booking-settings.service';
+import { AppointmentHoldsService } from './appointment-holds.service';
+import { OtpService } from './otp.service';
+import { DepositsService } from './deposits.service';
+import { ClientBookingRulesService } from './client-booking-rules.service';
+import { randomUUID } from 'crypto';
+
+/**
+ * Controller público para agendamento online
+ * Não requer autenticação - acessível por clientes
+ */
+@Controller('public/booking')
+export class PublicBookingController {
+  private readonly logger = new Logger(PublicBookingController.name);
+
+  constructor(
+    @Inject('DATABASE_CONNECTION')
+    private readonly db: NodePgDatabase<typeof schema>,
+    private readonly settingsService: OnlineBookingSettingsService,
+    private readonly holdsService: AppointmentHoldsService,
+    private readonly otpService: OtpService,
+    private readonly depositsService: DepositsService,
+    private readonly rulesService: ClientBookingRulesService,
+  ) {}
+
+  /**
+   * Obtém informações do salão para booking
+   */
+  @Get(':salonSlug/info')
+  async getSalonInfo(@Param('salonSlug') salonSlug: string) {
+    const salon = await this.findSalonBySlug(salonSlug);
+    const settings = await this.settingsService.getSettings(salon.id);
+
+    if (!settings.enabled) {
+      throw new BadRequestException('Agendamento online não está disponível');
+    }
+
+    return {
+      salonId: salon.id,
+      salonName: salon.name,
+      welcomeMessage: settings.welcomeMessage,
+      termsUrl: settings.termsUrl,
+      requireTermsAcceptance: settings.requireTermsAcceptance,
+      requirePhoneVerification: settings.requirePhoneVerification,
+      minAdvanceHours: settings.minAdvanceHours,
+      maxAdvanceDays: settings.maxAdvanceDays,
+      cancellationHours: settings.cancellationHours,
+      allowRescheduling: settings.allowRescheduling,
+    };
+  }
+
+  /**
+   * Lista serviços disponíveis para agendamento online
+   */
+  @Get(':salonSlug/services')
+  async getAvailableServices(@Param('salonSlug') salonSlug: string) {
+    const salon = await this.findSalonBySlug(salonSlug);
+    await this.checkBookingEnabled(salon.id);
+
+    const services = await this.db
+      .select({
+        id: schema.services.id,
+        name: schema.services.name,
+        description: schema.services.description,
+        category: schema.services.category,
+        durationMinutes: schema.services.durationMinutes,
+        basePrice: schema.services.basePrice,
+      })
+      .from(schema.services)
+      .where(
+        and(
+          eq(schema.services.salonId, salon.id),
+          eq(schema.services.active, true),
+          eq(schema.services.allowOnlineBooking, true),
+        ),
+      )
+      .orderBy(schema.services.name);
+
+    return services;
+  }
+
+  /**
+   * Lista profissionais disponíveis para um serviço
+   */
+  @Get(':salonSlug/professionals')
+  async getAvailableProfessionals(
+    @Param('salonSlug') salonSlug: string,
+    @Query('serviceId') _serviceId?: string,
+  ) {
+    const salon = await this.findSalonBySlug(salonSlug);
+    await this.checkBookingEnabled(salon.id);
+
+    // Busca profissionais ativos que são stylists
+    const professionals = await this.db
+      .select({
+        id: schema.users.id,
+        name: schema.users.name,
+        role: schema.users.role,
+      })
+      .from(schema.users)
+      .where(
+        and(
+          eq(schema.users.salonId, salon.id),
+          eq(schema.users.active, true),
+          or(
+            eq(schema.users.role, 'STYLIST'),
+            eq(schema.users.role, 'OWNER'),
+            eq(schema.users.role, 'MANAGER'),
+          ),
+        ),
+      )
+      .orderBy(schema.users.name);
+
+    // TODO: Filtrar por serviço (professional_services)
+    // if (_serviceId) { ... }
+
+    return professionals;
+  }
+
+  /**
+   * Obtém horários disponíveis
+   */
+  @Get(':salonSlug/slots')
+  async getAvailableSlots(
+    @Param('salonSlug') salonSlug: string,
+    @Query() query: GetAvailableSlotsDto,
+  ): Promise<AvailableSlot[]> {
+    const salon = await this.findSalonBySlug(salonSlug);
+    await this.checkBookingEnabled(salon.id);
+
+    const { professionalId, serviceId, startDate, endDate } = query;
+    const finalEndDate = endDate || startDate;
+
+    // Busca serviço
+    let service: typeof schema.services.$inferSelect | null = null;
+    if (serviceId) {
+      const [svc] = await this.db
+        .select()
+        .from(schema.services)
+        .where(
+          and(
+            eq(schema.services.id, serviceId),
+            eq(schema.services.salonId, salon.id),
+            eq(schema.services.active, true),
+          ),
+        )
+        .limit(1);
+      service = svc;
+    }
+
+    // Busca profissionais
+    const professionalsConditions = [
+      eq(schema.users.salonId, salon.id),
+      eq(schema.users.active, true),
+    ];
+
+    if (professionalId) {
+      professionalsConditions.push(eq(schema.users.id, professionalId));
+    }
+
+    const professionals = await this.db
+      .select()
+      .from(schema.users)
+      .where(and(...professionalsConditions));
+
+    const slots: AvailableSlot[] = [];
+
+    // Para cada profissional, gera slots disponíveis
+    for (const professional of professionals) {
+      const professionalSlots = await this.generateSlotsForProfessional(
+        salon.id,
+        professional,
+        service,
+        startDate,
+        finalEndDate,
+      );
+      slots.push(...professionalSlots);
+    }
+
+    return slots.sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return a.time.localeCompare(b.time);
+    });
+  }
+
+  /**
+   * Cria uma reserva temporária (hold)
+   */
+  @Post(':salonSlug/hold')
+  async createHold(
+    @Param('salonSlug') salonSlug: string,
+    @Body() dto: CreateHoldDto,
+    @Ip() clientIp: string,
+  ): Promise<HoldResponse> {
+    const salon = await this.findSalonBySlug(salonSlug);
+    await this.checkBookingEnabled(salon.id);
+
+    // Verifica elegibilidade do cliente
+    const eligibility = await this.rulesService.checkBookingEligibility(
+      salon.id,
+      dto.clientPhone,
+      dto.serviceId,
+    );
+
+    if (!eligibility.canBook) {
+      throw new BadRequestException(eligibility.reason);
+    }
+
+    return this.holdsService.createHold(salon.id, dto, clientIp);
+  }
+
+  /**
+   * Estende o tempo de uma reserva
+   */
+  @Post(':salonSlug/hold/:holdId/extend')
+  async extendHold(
+    @Param('salonSlug') salonSlug: string,
+    @Param('holdId') holdId: string,
+  ): Promise<HoldResponse> {
+    const salon = await this.findSalonBySlug(salonSlug);
+    return this.holdsService.extendHold(salon.id, holdId);
+  }
+
+  /**
+   * Libera uma reserva
+   */
+  @Post(':salonSlug/hold/:holdId/release')
+  async releaseHold(
+    @Param('salonSlug') salonSlug: string,
+    @Param('holdId') holdId: string,
+  ): Promise<{ message: string }> {
+    const salon = await this.findSalonBySlug(salonSlug);
+    await this.holdsService.releaseHold(salon.id, holdId);
+    return { message: 'Reserva liberada com sucesso' };
+  }
+
+  /**
+   * Envia código OTP para verificação de telefone
+   */
+  @Post(':salonSlug/otp/send')
+  async sendOtp(
+    @Param('salonSlug') salonSlug: string,
+    @Body() dto: SendOtpDto,
+    @Ip() clientIp: string,
+  ) {
+    const salon = await this.findSalonBySlug(salonSlug);
+    return this.otpService.sendOtp(salon.id, dto, clientIp);
+  }
+
+  /**
+   * Verifica código OTP
+   */
+  @Post(':salonSlug/otp/verify')
+  async verifyOtp(
+    @Param('salonSlug') salonSlug: string,
+    @Body() dto: VerifyOtpDto,
+  ) {
+    const salon = await this.findSalonBySlug(salonSlug);
+    return this.otpService.verifyOtp(salon.id, dto);
+  }
+
+  /**
+   * Confirma agendamento (converte hold em appointment)
+   */
+  @Post(':salonSlug/confirm')
+  async confirmBooking(
+    @Param('salonSlug') salonSlug: string,
+    @Body() dto: CreateOnlineBookingDto,
+    @Ip() clientIp: string,
+  ): Promise<BookingConfirmation> {
+    const salon = await this.findSalonBySlug(salonSlug);
+    const settings = await this.settingsService.getSettings(salon.id);
+
+    if (!settings.enabled) {
+      throw new BadRequestException('Agendamento online não está disponível');
+    }
+
+    // Verifica verificação de telefone
+    if (settings.requirePhoneVerification) {
+      if (!dto.otpCode) {
+        throw new BadRequestException('Verificação de telefone é obrigatória');
+      }
+
+      const otpResult = await this.otpService.verifyOtp(salon.id, {
+        phone: dto.clientPhone,
+        code: dto.otpCode,
+        type: OtpType.PHONE_VERIFICATION,
+      });
+
+      if (!otpResult.valid) {
+        throw new BadRequestException(otpResult.message);
+      }
+    }
+
+    // Verifica elegibilidade
+    const eligibility = await this.rulesService.checkBookingEligibility(
+      salon.id,
+      dto.clientPhone,
+      dto.serviceId,
+    );
+
+    if (!eligibility.canBook) {
+      throw new BadRequestException(eligibility.reason);
+    }
+
+    // Busca ou cria cliente
+    let client = await this.findOrCreateClient(salon.id, dto);
+
+    // Busca serviço
+    const [service] = await this.db
+      .select()
+      .from(schema.services)
+      .where(
+        and(
+          eq(schema.services.id, dto.serviceId),
+          eq(schema.services.salonId, salon.id),
+        ),
+      )
+      .limit(1);
+
+    if (!service) {
+      throw new NotFoundException('Serviço não encontrado');
+    }
+
+    // Busca profissional
+    const [professional] = await this.db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.id, dto.professionalId))
+      .limit(1);
+
+    if (!professional) {
+      throw new NotFoundException('Profissional não encontrado');
+    }
+
+    // Verifica conflitos
+    const endTime = this.addMinutes(dto.time, service.durationMinutes);
+    const hasConflict = await this.holdsService.checkAppointmentConflict(
+      salon.id,
+      dto.professionalId,
+      dto.date,
+      dto.time,
+      endTime,
+    );
+
+    if (hasConflict) {
+      throw new BadRequestException('Este horário não está mais disponível');
+    }
+
+    // Gera token de acesso do cliente
+    const clientAccessToken = randomUUID();
+    const tokenExpiration = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 dias
+
+    // Cria o agendamento
+    const [appointment] = await this.db
+      .insert(schema.appointments)
+      .values({
+        salonId: salon.id,
+        clientId: client.id,
+        clientName: dto.clientName,
+        clientPhone: dto.clientPhone,
+        clientEmail: dto.clientEmail,
+        professionalId: dto.professionalId,
+        serviceId: dto.serviceId,
+        service: service.name,
+        date: dto.date,
+        time: dto.time,
+        startTime: dto.time,
+        endTime,
+        duration: service.durationMinutes,
+        price: service.basePrice,
+        status: 'PENDING_CONFIRMATION',
+        confirmationStatus: 'PENDING',
+        source: 'ONLINE',
+        notes: dto.notes,
+        verifiedPhone: settings.requirePhoneVerification,
+        clientAccessToken,
+        clientAccessTokenExpiresAt: tokenExpiration,
+        bookedOnlineAt: new Date(),
+        clientIp,
+      })
+      .returning();
+
+    this.logger.log(`Agendamento online criado: ${appointment.id}`);
+
+    // Verifica se precisa de depósito
+    let depositData: { amount?: string; pixCode?: string } = {};
+    const depositAmount = await this.depositsService.calculateDepositAmount(
+      salon.id,
+      parseFloat(service.basePrice),
+    );
+
+    if (depositAmount > 0 || eligibility.requiresDeposit) {
+      const finalAmount = depositAmount > 0 ? depositAmount : parseFloat(service.basePrice) * 0.2;
+      const deposit = await this.depositsService.createDeposit(salon.id, {
+        appointmentId: appointment.id,
+        clientId: client.id,
+        amount: finalAmount,
+      });
+
+      const pixData = await this.depositsService.generatePixPayment(salon.id, deposit.id);
+
+      // Atualiza agendamento com depositId
+      await this.db
+        .update(schema.appointments)
+        .set({ depositId: deposit.id })
+        .where(eq(schema.appointments.id, appointment.id));
+
+      depositData = {
+        amount: finalAmount.toString(),
+        pixCode: pixData.pixCode,
+      };
+    }
+
+    // TODO: Enviar confirmação via WhatsApp
+    // await this.notificationService.sendBookingConfirmation(appointment);
+
+    return {
+      appointmentId: appointment.id,
+      date: appointment.date,
+      time: appointment.time,
+      professionalName: professional.name,
+      serviceName: service.name,
+      clientAccessToken,
+      depositRequired: !!depositData.amount,
+      depositAmount: depositData.amount,
+      depositPixCode: depositData.pixCode,
+    };
+  }
+
+  /**
+   * Consulta status de um agendamento pelo token
+   */
+  @Get(':salonSlug/appointment/:appointmentId')
+  async getAppointmentStatus(
+    @Param('salonSlug') salonSlug: string,
+    @Param('appointmentId') appointmentId: string,
+    @Query('token') token?: string,
+  ) {
+    const salon = await this.findSalonBySlug(salonSlug);
+
+    const [appointment] = await this.db
+      .select()
+      .from(schema.appointments)
+      .where(
+        and(
+          eq(schema.appointments.id, appointmentId),
+          eq(schema.appointments.salonId, salon.id),
+        ),
+      )
+      .limit(1);
+
+    if (!appointment) {
+      throw new NotFoundException('Agendamento não encontrado');
+    }
+
+    // Verifica token se fornecido
+    if (token && appointment.clientAccessToken !== token) {
+      throw new BadRequestException('Token inválido');
+    }
+
+    // Busca depósito se houver
+    let deposit = null;
+    if (appointment.depositId) {
+      deposit = await this.depositsService.getDeposit(salon.id, appointment.depositId);
+    }
+
+    return {
+      id: appointment.id,
+      date: appointment.date,
+      time: appointment.time,
+      service: appointment.service,
+      status: appointment.status,
+      confirmationStatus: appointment.confirmationStatus,
+      deposit: deposit ? {
+        status: deposit.status,
+        amount: deposit.amount,
+        paidAt: deposit.paidAt,
+      } : null,
+    };
+  }
+
+  /**
+   * Cancela um agendamento
+   */
+  @Post(':salonSlug/cancel')
+  async cancelBooking(
+    @Param('salonSlug') salonSlug: string,
+    @Body() dto: CancelOnlineBookingDto,
+  ) {
+    const salon = await this.findSalonBySlug(salonSlug);
+    // Settings carregadas para futura validação de regras de cancelamento
+    void this.settingsService.getSettings(salon.id);
+
+    const [appointment] = await this.db
+      .select()
+      .from(schema.appointments)
+      .where(
+        and(
+          eq(schema.appointments.id, dto.appointmentId),
+          eq(schema.appointments.salonId, salon.id),
+        ),
+      )
+      .limit(1);
+
+    if (!appointment) {
+      throw new NotFoundException('Agendamento não encontrado');
+    }
+
+    // Verifica autorização (token ou OTP)
+    if (dto.clientAccessToken) {
+      if (appointment.clientAccessToken !== dto.clientAccessToken) {
+        throw new BadRequestException('Token inválido');
+      }
+    } else if (dto.otpCode && appointment.clientPhone) {
+      const otpResult = await this.otpService.verifyOtp(salon.id, {
+        phone: appointment.clientPhone,
+        code: dto.otpCode,
+        type: OtpType.CANCEL_BOOKING,
+      });
+      if (!otpResult.valid) {
+        throw new BadRequestException(otpResult.message);
+      }
+    } else {
+      throw new BadRequestException('Autorização inválida');
+    }
+
+    // Verifica se pode cancelar
+    if (['CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(appointment.status)) {
+      throw new BadRequestException('Este agendamento não pode ser cancelado');
+    }
+
+    // Processa cancelamento
+    await this.db
+      .update(schema.appointments)
+      .set({
+        status: 'CANCELLED',
+        cancellationReason: dto.reason || 'Cancelado pelo cliente via agendamento online',
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.appointments.id, dto.appointmentId));
+
+    // Processa depósito (reembolso se elegível)
+    if (appointment.depositId) {
+      const isEligible = await this.depositsService.isEligibleForRefund(
+        salon.id,
+        appointment.id,
+      );
+
+      if (isEligible) {
+        await this.depositsService.refundDeposit(
+          salon.id,
+          appointment.depositId,
+          'Cancelamento dentro do prazo',
+        );
+      } else {
+        await this.depositsService.forfeitDeposit(
+          salon.id,
+          appointment.depositId,
+          'Cancelamento fora do prazo',
+        );
+      }
+    }
+
+    this.logger.log(`Agendamento ${dto.appointmentId} cancelado pelo cliente`);
+
+    return { message: 'Agendamento cancelado com sucesso' };
+  }
+
+  // ==================== MÉTODOS AUXILIARES ====================
+
+  /**
+   * Busca salão pelo slug
+   */
+  private async findSalonBySlug(slug: string): Promise<schema.Salon> {
+    const [salon] = await this.db
+      .select()
+      .from(schema.salons)
+      .where(eq(schema.salons.slug, slug))
+      .limit(1);
+
+    if (!salon) {
+      throw new NotFoundException('Salão não encontrado');
+    }
+
+    return salon;
+  }
+
+  /**
+   * Verifica se booking está habilitado
+   */
+  private async checkBookingEnabled(salonId: string): Promise<void> {
+    const isEnabled = await this.settingsService.isEnabled(salonId);
+    if (!isEnabled) {
+      throw new BadRequestException('Agendamento online não está disponível');
+    }
+  }
+
+  /**
+   * Busca ou cria cliente
+   */
+  private async findOrCreateClient(
+    salonId: string,
+    dto: CreateOnlineBookingDto,
+  ): Promise<schema.Client> {
+    // Busca cliente existente
+    let [client] = await this.db
+      .select()
+      .from(schema.clients)
+      .where(
+        and(
+          eq(schema.clients.salonId, salonId),
+          eq(schema.clients.phone, dto.clientPhone),
+        ),
+      )
+      .limit(1);
+
+    if (!client) {
+      // Cria novo cliente
+      [client] = await this.db
+        .insert(schema.clients)
+        .values({
+          salonId,
+          name: dto.clientName,
+          phone: dto.clientPhone,
+          email: dto.clientEmail,
+        })
+        .returning();
+
+      this.logger.log(`Novo cliente criado via booking online: ${client.id}`);
+    }
+
+    return client;
+  }
+
+  /**
+   * Gera slots disponíveis para um profissional
+   */
+  private async generateSlotsForProfessional(
+    salonId: string,
+    professional: schema.User,
+    service: typeof schema.services.$inferSelect | null,
+    startDate: string,
+    endDate: string,
+  ): Promise<AvailableSlot[]> {
+    const slots: AvailableSlot[] = [];
+    const duration = service?.durationMinutes || 60;
+    const serviceName = service?.name || 'Serviço';
+    const serviceId = service?.id || 0;
+    const price = service?.basePrice || '0';
+
+    // Gera datas no intervalo
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const current = new Date(start);
+
+    while (current <= end) {
+      const dateStr = current.toISOString().split('T')[0];
+
+      // TODO: Implementar lógica real de disponibilidade baseada em:
+      // 1. Horário de trabalho do profissional (work_schedule)
+      // 2. Bloqueios (blocks)
+      // 3. Agendamentos existentes
+      // 4. Holds ativos
+
+      // Por enquanto, gera slots de exemplo das 9h às 18h
+      for (let hour = 9; hour < 18; hour++) {
+        const time = `${hour.toString().padStart(2, '0')}:00`;
+        const endTime = this.addMinutes(time, duration);
+
+        // Verifica se não há conflitos
+        const hasConflict = await this.holdsService.checkAppointmentConflict(
+          salonId,
+          professional.id,
+          dateStr,
+          time,
+          endTime,
+        );
+
+        const hasHoldConflict = await this.holdsService.checkHoldConflict(
+          salonId,
+          professional.id,
+          dateStr,
+          time,
+          endTime,
+        );
+
+        if (!hasConflict && !hasHoldConflict) {
+          slots.push({
+            date: dateStr,
+            time,
+            endTime,
+            professionalId: professional.id,
+            professionalName: professional.name,
+            serviceId,
+            serviceName,
+            duration,
+            price,
+          });
+        }
+      }
+
+      current.setDate(current.getDate() + 1);
+    }
+
+    return slots;
+  }
+
+  /**
+   * Adiciona minutos a um horário
+   */
+  private addMinutes(time: string, minutes: number): string {
+    const [h, m] = time.split(':').map(Number);
+    const totalMinutes = h * 60 + m + minutes;
+    const newH = Math.floor(totalMinutes / 60) % 24;
+    const newM = totalMinutes % 60;
+    return `${newH.toString().padStart(2, '0')}:${newM.toString().padStart(2, '0')}`;
+  }
+}
