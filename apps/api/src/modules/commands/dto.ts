@@ -4,11 +4,14 @@ import {
   IsOptional,
   IsNumber,
   IsNumberString,
-  IsUUID,
   IsEnum,
   Min,
   ValidateIf,
+  Matches,
 } from 'class-validator';
+
+// Regex para UUID genérico (aceita qualquer versão/formato)
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Status da comanda
 export enum CommandStatus {
@@ -42,7 +45,7 @@ export class OpenCommandDto {
   @IsOptional()
   cardNumber?: string;
 
-  @IsUUID('all', { message: 'ID do cliente deve ser um UUID valido' })
+  @Matches(UUID_REGEX, { message: 'ID do cliente deve ser um UUID valido' })
   @IsOptional()
   clientId?: string;
 
@@ -76,7 +79,7 @@ export class AddItemDto {
   @IsOptional()
   discount?: number;
 
-  @IsUUID('all', { message: 'ID do profissional deve ser um UUID valido' })
+  @Matches(UUID_REGEX, { message: 'ID do profissional deve ser um UUID valido' })
   @IsOptional()
   performerId?: string;
 
@@ -87,7 +90,7 @@ export class AddItemDto {
   referenceId?: string;
 
   // Variante da receita (para serviços com tamanho de cabelo)
-  @IsUUID('all', { message: 'ID da variante deve ser um UUID valido' })
+  @Matches(UUID_REGEX, { message: 'ID da variante deve ser um UUID valido' })
   @IsOptional()
   variantId?: string;
 }
@@ -109,7 +112,7 @@ export class UpdateItemDto {
   @IsOptional()
   discount?: number;
 
-  @IsUUID('all', { message: 'ID do profissional deve ser um UUID valido' })
+  @Matches(UUID_REGEX, { message: 'ID do profissional deve ser um UUID valido' })
   @IsOptional()
   performerId?: string;
 }
@@ -141,12 +144,12 @@ export class AddPaymentDto {
   method?: PaymentMethod;
 
   // Novo formato: ID da forma de pagamento configurada
-  @IsUUID('all', { message: 'ID da forma de pagamento deve ser um UUID valido' })
+  @Matches(UUID_REGEX, { message: 'ID da forma de pagamento deve ser um UUID valido' })
   @IsOptional()
   paymentMethodId?: string;
 
   // Novo: ID do destino do pagamento (opcional)
-  @IsUUID('all', { message: 'ID do destino deve ser um UUID valido' })
+  @Matches(UUID_REGEX, { message: 'ID do destino deve ser um UUID valido' })
   @IsOptional()
   paymentDestinationId?: string;
 
@@ -176,7 +179,7 @@ export class AddNoteDto {
 
 // DTO para vincular cliente
 export class LinkClientDto {
-  @IsUUID('all', { message: 'ID do cliente deve ser um UUID valido' })
+  @Matches(UUID_REGEX, { message: 'ID do cliente deve ser um UUID valido' })
   @IsNotEmpty({ message: 'ID do cliente e obrigatorio' })
   clientId!: string;
 }
