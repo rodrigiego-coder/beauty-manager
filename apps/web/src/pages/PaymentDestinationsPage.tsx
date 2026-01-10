@@ -20,7 +20,11 @@ import {
   FEE_TYPE_LABELS,
   FEE_MODE_LABELS,
   getDestinationTypeLabel,
+  COMMON_DESTINATION_TYPE_LABELS,
 } from '../types/payment';
+
+// Tipos de destino disponíveis para o dropdown
+const DESTINATION_TYPES = Object.keys(COMMON_DESTINATION_TYPE_LABELS) as string[];
 
 const FEE_TYPES: FeeType[] = ['DISCOUNT', 'FEE'];
 const FEE_MODES: FeeMode[] = ['PERCENT', 'FIXED'];
@@ -83,8 +87,8 @@ export function PaymentDestinationsPage() {
       errors.name = 'Nome deve ter pelo menos 2 caracteres';
     }
 
-    if (!formData.type || formData.type.trim().length < 2) {
-      errors.type = 'Tipo é obrigatório (mínimo 2 caracteres)';
+    if (!formData.type) {
+      errors.type = 'Tipo é obrigatório';
     }
 
     // Se definiu feeType, precisa definir feeMode
@@ -461,22 +465,20 @@ export function PaymentDestinationsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Tipo *
                 </label>
-                <input
-                  type="text"
-                  list="payment-destination-types"
+                <select
                   value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value.toUpperCase() })}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
                     formErrors.type ? 'border-red-300' : 'border-gray-300'
                   }`}
-                  placeholder="Ex: BANK, CARD_MACHINE..."
-                />
-                <datalist id="payment-destination-types">
-                  <option value="BANK">Banco</option>
-                  <option value="CARD_MACHINE">Maquininha</option>
-                  <option value="CASH_DRAWER">Caixa/Gaveta</option>
-                  <option value="OTHER">Outros</option>
-                </datalist>
+                >
+                  <option value="">Selecione o tipo</option>
+                  {DESTINATION_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {COMMON_DESTINATION_TYPE_LABELS[type]}
+                    </option>
+                  ))}
+                </select>
                 {formErrors.type && (
                   <p className="mt-1 text-sm text-red-600">{formErrors.type}</p>
                 )}
