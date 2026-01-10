@@ -54,6 +54,13 @@ export class CreateOnlineBookingSettingsDto {
   @IsOptional()
   enabled?: boolean;
 
+  @IsString()
+  @MinLength(3)
+  @MaxLength(100)
+  @Matches(/^[a-z0-9-]+$/, { message: 'slug deve conter apenas letras minúsculas, números e hífens' })
+  @IsOptional()
+  slug?: string;
+
   @IsNumber()
   @Min(0)
   @Max(168) // máximo 1 semana em horas
@@ -464,6 +471,7 @@ export class RescheduleOnlineBookingDto {
 export interface OnlineBookingSettingsResponse {
   id: string;
   salonId: string;
+  slug: string | null;
   enabled: boolean;
   minAdvanceHours: number;
   maxAdvanceDays: number;

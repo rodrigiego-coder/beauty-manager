@@ -11,6 +11,7 @@ import {
   Logger,
   Inject,
 } from '@nestjs/common';
+import { Public } from '../../common/decorators/public.decorator';
 import { eq, and, or } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../../database/schema';
@@ -37,6 +38,7 @@ import { randomUUID } from 'crypto';
  * Controller público para agendamento online
  * Não requer autenticação - acessível por clientes
  */
+@Public()
 @Controller('public/booking')
 export class PublicBookingController {
   private readonly logger = new Logger(PublicBookingController.name);

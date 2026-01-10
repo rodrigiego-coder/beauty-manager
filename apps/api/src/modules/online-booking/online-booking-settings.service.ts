@@ -28,12 +28,20 @@ export class OnlineBookingSettingsService {
       .where(eq(schema.onlineBookingSettings.salonId, salonId))
       .limit(1);
 
+    // Busca slug do salão
+    const [salon] = await this.db
+      .select({ slug: schema.salons.slug })
+      .from(schema.salons)
+      .where(eq(schema.salons.id, salonId))
+      .limit(1);
+
     if (!settings) {
       // Criar configurações padrão
-      return this.createDefaultSettings(salonId);
+      const defaultSettings = await this.createDefaultSettings(salonId);
+      return { ...defaultSettings, slug: salon?.slug || null };
     }
 
-    return this.mapToResponse(settings);
+    return this.mapToResponse(settings, salon?.slug || null);
   }
 
   /**
@@ -111,6 +119,15 @@ export class OnlineBookingSettingsService {
     if (dto.sendWhatsappReminder !== undefined) updateData.sendWhatsappReminder = dto.sendWhatsappReminder;
     if (dto.reminderHoursBefore !== undefined) updateData.reminderHoursBefore = dto.reminderHoursBefore;
 
+    // Atualiza o slug na tabela salons (se fornecido)
+    if (dto.slug !== undefined && dto.slug !== '') {
+      await this.db
+        .update(schema.salons)
+        .set({ slug: dto.slug, updatedAt: new Date() })
+        .where(eq(schema.salons.id, salonId));
+      this.logger.log(`Slug atualizado para salão ${salonId}: ${dto.slug}`);
+    }
+
     const [updated] = await this.db
       .update(schema.onlineBookingSettings)
       .set(updateData)
@@ -139,10 +156,11 @@ export class OnlineBookingSettingsService {
   /**
    * Mapeia entidade para response
    */
-  private mapToResponse(settings: schema.OnlineBookingSettings): OnlineBookingSettingsResponse {
+  private mapToResponse(settings: schema.OnlineBookingSettings, slug: string | null = null): OnlineBookingSettingsResponse {
     return {
       id: settings.id,
       salonId: settings.salonId,
+      slug,
       enabled: settings.enabled,
       minAdvanceHours: settings.minAdvanceHours,
       maxAdvanceDays: settings.maxAdvanceDays,
