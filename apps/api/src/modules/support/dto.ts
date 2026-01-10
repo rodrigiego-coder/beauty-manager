@@ -4,7 +4,7 @@ import { IsString, IsNotEmpty, IsUUID, MinLength, MaxLength } from 'class-valida
  * DTO para criar uma sessão de suporte delegado
  */
 export class CreateSupportSessionDto {
-  @IsUUID('4', { message: 'salonId deve ser um UUID válido' })
+  @IsUUID('all', { message: 'salonId deve ser um UUID válido' })
   @IsNotEmpty({ message: 'salonId é obrigatório' })
   salonId!: string;
 

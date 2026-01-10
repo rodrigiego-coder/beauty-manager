@@ -2,7 +2,7 @@ import { IsString, IsUUID, IsOptional, IsArray, IsDateString } from 'class-valid
 
 export class PayCommissionsDto {
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsUUID('all', { each: true })
   commissionIds!: string[];
 }
 
