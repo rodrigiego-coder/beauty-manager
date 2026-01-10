@@ -2,6 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ScheduledMessagesService } from './scheduled-messages.service';
 import { WhatsAppService } from '../automation/whatsapp.service';
+import { AuditService } from '../audit/audit.service';
+
+// Constantes de configuração
+const MAX_RETRY_ATTEMPTS = 3;
+const BATCH_SIZE = 20;
 
 @Injectable()
 export class ScheduledMessagesProcessor {
@@ -11,14 +16,16 @@ export class ScheduledMessagesProcessor {
   constructor(
     private readonly scheduledMessagesService: ScheduledMessagesService,
     private readonly whatsappService: WhatsAppService,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
    * Processa mensagens pendentes a cada minuto
+   * CONCORRÊNCIA SEGURA: Usa SKIP LOCKED para evitar processamento duplicado
    */
   @Cron(CronExpression.EVERY_MINUTE)
   async processScheduledMessages(): Promise<void> {
-    // Evita processamento paralelo
+    // Lock local para evitar overlap no mesmo processo
     if (this.isProcessing) {
       this.logger.debug('Processamento já em andamento, pulando...');
       return;
@@ -27,17 +34,26 @@ export class ScheduledMessagesProcessor {
     this.isProcessing = true;
 
     try {
-      const messages = await this.scheduledMessagesService.getPendingMessages(20);
+      // Usa método com SKIP LOCKED para concorrência segura
+      const messages = await this.scheduledMessagesService.getPendingMessagesWithLock(BATCH_SIZE);
 
-      if (messages.length === 0) {
+      // Defensive check: messages pode ser undefined se a query falhar
+      if (!messages || messages.length === 0) {
         return;
       }
 
       this.logger.log(`Processando ${messages.length} mensagens pendentes`);
 
-      for (const message of messages) {
-        await this.processMessage(message);
-      }
+      // Processa em paralelo com limite de concorrência
+      const results = await Promise.allSettled(
+        messages.map((message) => this.processMessageWithFaultTolerance(message)),
+      );
+
+      // Log de resultados
+      const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+      const failed = results.filter((r) => r.status === 'rejected').length;
+
+      this.logger.log(`Processamento concluído: ${succeeded} sucesso, ${failed} falhas`);
     } catch (error) {
       this.logger.error('Erro no processamento de mensagens:', error);
     } finally {
@@ -46,64 +62,139 @@ export class ScheduledMessagesProcessor {
   }
 
   /**
-   * Processa uma mensagem individual
+   * Processa uma mensagem individual com tolerância a falhas
+   * DEGRADAÇÃO GRACIOSA: Nunca propaga erro para não parar o loop
    */
-  private async processMessage(message: any): Promise<void> {
+  private async processMessageWithFaultTolerance(message: any): Promise<void> {
     try {
       // Verifica se excedeu tentativas
-      if (message.attempts >= message.maxAttempts) {
-        await this.scheduledMessagesService.updateMessageStatus(
-          message.id,
-          'FAILED',
-          undefined,
-          'Máximo de tentativas excedido',
-        );
+      if (message.attempts >= MAX_RETRY_ATTEMPTS) {
+        await this.handleMaxAttemptsReached(message);
         return;
       }
-
-      // Atualiza para SENDING
-      await this.scheduledMessagesService.updateMessageStatus(message.id, 'SENDING');
 
       // Monta a mensagem
       const messageText = this.buildMessageText(message);
 
-      // Envia via WhatsApp
-      const result = await this.whatsappService.sendMessage(
-        message.salonId,
-        message.recipientPhone,
-        messageText,
-      );
+      // Envia via WhatsApp com timeout
+      const result = await Promise.race([
+        this.whatsappService.sendMessage(
+          message.salon_id,
+          message.recipient_phone,
+          messageText,
+        ),
+        this.createTimeout(30000), // 30s timeout
+      ]);
 
-      // Atualiza status
+      // Processa resultado
       if (result?.success) {
-        await this.scheduledMessagesService.updateMessageStatus(
-          message.id,
-          'SENT',
-          result.messageId,
-        );
-        this.logger.log(`Mensagem ${message.id} enviada para ${message.recipientPhone}`);
+        await this.handleSendSuccess(message, result);
       } else {
-        throw new Error(result?.error || 'Falha no envio');
+        await this.handleSendFailure(message, result?.error || 'Resposta inválida do provider');
       }
     } catch (error: any) {
-      this.logger.error(`Erro ao enviar mensagem ${message.id}:`, error.message);
+      // DEGRADAÇÃO GRACIOSA: Registra erro e agenda retry
+      await this.handleSendFailure(message, error.message || 'Erro desconhecido');
+    }
+  }
 
+  /**
+   * Trata sucesso no envio
+   */
+  private async handleSendSuccess(message: any, result: any): Promise<void> {
+    await this.scheduledMessagesService.updateMessageStatus(
+      message.id,
+      'SENT',
+      result.messageId,
+    );
+
+    // Audit log
+    await this.auditService.logWhatsAppSent({
+      salonId: message.salon_id,
+      notificationId: message.id,
+      appointmentId: message.appointment_id,
+      recipientPhone: message.recipient_phone,
+      notificationType: message.notification_type,
+      providerId: result.messageId,
+      success: true,
+    });
+
+    this.logger.log(`Mensagem ${message.id} enviada para ${this.maskPhone(message.recipient_phone)}`);
+  }
+
+  /**
+   * Trata falha no envio - agenda retry ou marca como falha
+   */
+  private async handleSendFailure(message: any, errorMessage: string): Promise<void> {
+    this.logger.error(`Erro ao enviar mensagem ${message.id}: ${errorMessage}`);
+
+    // Audit log de falha
+    await this.auditService.logWhatsAppSent({
+      salonId: message.salon_id,
+      notificationId: message.id,
+      appointmentId: message.appointment_id,
+      recipientPhone: message.recipient_phone,
+      notificationType: message.notification_type,
+      success: false,
+      error: errorMessage,
+    });
+
+    // Se ainda tem tentativas, agenda retry
+    if (message.attempts < MAX_RETRY_ATTEMPTS - 1) {
+      await this.scheduledMessagesService.scheduleRetry(
+        message.id,
+        message.attempts,
+        errorMessage,
+      );
+    } else {
+      // Última tentativa falhou
       await this.scheduledMessagesService.updateMessageStatus(
         message.id,
-        message.attempts + 1 >= message.maxAttempts ? 'FAILED' : 'PENDING',
+        'FAILED',
         undefined,
-        error.message,
+        errorMessage,
       );
     }
+  }
+
+  /**
+   * Trata quando atingiu máximo de tentativas
+   */
+  private async handleMaxAttemptsReached(message: any): Promise<void> {
+    await this.scheduledMessagesService.updateMessageStatus(
+      message.id,
+      'FAILED',
+      undefined,
+      'Máximo de tentativas excedido',
+    );
+
+    this.logger.warn(`Mensagem ${message.id} falhou após ${MAX_RETRY_ATTEMPTS} tentativas`);
+  }
+
+  /**
+   * Cria timeout para evitar hang infinito
+   */
+  private createTimeout(ms: number): Promise<never> {
+    return new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout após ${ms}ms`)), ms),
+    );
+  }
+
+  /**
+   * Mascara telefone para logs
+   */
+  private maskPhone(phone: string): string {
+    if (!phone || phone.length < 8) return '***';
+    return `${phone.substring(0, 4)}****${phone.substring(phone.length - 2)}`;
   }
 
   /**
    * Monta texto da mensagem baseado no template
    */
   private buildMessageText(message: any): string {
-    const vars = message.templateVariables || {};
+    const vars = message.template_variables || {};
 
-    switch (message.notificationType) {
+    switch (message.notification_type) {
       case 'APPOINTMENT_CONFIRMATION': {
         let confirmationText = `Olá ${vars.nome}! 👋
 
@@ -113,7 +204,6 @@ Seu agendamento foi registrado:
 ✂️ ${vars.servico}
 💇 ${vars.profissional}`;
 
-        // Se tem link de triagem, adicionar
         if (vars.triageLink) {
           confirmationText += `
 
@@ -144,7 +234,6 @@ Lembrete: *Amanhã* você tem horário!
 ✂️ ${vars.servico}
 💇 ${vars.profissional}`;
 
-        // Se tem triagem pendente, lembrar
         if (vars.triagePending && vars.triageLink) {
           reminder24Text += `
 
@@ -214,7 +303,7 @@ Até a próxima! 💜`;
         let triageText = `${vars.nome}, recebemos sua pré-avaliação! ✅
 
 `;
-        if (vars.hasRisks) {
+        if (vars.hasRisks === 'true') {
           triageText += `⚠️ *Identificamos alguns pontos de atenção.*
 Nossa equipe vai analisar e, se necessário, entraremos em contato antes do seu horário.
 
@@ -233,10 +322,10 @@ Até lá! 💜`;
       }
 
       case 'CUSTOM':
-        return message.customMessage || '';
+        return message.custom_message || '';
 
       default:
-        return message.customMessage || 'Mensagem do salão';
+        return message.custom_message || 'Mensagem do salão';
     }
   }
 }

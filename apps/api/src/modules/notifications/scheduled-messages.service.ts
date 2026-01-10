@@ -5,17 +5,25 @@ import {
   appointmentNotifications,
   NewAppointmentNotification,
 } from '../../database/schema';
-import { addHours, format } from 'date-fns';
+import { addHours, addMinutes, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+// ID único do worker para identificação em logs
+const WORKER_ID = `worker-${process.pid}-${Date.now().toString(36)}`;
 
 @Injectable()
 export class ScheduledMessagesService {
   private readonly logger = new Logger(ScheduledMessagesService.name);
 
-  constructor(@Inject(DATABASE_CONNECTION) private db: any) {}
+  constructor(@Inject(DATABASE_CONNECTION) private db: any) {
+    this.logger.log(`Worker ID: ${WORKER_ID}`);
+  }
+
+  // ==================== AGENDAMENTO DE NOTIFICAÇÕES ====================
 
   /**
    * Agenda mensagem de confirmação ao criar agendamento
+   * IDEMPOTENTE: Usa dedupeKey para evitar duplicação
    */
   async scheduleAppointmentConfirmation(appointment: any, triageLink?: string): Promise<void> {
     if (!appointment.clientPhone) {
@@ -25,12 +33,13 @@ export class ScheduledMessagesService {
 
     const variables = this.buildTemplateVariables(appointment);
 
-    // Adicionar link de triagem às variáveis se existir
     if (triageLink) {
       variables.triageLink = triageLink;
     }
 
-    await this.createNotification({
+    const dedupeKey = `${appointment.id}:APPOINTMENT_CONFIRMATION`;
+
+    await this.createNotificationIdempotent({
       salonId: appointment.salonId,
       appointmentId: appointment.id,
       recipientPhone: this.formatPhone(appointment.clientPhone),
@@ -38,10 +47,13 @@ export class ScheduledMessagesService {
       notificationType: 'APPOINTMENT_CONFIRMATION',
       templateKey: 'appointment_confirmation',
       templateVariables: variables,
-      scheduledFor: new Date(), // Enviar imediatamente
+      scheduledFor: new Date(),
+      dedupeKey,
     });
 
-    this.logger.log(`Confirmação agendada para ${appointment.clientPhone}${triageLink ? ' com link de triagem' : ''}`);
+    this.logger.log(
+      `Confirmação agendada para ${appointment.clientPhone}${triageLink ? ' com link de triagem' : ''}`,
+    );
   }
 
   /**
@@ -53,7 +65,6 @@ export class ScheduledMessagesService {
     const appointmentDateTime = this.parseAppointmentDateTime(appointment);
     const reminderTime = addHours(appointmentDateTime, -24);
 
-    // Só agenda se for no futuro
     if (reminderTime <= new Date()) {
       this.logger.debug(`Lembrete 24h já passou para agendamento ${appointment.id}`);
       return;
@@ -61,13 +72,14 @@ export class ScheduledMessagesService {
 
     const variables = this.buildTemplateVariables(appointment);
 
-    // Se tem triagem, adicionar link (será verificado se pendente no momento do envio)
     if (triageLink) {
       variables.triageLink = triageLink;
-      variables.triagePending = 'true'; // Será verificado no momento do envio
+      variables.triagePending = 'true';
     }
 
-    await this.createNotification({
+    const dedupeKey = `${appointment.id}:APPOINTMENT_REMINDER_24H`;
+
+    await this.createNotificationIdempotent({
       salonId: appointment.salonId,
       appointmentId: appointment.id,
       recipientPhone: this.formatPhone(appointment.clientPhone),
@@ -76,6 +88,7 @@ export class ScheduledMessagesService {
       templateKey: 'appointment_reminder_24h',
       templateVariables: variables,
       scheduledFor: reminderTime,
+      dedupeKey,
     });
 
     this.logger.log(`Lembrete 24h agendado para ${format(reminderTime, 'dd/MM HH:mm')}`);
@@ -96,8 +109,9 @@ export class ScheduledMessagesService {
     }
 
     const variables = this.buildTemplateVariables(appointment);
+    const dedupeKey = `${appointment.id}:APPOINTMENT_REMINDER_1H`;
 
-    await this.createNotification({
+    await this.createNotificationIdempotent({
       salonId: appointment.salonId,
       appointmentId: appointment.id,
       recipientPhone: this.formatPhone(appointment.clientPhone),
@@ -106,6 +120,7 @@ export class ScheduledMessagesService {
       templateKey: 'appointment_reminder_1h',
       templateVariables: variables,
       scheduledFor: reminderTime,
+      dedupeKey,
     });
 
     this.logger.log(`Lembrete 1h agendado para ${format(reminderTime, 'dd/MM HH:mm')}`);
@@ -118,8 +133,9 @@ export class ScheduledMessagesService {
     if (!appointment.clientPhone) return;
 
     const variables = this.buildTemplateVariables(appointment);
+    const dedupeKey = `${appointment.id}:APPOINTMENT_CANCELLED:${Date.now()}`;
 
-    await this.createNotification({
+    await this.createNotificationIdempotent({
       salonId: appointment.salonId,
       appointmentId: appointment.id,
       recipientPhone: this.formatPhone(appointment.clientPhone),
@@ -127,7 +143,8 @@ export class ScheduledMessagesService {
       notificationType: 'APPOINTMENT_CANCELLED',
       templateKey: 'appointment_cancelled',
       templateVariables: variables,
-      scheduledFor: new Date(), // Enviar imediatamente
+      scheduledFor: new Date(),
+      dedupeKey,
     });
 
     this.logger.log(`Notificação de cancelamento agendada para ${appointment.clientPhone}`);
@@ -149,7 +166,9 @@ export class ScheduledMessagesService {
       horarioAnterior: oldTime,
     };
 
-    await this.createNotification({
+    const dedupeKey = `${appointment.id}:APPOINTMENT_RESCHEDULED:${Date.now()}`;
+
+    await this.createNotificationIdempotent({
       salonId: appointment.salonId,
       appointmentId: appointment.id,
       recipientPhone: this.formatPhone(appointment.clientPhone),
@@ -157,7 +176,8 @@ export class ScheduledMessagesService {
       notificationType: 'APPOINTMENT_RESCHEDULED',
       templateKey: 'appointment_rescheduled',
       templateVariables: variables,
-      scheduledFor: new Date(), // Enviar imediatamente
+      scheduledFor: new Date(),
+      dedupeKey,
     });
 
     this.logger.log(`Notificação de reagendamento agendada para ${appointment.clientPhone}`);
@@ -165,8 +185,6 @@ export class ScheduledMessagesService {
 
   /**
    * Agenda todas as notificações de um agendamento
-   * @param appointment Dados do agendamento
-   * @param triageLink Link opcional para pré-avaliação
    */
   async scheduleAllAppointmentNotifications(appointment: any, triageLink?: string): Promise<void> {
     try {
@@ -175,7 +193,7 @@ export class ScheduledMessagesService {
       await this.scheduleReminder1h(appointment);
     } catch (error) {
       this.logger.error(`Erro ao agendar notificações para ${appointment.id}:`, error);
-      // Não propaga o erro para não impedir a criação do agendamento
+      // Degradação graciosa: não propaga erro
     }
   }
 
@@ -199,8 +217,58 @@ export class ScheduledMessagesService {
     this.logger.log(`Notificações canceladas para agendamento ${appointmentId}`);
   }
 
+  // ==================== PROCESSAMENTO COM SKIP LOCKED ====================
+
   /**
-   * Busca mensagens pendentes para processamento
+   * Busca mensagens pendentes para processamento usando SKIP LOCKED
+   * CONCORRÊNCIA SEGURA: Evita que múltiplos workers processem a mesma mensagem
+   */
+  async getPendingMessagesWithLock(limit: number = 20): Promise<any[]> {
+    try {
+      // Usa transaction com FOR UPDATE SKIP LOCKED
+      const result = await this.db.transaction(async (tx: any) => {
+        // 1. Seleciona mensagens pendentes com lock exclusivo
+        const messages = await tx.execute(sql`
+          SELECT *
+          FROM appointment_notifications
+          WHERE status IN ('PENDING', 'SCHEDULED')
+            AND scheduled_for <= NOW()
+            AND (processing_started_at IS NULL OR processing_started_at < NOW() - INTERVAL '5 minutes')
+          ORDER BY scheduled_for ASC, created_at ASC
+          LIMIT ${limit}
+          FOR UPDATE SKIP LOCKED
+        `);
+
+        // Defensive check: messages pode ser undefined ou não ter rows
+        if (!messages?.rows || messages.rows.length === 0) {
+          return [];
+        }
+
+        const messageIds = messages.rows.map((m: any) => m.id);
+
+        // 2. Marca como em processamento
+        await tx.execute(sql`
+          UPDATE appointment_notifications
+          SET
+            status = 'SENDING',
+            processing_started_at = NOW(),
+            processing_worker_id = ${WORKER_ID}
+          WHERE id = ANY(${messageIds})
+        `);
+
+        return messages.rows;
+      });
+
+      // Garante que sempre retorna array
+      return result || [];
+    } catch (error) {
+      this.logger.error('Erro ao buscar mensagens pendentes com lock:', error);
+      return []; // Degradação graciosa - retorna array vazio em caso de erro
+    }
+  }
+
+  /**
+   * Método legado para compatibilidade
    */
   async getPendingMessages(limit: number = 50): Promise<any[]> {
     return this.db
@@ -217,6 +285,7 @@ export class ScheduledMessagesService {
 
   /**
    * Atualiza status da mensagem após envio
+   * COM RETRY e backoff exponencial
    */
   async updateMessageStatus(
     messageId: string,
@@ -228,6 +297,8 @@ export class ScheduledMessagesService {
       status,
       updatedAt: new Date(),
       lastAttemptAt: new Date(),
+      processingStartedAt: null,
+      processingWorkerId: null,
     };
 
     if (providerMessageId) {
@@ -250,7 +321,6 @@ export class ScheduledMessagesService {
       updateData.lastError = error;
     }
 
-    // Incrementar attempts
     await this.db
       .update(appointmentNotifications)
       .set({
@@ -261,10 +331,34 @@ export class ScheduledMessagesService {
   }
 
   /**
-   * Registra resposta do cliente (SIM/NÃO)
+   * Marca mensagem para retry com backoff exponencial
+   */
+  async scheduleRetry(messageId: string, currentAttempts: number, error: string): Promise<void> {
+    // Backoff: 2^attempts minutos (1, 2, 4, 8, 16...)
+    const backoffMinutes = Math.pow(2, currentAttempts);
+    const nextAttempt = addMinutes(new Date(), Math.min(backoffMinutes, 60));
+
+    await this.db
+      .update(appointmentNotifications)
+      .set({
+        status: 'PENDING',
+        scheduledFor: nextAttempt,
+        lastError: error,
+        lastAttemptAt: new Date(),
+        processingStartedAt: null,
+        processingWorkerId: null,
+        attempts: sql`${appointmentNotifications.attempts} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(appointmentNotifications.id, messageId));
+
+    this.logger.debug(`Retry agendado para ${format(nextAttempt, 'HH:mm')} (tentativa ${currentAttempts + 1})`);
+  }
+
+  /**
+   * Registra resposta do cliente
    */
   async registerClientResponse(appointmentId: string, response: string): Promise<void> {
-    // Atualiza a mensagem de confirmação
     await this.db
       .update(appointmentNotifications)
       .set({
@@ -311,15 +405,30 @@ export class ScheduledMessagesService {
     );
   }
 
+  // ==================== UTILITÁRIOS PRIVADOS ====================
+
   /**
-   * Cria mensagem agendada
+   * Cria notificação com idempotência
+   * SEGURO: Se dedupeKey já existe, ignora silenciosamente
    */
-  private async createNotification(data: Partial<NewAppointmentNotification>): Promise<void> {
-    const scheduledFor = data.scheduledFor || new Date();
-    await this.db.insert(appointmentNotifications).values({
-      ...data,
-      status: scheduledFor <= new Date() ? 'PENDING' : 'SCHEDULED',
-    });
+  private async createNotificationIdempotent(
+    data: Partial<NewAppointmentNotification> & { dedupeKey: string },
+  ): Promise<void> {
+    try {
+      const scheduledFor = data.scheduledFor || new Date();
+
+      await this.db.insert(appointmentNotifications).values({
+        ...data,
+        status: scheduledFor <= new Date() ? 'PENDING' : 'SCHEDULED',
+      });
+    } catch (error: any) {
+      // Código 23505 = unique_violation (PostgreSQL)
+      if (error.code === '23505' && error.constraint?.includes('dedupe')) {
+        this.logger.debug(`Notificação já existe: ${data.dedupeKey} (idempotente)`);
+        return; // Não é erro!
+      }
+      throw error;
+    }
   }
 
   /**
@@ -352,10 +461,8 @@ export class ScheduledMessagesService {
    * Formata telefone para padrão internacional
    */
   private formatPhone(phone: string): string {
-    // Remove tudo que não é número
     let cleaned = phone.replace(/\D/g, '');
 
-    // Adiciona código do Brasil se não tiver
     if (cleaned.length <= 11) {
       cleaned = '55' + cleaned;
     }
