@@ -15,11 +15,19 @@ import {
   CreditCard,
   Wallet,
   ChevronRight,
+  Calendar,
+  Globe,
+  Link as LinkIcon,
+  Clock,
+  DollarSign,
+  XCircle,
+  Copy,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
-type TabType = 'salao' | 'pagamentos' | 'notificacoes' | 'aparencia';
+type TabType = 'salao' | 'pagamentos' | 'agendamento' | 'notificacoes' | 'aparencia';
 
 interface SalonData {
   id: string;
@@ -28,6 +36,30 @@ interface SalonData {
   phone: string;
   email: string;
   taxId: string;
+  slug?: string;
+}
+
+type OperationMode = 'SECRETARY_ONLY' | 'SECRETARY_AND_ONLINE' | 'SECRETARY_WITH_LINK';
+type DepositType = 'NONE' | 'FIXED' | 'PERCENTAGE';
+type DepositAppliesTo = 'ALL' | 'NEW_CLIENTS' | 'SPECIFIC_SERVICES';
+
+interface OnlineBookingSettings {
+  enabled: boolean;
+  operationMode: OperationMode;
+  slug: string;
+  minAdvanceHours: number;
+  maxAdvanceDays: number;
+  slotIntervalMinutes: number;
+  allowSameDayBooking: boolean;
+  holdDurationMinutes: number;
+  requirePhoneVerification: boolean;
+  depositType: DepositType;
+  depositValue: number;
+  depositAppliesTo: DepositAppliesTo;
+  cancellationHours: number;
+  cancellationPolicy: string;
+  allowRescheduling: boolean;
+  maxReschedules: number;
 }
 
 export function SettingsPage() {
@@ -56,9 +88,36 @@ export function SettingsPage() {
   const [theme, setTheme] = useState('light');
   const [primaryColor, setPrimaryColor] = useState('pink');
 
+  const [bookingSettings, setBookingSettings] = useState<OnlineBookingSettings>({
+    enabled: false,
+    operationMode: 'SECRETARY_ONLY',
+    slug: '',
+    minAdvanceHours: 2,
+    maxAdvanceDays: 30,
+    slotIntervalMinutes: 30,
+    allowSameDayBooking: true,
+    holdDurationMinutes: 10,
+    requirePhoneVerification: true,
+    depositType: 'NONE',
+    depositValue: 0,
+    depositAppliesTo: 'ALL',
+    cancellationHours: 24,
+    cancellationPolicy: '',
+    allowRescheduling: true,
+    maxReschedules: 2,
+  });
+  const [isLoadingBooking, setIsLoadingBooking] = useState(false);
+  const [isSavingBooking, setIsSavingBooking] = useState(false);
+
   useEffect(() => {
     loadSalonData();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'agendamento') {
+      loadBookingSettings();
+    }
+  }, [activeTab]);
 
   const loadSalonData = async () => {
     try {
@@ -70,11 +129,42 @@ export function SettingsPage() {
         phone: data.phone || '',
         email: data.email || '',
         taxId: data.taxId || '',
+        slug: data.slug || '',
       });
     } catch (error) {
       setMessage({ type: 'error', text: 'Erro ao carregar dados do salao' });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadBookingSettings = async () => {
+    setIsLoadingBooking(true);
+    try {
+      const { data } = await api.get('/online-booking/settings');
+      setBookingSettings({
+        enabled: data.enabled ?? false,
+        operationMode: data.operationMode || 'SECRETARY_ONLY',
+        slug: data.slug || salonData.slug || '',
+        minAdvanceHours: data.minAdvanceHours ?? 2,
+        maxAdvanceDays: data.maxAdvanceDays ?? 30,
+        slotIntervalMinutes: data.slotIntervalMinutes ?? 30,
+        allowSameDayBooking: data.allowSameDayBooking ?? true,
+        holdDurationMinutes: data.holdDurationMinutes ?? 10,
+        requirePhoneVerification: data.requirePhoneVerification ?? true,
+        depositType: data.depositType || 'NONE',
+        depositValue: data.depositValue ?? 0,
+        depositAppliesTo: data.depositAppliesTo || 'ALL',
+        cancellationHours: data.cancellationHours ?? 24,
+        cancellationPolicy: data.cancellationPolicy || '',
+        allowRescheduling: data.allowRescheduling ?? true,
+        maxReschedules: data.maxReschedules ?? 2,
+      });
+    } catch (error) {
+      // Se nao existe ainda, usa valores padrao
+      console.log('Settings not found, using defaults');
+    } finally {
+      setIsLoadingBooking(false);
     }
   };
 
@@ -108,9 +198,48 @@ export function SettingsPage() {
     setMessage({ type: 'success', text: 'Preferencias de aparencia salvas!' });
   };
 
+  const generateSlug = (name: string): string => {
+    return name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .substring(0, 50);
+  };
+
+  const handleGenerateSlug = () => {
+    if (salonData.name) {
+      setBookingSettings({ ...bookingSettings, slug: generateSlug(salonData.name) });
+    }
+  };
+
+  const copyBookingLink = () => {
+    const link = `${window.location.origin}/agendar/${bookingSettings.slug}`;
+    navigator.clipboard.writeText(link);
+    setMessage({ type: 'success', text: 'Link copiado para a area de transferencia!' });
+  };
+
+  const handleSaveBookingSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingBooking(true);
+    setMessage(null);
+
+    try {
+      await api.put('/online-booking/settings', bookingSettings);
+      setMessage({ type: 'success', text: 'Configuracoes de agendamento online salvas!' });
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.message || 'Erro ao salvar configuracoes';
+      setMessage({ type: 'error', text: errorMsg });
+    } finally {
+      setIsSavingBooking(false);
+    }
+  };
+
   const tabs = [
     { id: 'salao' as TabType, label: 'Salao', icon: Building2 },
     { id: 'pagamentos' as TabType, label: 'Pagamentos', icon: Wallet },
+    { id: 'agendamento' as TabType, label: 'Agendamento Online', icon: Calendar },
     { id: 'notificacoes' as TabType, label: 'Notificacoes', icon: Bell },
     { id: 'aparencia' as TabType, label: 'Aparencia', icon: Palette },
   ];
@@ -308,6 +437,332 @@ export function SettingsPage() {
                   <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-primary-600 transition-colors" />
                 </Link>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'agendamento' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Agendamento Online</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Configure como seus clientes podem agendar online
+                </p>
+              </div>
+
+              {isLoadingBooking ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+                </div>
+              ) : (
+                <form onSubmit={handleSaveBookingSettings} className="space-y-8">
+                  {/* Secao 1: Ativar/Desativar */}
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Globe className="w-5 h-5 text-gray-600" />
+                        <div>
+                          <p className="font-medium text-gray-900">Agendamento Online Ativo</p>
+                          <p className="text-sm text-gray-500">Permitir que clientes agendem pela internet</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBookingSettings({ ...bookingSettings, enabled: !bookingSettings.enabled })}
+                        className={`w-12 h-6 rounded-full transition-colors ${bookingSettings.enabled ? 'bg-primary-600' : 'bg-gray-300'}`}
+                      >
+                        <div className={`w-5 h-5 bg-white rounded-full shadow transform transition-transform ${bookingSettings.enabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Secao 2: Modo de Operacao */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-gray-700">Modo de Operacao</h3>
+                    <div className="grid grid-cols-1 gap-3">
+                      <label className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-colors ${bookingSettings.operationMode === 'SECRETARY_ONLY' ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                        <input
+                          type="radio"
+                          name="operationMode"
+                          value="SECRETARY_ONLY"
+                          checked={bookingSettings.operationMode === 'SECRETARY_ONLY'}
+                          onChange={(e) => setBookingSettings({ ...bookingSettings, operationMode: e.target.value as OperationMode })}
+                          className="sr-only"
+                        />
+                        <div>
+                          <p className="font-medium text-gray-900">Apenas Secretaria</p>
+                          <p className="text-sm text-gray-500">Agendamentos sao feitos apenas pela equipe do salao</p>
+                        </div>
+                      </label>
+                      <label className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-colors ${bookingSettings.operationMode === 'SECRETARY_AND_ONLINE' ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                        <input
+                          type="radio"
+                          name="operationMode"
+                          value="SECRETARY_AND_ONLINE"
+                          checked={bookingSettings.operationMode === 'SECRETARY_AND_ONLINE'}
+                          onChange={(e) => setBookingSettings({ ...bookingSettings, operationMode: e.target.value as OperationMode })}
+                          className="sr-only"
+                        />
+                        <div>
+                          <p className="font-medium text-gray-900">Secretaria + Online Publico</p>
+                          <p className="text-sm text-gray-500">Clientes podem agendar por um link publico</p>
+                        </div>
+                      </label>
+                      <label className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-colors ${bookingSettings.operationMode === 'SECRETARY_WITH_LINK' ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                        <input
+                          type="radio"
+                          name="operationMode"
+                          value="SECRETARY_WITH_LINK"
+                          checked={bookingSettings.operationMode === 'SECRETARY_WITH_LINK'}
+                          onChange={(e) => setBookingSettings({ ...bookingSettings, operationMode: e.target.value as OperationMode })}
+                          className="sr-only"
+                        />
+                        <div>
+                          <p className="font-medium text-gray-900">Secretaria + Link Privado</p>
+                          <p className="text-sm text-gray-500">Link enviado apenas para clientes selecionados</p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Secao 3: Slug e Link */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-gray-700">Link de Agendamento</h3>
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Slug personalizado</label>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                          <input
+                            type="text"
+                            value={bookingSettings.slug}
+                            onChange={(e) => setBookingSettings({ ...bookingSettings, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })}
+                            placeholder="meu-salao"
+                            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleGenerateSlug}
+                          className="px-3 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                          title="Gerar do nome do salao"
+                        >
+                          <RefreshCw className="w-5 h-5 text-gray-600" />
+                        </button>
+                      </div>
+                      <p className="mt-2 text-sm text-gray-500">
+                        Link: <span className="font-mono text-primary-600">{window.location.origin}/agendar/{bookingSettings.slug || 'seu-slug'}</span>
+                        {bookingSettings.slug && (
+                          <button
+                            type="button"
+                            onClick={copyBookingLink}
+                            className="ml-2 text-primary-600 hover:text-primary-700"
+                          >
+                            <Copy className="w-4 h-4 inline" />
+                          </button>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Secao 4: Configuracoes de Agendamento */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-gray-700">Configuracoes de Agendamento</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Antecedencia minima (horas)</label>
+                        <div className="relative">
+                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                          <input
+                            type="number"
+                            min="0"
+                            value={bookingSettings.minAdvanceHours}
+                            onChange={(e) => setBookingSettings({ ...bookingSettings, minAdvanceHours: parseInt(e.target.value) || 0 })}
+                            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Maximo de dias para agendar</label>
+                        <div className="relative">
+                          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                          <input
+                            type="number"
+                            min="1"
+                            value={bookingSettings.maxAdvanceDays}
+                            onChange={(e) => setBookingSettings({ ...bookingSettings, maxAdvanceDays: parseInt(e.target.value) || 30 })}
+                            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Intervalo entre horarios (min)</label>
+                        <select
+                          value={bookingSettings.slotIntervalMinutes}
+                          onChange={(e) => setBookingSettings({ ...bookingSettings, slotIntervalMinutes: parseInt(e.target.value) })}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                        >
+                          <option value="15">15 minutos</option>
+                          <option value="30">30 minutos</option>
+                          <option value="60">60 minutos</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Tempo de reserva (min)</label>
+                        <select
+                          value={bookingSettings.holdDurationMinutes}
+                          onChange={(e) => setBookingSettings({ ...bookingSettings, holdDurationMinutes: parseInt(e.target.value) })}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                        >
+                          <option value="5">5 minutos</option>
+                          <option value="10">10 minutos</option>
+                          <option value="15">15 minutos</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div>
+                        <p className="font-medium text-gray-900">Permitir agendamento no mesmo dia</p>
+                        <p className="text-sm text-gray-500">Clientes podem agendar para hoje</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBookingSettings({ ...bookingSettings, allowSameDayBooking: !bookingSettings.allowSameDayBooking })}
+                        className={`w-12 h-6 rounded-full transition-colors ${bookingSettings.allowSameDayBooking ? 'bg-primary-600' : 'bg-gray-300'}`}
+                      >
+                        <div className={`w-5 h-5 bg-white rounded-full shadow transform transition-transform ${bookingSettings.allowSameDayBooking ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div>
+                        <p className="font-medium text-gray-900">Verificacao de telefone</p>
+                        <p className="text-sm text-gray-500">Exigir codigo OTP via WhatsApp</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBookingSettings({ ...bookingSettings, requirePhoneVerification: !bookingSettings.requirePhoneVerification })}
+                        className={`w-12 h-6 rounded-full transition-colors ${bookingSettings.requirePhoneVerification ? 'bg-primary-600' : 'bg-gray-300'}`}
+                      >
+                        <div className={`w-5 h-5 bg-white rounded-full shadow transform transition-transform ${bookingSettings.requirePhoneVerification ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Secao 5: Sinal/Taxa */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-gray-700">Sinal / Taxa de Agendamento</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Tipo de cobranca</label>
+                        <select
+                          value={bookingSettings.depositType}
+                          onChange={(e) => setBookingSettings({ ...bookingSettings, depositType: e.target.value as DepositType })}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                        >
+                          <option value="NONE">Nenhuma</option>
+                          <option value="FIXED">Valor fixo</option>
+                          <option value="PERCENTAGE">Porcentagem</option>
+                        </select>
+                      </div>
+                      {bookingSettings.depositType !== 'NONE' && (
+                        <div>
+                          <label className="block text-sm text-gray-600 mb-1">
+                            {bookingSettings.depositType === 'FIXED' ? 'Valor (R$)' : 'Porcentagem (%)'}
+                          </label>
+                          <div className="relative">
+                            <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                            <input
+                              type="number"
+                              min="0"
+                              step={bookingSettings.depositType === 'PERCENTAGE' ? '1' : '0.01'}
+                              value={bookingSettings.depositValue}
+                              onChange={(e) => setBookingSettings({ ...bookingSettings, depositValue: parseFloat(e.target.value) || 0 })}
+                              className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {bookingSettings.depositType !== 'NONE' && (
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Aplica-se a</label>
+                        <select
+                          value={bookingSettings.depositAppliesTo}
+                          onChange={(e) => setBookingSettings({ ...bookingSettings, depositAppliesTo: e.target.value as DepositAppliesTo })}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                        >
+                          <option value="ALL">Todos os agendamentos</option>
+                          <option value="NEW_CLIENTS">Apenas novos clientes</option>
+                          <option value="SPECIFIC_SERVICES">Servicos especificos</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Secao 6: Cancelamento e Reagendamento */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium text-gray-700">Cancelamento e Reagendamento</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Cancelamento ate (horas antes)</label>
+                        <div className="relative">
+                          <XCircle className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                          <input
+                            type="number"
+                            min="0"
+                            value={bookingSettings.cancellationHours}
+                            onChange={(e) => setBookingSettings({ ...bookingSettings, cancellationHours: parseInt(e.target.value) || 0 })}
+                            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm text-gray-600 mb-1">Maximo de reagendamentos</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={bookingSettings.maxReschedules}
+                          onChange={(e) => setBookingSettings({ ...bookingSettings, maxReschedules: parseInt(e.target.value) || 0 })}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div>
+                        <p className="font-medium text-gray-900">Permitir reagendamento</p>
+                        <p className="text-sm text-gray-500">Clientes podem remarcar pelo link</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBookingSettings({ ...bookingSettings, allowRescheduling: !bookingSettings.allowRescheduling })}
+                        className={`w-12 h-6 rounded-full transition-colors ${bookingSettings.allowRescheduling ? 'bg-primary-600' : 'bg-gray-300'}`}
+                      >
+                        <div className={`w-5 h-5 bg-white rounded-full shadow transform transition-transform ${bookingSettings.allowRescheduling ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Politica de cancelamento (opcional)</label>
+                      <textarea
+                        value={bookingSettings.cancellationPolicy}
+                        onChange={(e) => setBookingSettings({ ...bookingSettings, cancellationPolicy: e.target.value })}
+                        placeholder="Descreva a politica de cancelamento que sera exibida ao cliente..."
+                        rows={3}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none"
+                      />
+                    </div>
+                  </div>
+
+                  {canEdit && (
+                    <button
+                      type="submit"
+                      disabled={isSavingBooking}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-medium disabled:opacity-50"
+                    >
+                      {isSavingBooking ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                      {isSavingBooking ? 'Salvando...' : 'Salvar configuracoes'}
+                    </button>
+                  )}
+                </form>
+              )}
             </div>
           )}
 
