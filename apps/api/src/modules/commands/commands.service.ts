@@ -30,6 +30,7 @@ import {
   ReopenCommandDto,
 } from './dto';
 import { CashRegistersService } from '../cash-registers';
+import { ClientPackagesService } from '../client-packages';
 import { ClientsService } from '../clients';
 import { CommissionsService } from '../commissions';
 import { LoyaltyService } from '../loyalty/loyalty.service';
@@ -62,6 +63,7 @@ export class CommandsService {
     @Inject(DATABASE_CONNECTION)
     private db: Database,
     private cashRegistersService: CashRegistersService,
+    private clientPackagesService: ClientPackagesService,
     private clientsService: ClientsService,
     private commissionsService: CommissionsService,
     private loyaltyService: LoyaltyService,
@@ -356,6 +358,54 @@ export class CommandsService {
       });
     }
 
+    // ========================================
+    // PACOTE: Verificar e consumir sessão do pacote para SERVIÇOS
+    // ========================================
+    let clientPackageId: number | null = null;
+    let clientPackageUsageId: number | null = null;
+    let paidByPackage = false;
+    let finalTotalPrice = totalPrice;
+
+    if (data.type === 'SERVICE' && data.referenceId && command.clientId) {
+      const serviceId = parseInt(data.referenceId, 10);
+      if (!isNaN(serviceId)) {
+        // Verifica se cliente tem pacote válido para este serviço
+        const packageCheck = await this.clientPackagesService.hasValidPackageForService(
+          command.clientId,
+          serviceId,
+        );
+
+        if (packageCheck.hasPackage && packageCheck.clientPackage && packageCheck.balance) {
+          try {
+            // Consome a sessão do pacote
+            const consumeResult = await this.clientPackagesService.consumeSession({
+              salonId: command.salonId,
+              clientPackageId: packageCheck.clientPackage.id,
+              serviceId,
+              commandId,
+              professionalId: data.performerId,
+              notes: `Auto-consumed via command ${command.cardNumber}`,
+            });
+
+            clientPackageId = packageCheck.clientPackage.id;
+            clientPackageUsageId = consumeResult.usage.id;
+            paidByPackage = true;
+            finalTotalPrice = 0; // Serviço pago pelo pacote = R$ 0,00
+
+            this.logger.log(
+              `[addItem] Sessão consumida do pacote: clientPackageId=${clientPackageId}, ` +
+              `serviceId=${serviceId}, remaining=${consumeResult.balance.remainingSessions}`
+            );
+          } catch (error: any) {
+            // Se falhar consumir pacote, continua como item normal (pago)
+            this.logger.warn(
+              `[addItem] Falha ao consumir pacote (item será cobrado): ${error.message}`
+            );
+          }
+        }
+      }
+    }
+
     // Adiciona o item
     const [item] = await this.db
       .insert(commandItems)
@@ -364,13 +414,16 @@ export class CommandsService {
         type: data.type,
         description: data.description,
         quantity: quantity.toString(),
-        unitPrice: data.unitPrice.toString(),
+        unitPrice: paidByPackage ? '0' : data.unitPrice.toString(),
         discount: discount.toString(),
-        totalPrice: totalPrice.toString(),
+        totalPrice: finalTotalPrice.toString(),
         performerId: data.performerId || null,
         referenceId: data.referenceId || null,
         variantId: data.variantId || null, // Variante da receita (tamanho cabelo)
         addedById: currentUser.id,
+        clientPackageId,
+        clientPackageUsageId,
+        paidByPackage,
       })
       .returning();
 
@@ -391,9 +444,12 @@ export class CommandsService {
       type: data.type,
       description: data.description,
       quantity,
-      unitPrice: data.unitPrice,
-      totalPrice,
+      unitPrice: paidByPackage ? 0 : data.unitPrice,
+      totalPrice: finalTotalPrice,
       performerId: data.performerId,
+      paidByPackage,
+      clientPackageId,
+      clientPackageUsageId,
     });
 
     return item;
@@ -545,6 +601,28 @@ export class CommandsService {
       }
     }
 
+    // ========================================
+    // PACOTE: Reverter sessão se item foi pago por pacote
+    // ========================================
+    if (existingItem.paidByPackage && existingItem.clientPackageUsageId) {
+      try {
+        await this.clientPackagesService.revertSession(
+          existingItem.clientPackageUsageId,
+          `Reverted due to item cancellation - Command ${command.cardNumber}${reason ? `: ${reason}` : ''}`,
+        );
+
+        this.logger.log(
+          `[removeItem] Sessão revertida: usageId=${existingItem.clientPackageUsageId}, ` +
+          `itemId=${itemId}`
+        );
+      } catch (error: any) {
+        // Log warning mas não bloqueia cancelamento
+        this.logger.warn(
+          `[removeItem] Falha ao reverter sessão do pacote (item cancelado mesmo assim): ${error.message}`
+        );
+      }
+    }
+
     const [canceledItem] = await this.db
       .update(commandItems)
       .set({
@@ -565,6 +643,8 @@ export class CommandsService {
       description: existingItem.description,
       totalPrice: existingItem.totalPrice,
       reason,
+      paidByPackage: existingItem.paidByPackage,
+      packageSessionReverted: existingItem.paidByPackage && !!existingItem.clientPackageUsageId,
     });
 
     return canceledItem;
@@ -1358,6 +1438,29 @@ export class CommandsService {
       }
     }
 
+    // ========================================
+    // PACOTE: Reverter sessões de pacotes para itens pagos por pacote
+    // ========================================
+    let packageSessionsReverted = 0;
+    const packageItems = items.filter(
+      item => !item.canceledAt && item.paidByPackage && item.clientPackageUsageId
+    );
+
+    for (const item of packageItems) {
+      try {
+        await this.clientPackagesService.revertSession(
+          item.clientPackageUsageId!,
+          `Reverted due to command cancellation - Command ${command.cardNumber}${reason ? `: ${reason}` : ''}`,
+        );
+        packageSessionsReverted++;
+      } catch (err) {
+        this.logger.warn(
+          `[cancel] Erro ao reverter sessão do pacote (item ${item.id}): ${(err as Error).message}`
+        );
+        // Continua mesmo se falhar
+      }
+    }
+
     const [canceledCommand] = await this.db
       .update(commands)
       .set({
@@ -1375,6 +1478,7 @@ export class CommandsService {
       reason,
       stockReturned: productItems.length,
       bomReverted: bomRevertedCount,
+      packageSessionsReverted,
     });
 
     return canceledCommand;

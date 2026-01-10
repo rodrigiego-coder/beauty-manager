@@ -11,6 +11,7 @@ import {
   decimal,
   date,
   json,
+  unique,
 } from 'drizzle-orm/pg-core';
 
 /**
@@ -39,7 +40,17 @@ export const notificationTypeEnum = pgEnum('notification_type', [
   'CHURN_RISK',
 ]);
 
-export const auditActionEnum = pgEnum('audit_action', ['CREATE', 'UPDATE', 'DELETE']);
+export const auditActionEnum = pgEnum('audit_action', [
+  'CREATE',
+  'UPDATE',
+  'DELETE',
+  'PUBLIC_ACCESS',
+  'TOKEN_VALIDATED',
+  'WHATSAPP_SENT',
+  'WHATSAPP_FAILED',
+  'CRITICAL_OVERRIDE',
+  'STOCK_CONSUMED',
+]);
 
 // Enum para Status de Agendamento
 export const appointmentStatusEnum = pgEnum('appointment_status', [
@@ -1181,17 +1192,72 @@ export const clientPackages = pgTable('client_packages', {
 });
 
 /**
+ * Tabela de serviços incluídos em cada pacote
+ * Define quais serviços e quantas sessões de cada o pacote oferece
+ */
+export const packageServices = pgTable('package_services', {
+  id: serial('id').primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  packageId: integer('package_id').references(() => packages.id).notNull(),
+  serviceId: integer('service_id').references(() => services.id).notNull(),
+  sessionsIncluded: integer('sessions_included').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Tabela de saldo de sessões por serviço do cliente
+ * Rastreia quantas sessões de cada serviço o cliente ainda tem disponível
+ */
+export const clientPackageBalances = pgTable('client_package_balances', {
+  id: serial('id').primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  clientPackageId: integer('client_package_id').references(() => clientPackages.id).notNull(),
+  serviceId: integer('service_id').references(() => services.id).notNull(),
+  totalSessions: integer('total_sessions').notNull(),
+  remainingSessions: integer('remaining_sessions').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Tabela de histórico de uso de sessões (auditoria)
+ * Registra cada uso de sessão do pacote, vinculado à comanda/item
+ */
+export const clientPackageUsages = pgTable('client_package_usages', {
+  id: serial('id').primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  clientPackageId: integer('client_package_id').references(() => clientPackages.id).notNull(),
+  serviceId: integer('service_id').references(() => services.id).notNull(),
+  commandId: uuid('command_id').references(() => commands.id),
+  commandItemId: uuid('command_item_id').references(() => commandItems.id),
+  professionalId: uuid('professional_id').references(() => users.id),
+  status: varchar('status', { length: 20 }).default('CONSUMED').notNull(),
+  consumedAt: timestamp('consumed_at').defaultNow().notNull(),
+  revertedAt: timestamp('reverted_at'),
+  notes: text('notes'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  uniqueCommandItem: unique().on(table.salonId, table.commandItemId),
+}));
+
+/**
  * Tabela de logs de auditoria (Compliance e Rastreabilidade)
+ * Estendida com campos adicionais para auditoria forense
  */
 export const auditLogs = pgTable('audit_logs', {
   id: serial('id').primaryKey(),
   salonId: uuid('salon_id').references(() => salons.id),
   userId: uuid('user_id').references(() => users.id),
+  userName: varchar('user_name', { length: 255 }),
+  userRole: varchar('user_role', { length: 50 }),
   action: auditActionEnum('action').notNull(),
   entity: varchar('entity', { length: 100 }).notNull(),
   entityId: varchar('entity_id', { length: 100 }).notNull(),
   oldValues: json('old_values').$type<Record<string, unknown>>(),
   newValues: json('new_values').$type<Record<string, unknown>>(),
+  metadata: json('metadata').$type<Record<string, unknown>>(),
   ipAddress: varchar('ip_address', { length: 45 }),
   userAgent: text('user_agent'),
   timestamp: timestamp('timestamp').defaultNow().notNull(),
@@ -1353,6 +1419,9 @@ export const commandConsumptionSnapshots = pgTable('command_consumption_snapshot
   postedAt: timestamp('posted_at'), // quando baixou no estoque
   cancelledAt: timestamp('cancelled_at'),
 
+  // PILAR 2: Idempotência
+  dedupeKey: varchar('dedupe_key', { length: 255 }),  // commandItemId:productId:recipeVersion:variantCode
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -1434,6 +1503,12 @@ export type Package = typeof packages.$inferSelect;
 export type NewPackage = typeof packages.$inferInsert;
 export type ClientPackage = typeof clientPackages.$inferSelect;
 export type NewClientPackage = typeof clientPackages.$inferInsert;
+export type PackageService = typeof packageServices.$inferSelect;
+export type NewPackageService = typeof packageServices.$inferInsert;
+export type ClientPackageBalance = typeof clientPackageBalances.$inferSelect;
+export type NewClientPackageBalance = typeof clientPackageBalances.$inferInsert;
+export type ClientPackageUsage = typeof clientPackageUsages.$inferSelect;
+export type NewClientPackageUsage = typeof clientPackageUsages.$inferInsert;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type NewAuditLog = typeof auditLogs.$inferInsert;
 export type SupportSession = typeof supportSessions.$inferSelect;
@@ -1607,6 +1682,11 @@ export const commandItems = pgTable('command_items', {
 
   // Variação da receita (para serviços com tamanho de cabelo)
   variantId: uuid('variant_id').references(() => recipeVariants.id),
+
+  // Package session consumption (when item is paid by package)
+  clientPackageId: integer('client_package_id').references(() => clientPackages.id),
+  clientPackageUsageId: integer('client_package_usage_id'), // FK managed at app level (avoids circular ref)
+  paidByPackage: boolean('paid_by_package').default(false),
 
   canceledAt: timestamp('canceled_at'),
   canceledById: uuid('canceled_by_id').references(() => users.id),
@@ -3046,6 +3126,11 @@ export const appointmentNotifications = pgTable('appointment_notifications', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   processedAt: timestamp('processed_at'),
+
+  // PILAR 2: Idempotência
+  dedupeKey: varchar('dedupe_key', { length: 255 }),  // Chave única para evitar duplicação
+  processingStartedAt: timestamp('processing_started_at'),
+  processingWorkerId: varchar('processing_worker_id', { length: 50 }),
 });
 
 // Types para Appointment Notifications
@@ -3198,8 +3283,17 @@ export const triageResponses = pgTable('triage_responses', {
   completedVia: varchar('completed_via', { length: 20 }),
   expiresAt: timestamp('expires_at'),
 
-  // Token para acesso público
+  // Token para acesso público (LEGACY - usar tokenHash)
   accessToken: varchar('access_token', { length: 64 }),
+
+  // PILAR 1: Segurança do Token
+  tokenHash: varchar('token_hash', { length: 64 }),  // SHA-256 do token
+  usedAt: timestamp('used_at'),                       // Marca uso único
+  accessAttempts: integer('access_attempts').default(0),
+  lastAccessIp: varchar('last_access_ip', { length: 45 }),
+  lastAccessUserAgent: text('last_access_user_agent'),
+  invalidatedAt: timestamp('invalidated_at'),
+  invalidatedReason: varchar('invalidated_reason', { length: 100 }),
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -3234,3 +3328,60 @@ export type TriageResponse = typeof triageResponses.$inferSelect;
 export type NewTriageResponse = typeof triageResponses.$inferInsert;
 export type TriageAnswer = typeof triageAnswers.$inferSelect;
 export type NewTriageAnswer = typeof triageAnswers.$inferInsert;
+
+// ============================================
+// PILAR 3: EXTENSÕES DE AUDITORIA
+// ============================================
+
+/**
+ * Overrides de triagem
+ * Quando profissional ignora alertas de triagem com justificativa
+ */
+export const triageOverrides = pgTable('triage_overrides', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  triageId: uuid('triage_id').references(() => triageResponses.id).notNull(),
+  appointmentId: uuid('appointment_id').references(() => appointments.id).notNull(),
+
+  // Quem autorizou
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  userName: varchar('user_name', { length: 255 }).notNull(),
+  userRole: varchar('user_role', { length: 50 }).notNull(),
+
+  // Justificativa obrigatória (mínimo 20 caracteres enforçado no service)
+  reason: text('reason').notNull(),
+
+  // Rastreabilidade
+  ipAddress: varchar('ip_address', { length: 45 }),
+
+  overriddenAt: timestamp('overridden_at').defaultNow().notNull(),
+});
+
+/**
+ * Pendências de estoque
+ * Quando quantidade é insuficiente no momento do consumo
+ */
+export const stockAdjustmentsPending = pgTable('stock_adjustments_pending', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+
+  commandId: uuid('command_id').references(() => commands.id),
+  commandItemId: uuid('command_item_id').references(() => commandItems.id),
+  productId: integer('product_id').references(() => products.id).notNull(),
+
+  quantityNeeded: decimal('quantity_needed', { precision: 10, scale: 3 }).notNull(),
+  quantityAvailable: decimal('quantity_available', { precision: 10, scale: 3 }),
+
+  status: varchar('status', { length: 20 }).default('PENDING').notNull(),
+  resolvedAt: timestamp('resolved_at'),
+  resolvedById: uuid('resolved_by_id').references(() => users.id),
+  resolutionNote: text('resolution_note'),
+
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// Types para extensões de Auditoria
+export type TriageOverride = typeof triageOverrides.$inferSelect;
+export type NewTriageOverride = typeof triageOverrides.$inferInsert;
+export type StockAdjustmentPending = typeof stockAdjustmentsPending.$inferSelect;
+export type NewStockAdjustmentPending = typeof stockAdjustmentsPending.$inferInsert;
