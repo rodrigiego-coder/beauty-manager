@@ -1666,9 +1666,9 @@ export const commands = pgTable('commands', {
 export const commandItems = pgTable('command_items', {
   id: uuid('id').defaultRandom().primaryKey(),
   commandId: uuid('command_id').references(() => commands.id).notNull(),
-  
+
   type: varchar('type', { length: 20 }).notNull(),
-  referenceId: uuid('reference_id'),
+  referenceId: varchar('reference_id', { length: 50 }), // ID de serviço/produto (integer como string)
   description: text('description').notNull(),
   
   quantity: decimal('quantity', { precision: 10, scale: 2 }).default('1').notNull(),
