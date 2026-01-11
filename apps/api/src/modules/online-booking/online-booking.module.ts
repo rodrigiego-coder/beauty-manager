@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
+import { AutomationModule } from '../automation/automation.module';
 
 // Services
 import { OnlineBookingSettingsService } from './online-booking-settings.service';
@@ -13,7 +14,7 @@ import { PublicBookingController } from './public-booking.controller';
 import { AdminBookingController } from './admin-booking.controller';
 
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, AutomationModule],
   controllers: [PublicBookingController, AdminBookingController],
   providers: [
     OnlineBookingSettingsService,

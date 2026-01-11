@@ -787,6 +787,7 @@ export const whatsappProviderEnum = pgEnum('whatsapp_provider', [
   'META',
   'TWILIO',
   'ZENVIA',
+  'ZAPI',
 ]);
 
 /**

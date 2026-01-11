@@ -8,6 +8,7 @@ import { eq, and, isNull, gt, lt } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../../database/schema';
 import { SendOtpDto, VerifyOtpDto } from './dto';
+import { WhatsAppService } from '../automation/whatsapp.service';
 
 @Injectable()
 export class OtpService {
@@ -19,6 +20,7 @@ export class OtpService {
   constructor(
     @Inject('DATABASE_CONNECTION')
     private readonly db: NodePgDatabase<typeof schema>,
+    private readonly whatsAppService: WhatsAppService,
   ) {}
 
   /**
@@ -98,15 +100,25 @@ export class OtpService {
       clientIp,
     });
 
-    // TODO: Integrar com serviço de WhatsApp para enviar o código
-    // Por enquanto, apenas loga (em produção, remover este log)
-    this.logger.log(`[DEV] OTP para ${phone}: ${code}`);
+    // Envia código via WhatsApp usando Z-API
+    const sendResult = await this.whatsAppService.sendOtpCode(
+      phone,
+      code,
+      this.OTP_EXPIRATION_MINUTES,
+    );
 
-    // Em produção, enviar via WhatsApp
-    // await this.whatsappService.sendOtp(phone, code);
+    if (!sendResult.success) {
+      this.logger.error(`Falha ao enviar OTP via WhatsApp: ${sendResult.error}`);
+      // Log para debug em dev (remover em produção)
+      this.logger.warn(`[DEV] OTP para ${phone}: ${code}`);
+    } else {
+      this.logger.log(`OTP enviado com sucesso para ${phone}`);
+    }
 
     return {
-      message: 'Código enviado com sucesso',
+      message: sendResult.success
+        ? 'Código enviado com sucesso via WhatsApp'
+        : 'Código gerado (verifique suas mensagens)',
       expiresIn: this.OTP_EXPIRATION_MINUTES * 60,
     };
   }

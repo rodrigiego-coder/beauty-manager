@@ -12,6 +12,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AutomationService } from './automation.service';
+import { WhatsAppService } from './whatsapp.service';
 import {
   UpdateAutomationSettingsDto,
   CreateTemplateDto,
@@ -25,11 +26,15 @@ import { AuthGuard } from '../../common/guards/auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 
 @Controller('automation')
 @UseGuards(AuthGuard, RolesGuard)
 export class AutomationController {
-  constructor(private readonly automationService: AutomationService) {}
+  constructor(
+    private readonly automationService: AutomationService,
+    private readonly whatsAppService: WhatsAppService,
+  ) {}
 
   // ==================== SETTINGS ====================
 
@@ -252,5 +257,34 @@ export class AutomationController {
   ) {
     await this.automationService.processTwilioWebhook(body);
     return { success: true };
+  }
+
+  // ==================== Z-API TEST ====================
+
+  /**
+   * GET /automation/zapi/status
+   * Verifica status da conexão Z-API
+   */
+  @Get('zapi/status')
+  @Public()
+  async getZapiStatus() {
+    return this.whatsAppService.testZapiConnection();
+  }
+
+  /**
+   * POST /automation/zapi/send-test
+   * Envia mensagem de teste via Z-API (público para testes)
+   */
+  @Post('zapi/send-test')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async sendZapiTestMessage(
+    @Body() body: { phone: string; message: string },
+  ) {
+    if (!body.phone || !body.message) {
+      return { success: false, error: 'phone e message são obrigatórios.' };
+    }
+
+    return this.whatsAppService.sendDirectMessage(body.phone, body.message);
   }
 }

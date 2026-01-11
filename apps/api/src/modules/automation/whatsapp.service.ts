@@ -7,10 +7,17 @@ import { WhatsAppSendResult, TemplateVariables } from './dto';
 /**
  * WhatsAppService
  * Handles WhatsApp Business API message sending
+ * Supports: META, TWILIO, ZENVIA, ZAPI
  */
 @Injectable()
 export class WhatsAppService {
   private readonly logger = new Logger(WhatsAppService.name);
+
+  // Z-API Configuration from environment
+  private readonly zapiInstanceId = process.env.ZAPI_INSTANCE_ID;
+  private readonly zapiToken = process.env.ZAPI_TOKEN;
+  private readonly zapiBaseUrl = process.env.ZAPI_BASE_URL || 'https://api.z-api.io/instances';
+  private readonly zapiClientToken = process.env.ZAPI_CLIENT_TOKEN;
 
   /**
    * Envia mensagem de texto via WhatsApp
@@ -40,13 +47,99 @@ export class WhatsAppService {
           return await this.sendViaTwilio(settings, formattedPhone, message);
         case 'ZENVIA':
           return await this.sendViaZenvia(settings, formattedPhone, message);
+        case 'ZAPI':
+          return await this.sendViaZapi(formattedPhone, message);
         default:
+          // Tenta Z-API como fallback se configurado
+          if (this.zapiInstanceId && this.zapiToken) {
+            return await this.sendViaZapi(formattedPhone, message);
+          }
           return { success: false, error: 'Provedor não suportado.' };
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       this.logger.error(`WhatsApp send error: ${errorMessage}`);
       return { success: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Envia mensagem diretamente via Z-API (sem precisar de configurações do salão)
+   * Útil para OTP e testes
+   */
+  async sendDirectMessage(
+    phoneNumber: string,
+    message: string,
+  ): Promise<WhatsAppSendResult> {
+    if (!this.zapiInstanceId || !this.zapiToken) {
+      this.logger.error('Z-API não configurado. Verifique ZAPI_INSTANCE_ID e ZAPI_TOKEN no .env');
+      return { success: false, error: 'Z-API não configurado.' };
+    }
+
+    const formattedPhone = this.formatPhoneNumber(phoneNumber);
+    return this.sendViaZapi(formattedPhone, message);
+  }
+
+  /**
+   * Envia código OTP via WhatsApp
+   */
+  async sendOtpCode(
+    phoneNumber: string,
+    code: string,
+    expirationMinutes: number = 10,
+  ): Promise<WhatsAppSendResult> {
+    const message = `🔐 Seu código de verificação é: *${code}*\n\nVálido por ${expirationMinutes} minutos.\n\n_Beauty Manager_`;
+    return this.sendDirectMessage(phoneNumber, message);
+  }
+
+  /**
+   * Retorna os headers necessários para chamadas Z-API
+   */
+  private getZapiHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (this.zapiClientToken) {
+      headers['Client-Token'] = this.zapiClientToken;
+    }
+    return headers;
+  }
+
+  /**
+   * Testa conexão com Z-API
+   */
+  async testZapiConnection(): Promise<{ connected: boolean; error?: string }> {
+    if (!this.zapiInstanceId || !this.zapiToken) {
+      return { connected: false, error: 'Z-API não configurado.' };
+    }
+
+    try {
+      const url = `${this.zapiBaseUrl}/${this.zapiInstanceId}/token/${this.zapiToken}/status`;
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.getZapiHeaders(),
+      });
+
+      const responseText = await response.text();
+      this.logger.debug(`Z-API status response: ${responseText}`);
+
+      if (response.ok) {
+        const data = JSON.parse(responseText) as { connected?: boolean; smartphoneConnected?: boolean };
+        if (data.connected || data.smartphoneConnected) {
+          return { connected: true };
+        }
+        return { connected: false, error: 'WhatsApp não conectado na instância Z-API.' };
+      }
+
+      // Verifica se é erro de client-token
+      if (responseText.includes('client-token')) {
+        return { connected: false, error: 'Client-Token não configurado. Configure ZAPI_CLIENT_TOKEN no .env' };
+      }
+
+      return { connected: false, error: `Erro ao verificar status: ${responseText}` };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro de conexão';
+      return { connected: false, error: errorMessage };
     }
   }
 
@@ -314,6 +407,64 @@ export class WhatsAppService {
       success: true,
       messageId: data.id,
     };
+  }
+
+  /**
+   * Envia mensagem via Z-API
+   */
+  private async sendViaZapi(
+    phone: string,
+    message: string,
+  ): Promise<WhatsAppSendResult> {
+    if (!this.zapiInstanceId || !this.zapiToken) {
+      return { success: false, error: 'Z-API não configurado.' };
+    }
+
+    const url = `${this.zapiBaseUrl}/${this.zapiInstanceId}/token/${this.zapiToken}/send-text`;
+
+    try {
+      this.logger.log(`Enviando mensagem Z-API para ${phone}`);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.getZapiHeaders(),
+        body: JSON.stringify({
+          phone: phone,
+          message: message,
+        }),
+      });
+
+      const responseText = await response.text();
+      this.logger.debug(`Z-API response: ${responseText}`);
+
+      if (!response.ok) {
+        this.logger.error(`Z-API error (${response.status}): ${responseText}`);
+
+        // Verifica se é erro de client-token
+        if (responseText.includes('client-token')) {
+          return { success: false, error: 'Client-Token não configurado. Configure ZAPI_CLIENT_TOKEN no .env' };
+        }
+
+        return { success: false, error: `Erro Z-API: ${response.status} - ${responseText}` };
+      }
+
+      let data: { zapiMessageId?: string; messageId?: string };
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        data = {};
+      }
+
+      this.logger.log(`Mensagem enviada com sucesso para ${phone}`);
+      return {
+        success: true,
+        messageId: data.zapiMessageId || data.messageId,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      this.logger.error(`Z-API send error: ${errorMessage}`);
+      return { success: false, error: errorMessage };
+    }
   }
 
   private buildTemplateComponents(variables: TemplateVariables): Array<{
