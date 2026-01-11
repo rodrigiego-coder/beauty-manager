@@ -71,12 +71,16 @@ export class WhatsAppService {
     phoneNumber: string,
     message: string,
   ): Promise<WhatsAppSendResult> {
+    this.logger.log(`[DIRECT] Telefone recebido: ${phoneNumber}`);
+
     if (!this.zapiInstanceId || !this.zapiToken) {
       this.logger.error('Z-API não configurado. Verifique ZAPI_INSTANCE_ID e ZAPI_TOKEN no .env');
       return { success: false, error: 'Z-API não configurado.' };
     }
 
     const formattedPhone = this.formatPhoneNumber(phoneNumber);
+    this.logger.log(`[DIRECT] Telefone formatado: ${formattedPhone}`);
+
     return this.sendViaZapi(formattedPhone, message);
   }
 
@@ -88,8 +92,16 @@ export class WhatsAppService {
     code: string,
     expirationMinutes: number = 10,
   ): Promise<WhatsAppSendResult> {
+    this.logger.log(`[OTP] Iniciando envio - Telefone: ${phoneNumber}, Código: ${code}`);
+    this.logger.log(`[OTP] ZAPI_INSTANCE_ID: ${this.zapiInstanceId ? 'CONFIGURADO' : 'NÃO CONFIGURADO'}`);
+    this.logger.log(`[OTP] ZAPI_TOKEN: ${this.zapiToken ? 'CONFIGURADO' : 'NÃO CONFIGURADO'}`);
+    this.logger.log(`[OTP] ZAPI_CLIENT_TOKEN: ${this.zapiClientToken ? 'CONFIGURADO' : 'NÃO CONFIGURADO'}`);
+
     const message = `Seu codigo de verificacao Beauty Manager e: *${code}*\n\nValido por ${expirationMinutes} minutos.`;
-    return this.sendDirectMessage(phoneNumber, message);
+    const result = await this.sendDirectMessage(phoneNumber, message);
+
+    this.logger.log(`[OTP] Resultado do envio: ${JSON.stringify(result)}`);
+    return result;
   }
 
   /**
