@@ -365,18 +365,14 @@ export class PublicBookingController {
 
     // Verifica verificação de telefone
     if (settings.requirePhoneVerification) {
-      if (!dto.otpCode) {
-        throw new BadRequestException('Verificação de telefone é obrigatória');
-      }
+      // Verifica se o telefone foi verificado recentemente (últimas 24h)
+      const phoneVerified = await this.otpService.isPhoneVerifiedRecently(
+        salon.id,
+        dto.clientPhone,
+      );
 
-      const otpResult = await this.otpService.verifyOtp(salon.id, {
-        phone: dto.clientPhone,
-        code: dto.otpCode,
-        type: OtpType.PHONE_VERIFICATION,
-      });
-
-      if (!otpResult.valid) {
-        throw new BadRequestException(otpResult.message);
+      if (!phoneVerified) {
+        throw new BadRequestException('Telefone não verificado. Por favor, solicite um novo código.');
       }
     }
 
