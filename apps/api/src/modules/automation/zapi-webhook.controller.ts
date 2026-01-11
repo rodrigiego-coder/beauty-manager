@@ -7,18 +7,25 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '../../database/connection';
 import * as schema from '../../database/schema';
+import { AlexisService } from '../alexis/alexis.service';
+import { WhatsAppService } from './whatsapp.service';
 
 /**
  * Webhook para receber mensagens do Z-API
- * Processa respostas de confirmação (SIM/NÃO)
+ * Integrado com Alexis IA para processamento inteligente
  */
 @Public()
 @Controller('webhook/zapi')
 export class ZapiWebhookController {
   private readonly logger = new Logger(ZapiWebhookController.name);
+
+  constructor(
+    private readonly alexisService: AlexisService,
+    private readonly whatsappService: WhatsAppService,
+  ) {}
 
   /**
    * Recebe mensagens do Z-API
@@ -37,19 +44,51 @@ export class ZapiWebhookController {
         return { received: true };
       }
 
-      const phone = this.extractPhone(payload.phone || payload.from);
-      const message = payload.text.message.trim().toUpperCase();
-
-      this.logger.log(`Mensagem de ${phone}: "${message}"`);
-
-      // Verifica se é uma resposta de confirmação
-      if (message === 'SIM' || message === 'S' || message === 'CONFIRMO' || message === 'CONFIRMAR') {
-        await this.handleConfirmation(phone, 'CONFIRMED');
-      } else if (message === 'NAO' || message === 'NÃO' || message === 'N' || message === 'CANCELAR') {
-        await this.handleConfirmation(phone, 'CANCELLED');
+      // Ignora mensagens enviadas por nós (fromMe = true)
+      if (payload.fromMe === true) {
+        this.logger.debug('Mensagem enviada por nós, ignorando');
+        return { received: true };
       }
 
-      return { received: true };
+      const phone = this.extractPhone(payload.phone || payload.from);
+      const message = payload.text.message.trim();
+      const clientName = payload.senderName || payload.pushName || undefined;
+
+      this.logger.log(`Mensagem de ${phone} (${clientName || 'sem nome'}): "${message}"`);
+
+      // Busca o salão associado a este número (por enquanto, usa o salão demo)
+      // TODO: Implementar mapeamento de número do WhatsApp para salão
+      const salonId = await this.getSalonIdForPhone(phone);
+
+      if (!salonId) {
+        this.logger.warn(`Nenhum salão encontrado para processar mensagem de ${phone}`);
+        return { received: true };
+      }
+
+      // Processa mensagem com Alexis
+      const result = await this.alexisService.processWhatsAppMessage(
+        salonId,
+        phone,
+        message,
+        clientName,
+        undefined, // senderId
+        'client',
+      );
+
+      this.logger.log(`Alexis processou: intent=${result.intent}, shouldSend=${result.shouldSend}`);
+
+      // Envia resposta se necessário
+      if (result.shouldSend && result.response) {
+        const sendResult = await this.whatsappService.sendDirectMessage(phone, result.response);
+
+        if (sendResult.success) {
+          this.logger.log(`Resposta enviada para ${phone}`);
+        } else {
+          this.logger.error(`Erro ao enviar resposta: ${sendResult.error}`);
+        }
+      }
+
+      return { received: true, intent: result.intent };
     } catch (error) {
       this.logger.error('Erro ao processar webhook:', error);
       return { received: true, error: 'Internal error' };
@@ -94,81 +133,21 @@ export class ZapiWebhookController {
   }
 
   /**
-   * Processa confirmação/cancelamento
+   * Busca o salonId baseado no telefone
+   * Por enquanto retorna o salão demo, mas pode ser expandido
    */
-  private async handleConfirmation(phone: string, action: 'CONFIRMED' | 'CANCELLED') {
-    // Formata o telefone para busca
-    const phoneVariants = [
-      phone,
-      phone.replace(/^55/, ''),
-      `55${phone}`,
-    ];
+  private async getSalonIdForPhone(_phone: string): Promise<string | null> {
+    // TODO: Implementar lógica de mapeamento
+    // Por exemplo: buscar automation_settings onde o número do WhatsApp bate
 
-    // Filtra pelo telefone (pode ter variações de formato)
-    const matchingAppointments = await db
+    // Por enquanto, retorna o salão demo
+    const [salon] = await db
       .select()
-      .from(schema.appointments)
-      .where(eq(schema.appointments.status, 'PENDING_CONFIRMATION'))
-      .orderBy(desc(schema.appointments.createdAt))
-      .limit(20);
+      .from(schema.salons)
+      .where(eq(schema.salons.slug, 'salao-camila-sanches'))
+      .limit(1);
 
-    const foundAppointment = matchingAppointments.find(apt => {
-      const aptPhone = apt.clientPhone?.replace(/\D/g, '') || '';
-      return phoneVariants.some(p => aptPhone.includes(p.replace(/\D/g, '')) || p.replace(/\D/g, '').includes(aptPhone));
-    });
-
-    if (!foundAppointment) {
-      this.logger.warn(`Nenhum agendamento pendente encontrado para ${phone}`);
-      return;
-    }
-
-    // Atualiza o agendamento
-    const newStatus = action === 'CONFIRMED' ? 'CONFIRMED' : 'CANCELLED';
-    const confirmationStatus = action === 'CONFIRMED' ? 'CONFIRMED' : 'PENDING';
-
-    await db
-      .update(schema.appointments)
-      .set({
-        status: newStatus,
-        confirmationStatus: confirmationStatus,
-        confirmedAt: action === 'CONFIRMED' ? new Date() : undefined,
-        confirmedVia: 'WHATSAPP',
-        updatedAt: new Date(),
-      })
-      .where(eq(schema.appointments.id, foundAppointment.id));
-
-    this.logger.log(`Agendamento ${foundAppointment.id} ${action === 'CONFIRMED' ? 'CONFIRMADO' : 'CANCELADO'} via WhatsApp`);
-
-    // Registra a resposta na notificação
-    await db
-      .update(schema.appointmentNotifications)
-      .set({
-        clientResponse: action,
-        clientRespondedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(schema.appointmentNotifications.appointmentId, foundAppointment.id),
-          eq(schema.appointmentNotifications.notificationType, 'APPOINTMENT_CONFIRMATION'),
-        )
-      );
-
-    // Se cancelado, cancela os lembretes futuros
-    if (action === 'CANCELLED') {
-      await db
-        .update(schema.appointmentNotifications)
-        .set({
-          status: 'CANCELLED',
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(schema.appointmentNotifications.appointmentId, foundAppointment.id),
-            eq(schema.appointmentNotifications.status, 'SCHEDULED'),
-          )
-        );
-    }
+    return salon?.id || null;
   }
 
   /**

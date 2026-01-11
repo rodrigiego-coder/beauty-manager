@@ -7,6 +7,8 @@ import {
   aiInteractionLogs,
   aiBlockedTermsLog,
   aiBriefings,
+  appointments,
+  appointmentNotifications,
 } from '../../database/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { GeminiService } from './gemini.service';
@@ -140,6 +142,42 @@ export class AlexisService {
 
     // Classifica intenção
     const intent = this.intentClassifier.classify(message);
+
+    // ========== CONFIRMAÇÃO/RECUSA DE AGENDAMENTO ==========
+    if (intent === 'APPOINTMENT_CONFIRM' || intent === 'APPOINTMENT_DECLINE') {
+      const confirmResult = await this.handleAppointmentConfirmation(
+        salonId,
+        clientPhone,
+        intent === 'APPOINTMENT_CONFIRM',
+      );
+
+      if (confirmResult.handled) {
+        // Salva mensagens
+        await this.saveMessage(conversation.id, 'client', message, intent, false, false);
+        await this.saveMessage(conversation.id, 'ai', confirmResult.response, intent, false, false);
+
+        await this.logInteraction(
+          salonId,
+          conversation.id,
+          clientPhone,
+          message,
+          confirmResult.response,
+          intent,
+          false,
+          undefined,
+          Date.now() - startTime,
+        );
+
+        return {
+          response: confirmResult.response,
+          intent,
+          blocked: false,
+          shouldSend: true,
+          statusChanged: false,
+        };
+      }
+      // Se não encontrou agendamento pendente, continua fluxo normal
+    }
 
     // ========== CAMADA 1: FILTRO DE ENTRADA ==========
     const inputFilter = this.contentFilter.filterInput(message);
@@ -327,6 +365,149 @@ export class AlexisService {
     const slotList = this.scheduler.formatAvailableSlots(slots, 6);
 
     return `Ótimo! Para ${mentionedService.name}, temos esses horários amanhã:\n\n${slotList}\n\nQual fica melhor pra você? 😊`;
+  }
+
+  /**
+   * =====================================================
+   * CONFIRMAÇÃO DE AGENDAMENTO VIA WHATSAPP
+   * =====================================================
+   */
+
+  private async handleAppointmentConfirmation(
+    salonId: string,
+    clientPhone: string,
+    isConfirm: boolean,
+  ): Promise<{ handled: boolean; response: string }> {
+    // Formata variações do telefone para busca
+    const phoneClean = clientPhone.replace(/\D/g, '');
+    const phoneVariants = [
+      phoneClean,
+      phoneClean.replace(/^55/, ''),
+      `55${phoneClean.replace(/^55/, '')}`,
+    ];
+
+    // Busca agendamento pendente de confirmação para este telefone
+    const pendingAppointments = await db
+      .select()
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.salonId, salonId),
+          eq(appointments.status, 'PENDING_CONFIRMATION'),
+        ),
+      )
+      .orderBy(desc(appointments.createdAt))
+      .limit(20);
+
+    // Encontra agendamento que corresponde ao telefone
+    const appointment = pendingAppointments.find(apt => {
+      const aptPhone = apt.clientPhone?.replace(/\D/g, '') || '';
+      return phoneVariants.some(p =>
+        aptPhone.includes(p) || p.includes(aptPhone) ||
+        aptPhone === p || p === aptPhone,
+      );
+    });
+
+    if (!appointment) {
+      // Não encontrou agendamento pendente - não manipula
+      return { handled: false, response: '' };
+    }
+
+    if (isConfirm) {
+      // ========== CONFIRMA AGENDAMENTO ==========
+      await db
+        .update(appointments)
+        .set({
+          status: 'CONFIRMED',
+          confirmationStatus: 'CONFIRMED',
+          confirmedAt: new Date(),
+          confirmedVia: 'WHATSAPP',
+          updatedAt: new Date(),
+        })
+        .where(eq(appointments.id, appointment.id));
+
+      // Registra resposta na notificação
+      await db
+        .update(appointmentNotifications)
+        .set({
+          clientResponse: 'CONFIRMED',
+          clientRespondedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(appointmentNotifications.appointmentId, appointment.id),
+            eq(appointmentNotifications.notificationType, 'APPOINTMENT_CONFIRMATION'),
+          ),
+        );
+
+      this.logger.log(`Agendamento ${appointment.id} CONFIRMADO via WhatsApp por ${clientPhone}`);
+
+      const dateFormatted = new Date(appointment.date).toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      });
+
+      return {
+        handled: true,
+        response: `Ótimo! Seu agendamento está *confirmado*! ✅
+
+📅 ${dateFormatted}
+🕐 ${appointment.time}
+✂️ ${appointment.service}
+
+Aguardamos você! 💜`,
+      };
+    } else {
+      // ========== CANCELA AGENDAMENTO ==========
+      await db
+        .update(appointments)
+        .set({
+          status: 'CANCELLED',
+          cancellationReason: 'Cancelado pelo cliente via WhatsApp',
+          updatedAt: new Date(),
+        })
+        .where(eq(appointments.id, appointment.id));
+
+      // Registra resposta na notificação
+      await db
+        .update(appointmentNotifications)
+        .set({
+          clientResponse: 'CANCELLED',
+          clientRespondedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(appointmentNotifications.appointmentId, appointment.id),
+            eq(appointmentNotifications.notificationType, 'APPOINTMENT_CONFIRMATION'),
+          ),
+        );
+
+      // Cancela lembretes futuros
+      await db
+        .update(appointmentNotifications)
+        .set({
+          status: 'CANCELLED',
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(appointmentNotifications.appointmentId, appointment.id),
+            eq(appointmentNotifications.status, 'SCHEDULED'),
+          ),
+        );
+
+      this.logger.log(`Agendamento ${appointment.id} CANCELADO via WhatsApp por ${clientPhone}`);
+
+      return {
+        handled: true,
+        response: `Agendamento *cancelado* com sucesso. 😔
+
+Quando quiser, agende novamente! Estamos à disposição. 💜`,
+      };
+    }
   }
 
   /**

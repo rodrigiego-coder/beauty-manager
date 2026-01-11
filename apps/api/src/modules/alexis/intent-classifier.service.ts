@@ -17,6 +17,8 @@ export type Intent =
   | 'SERVICE_INFO'
   | 'PRICE_INFO'
   | 'HOURS_INFO'
+  | 'APPOINTMENT_CONFIRM'
+  | 'APPOINTMENT_DECLINE'
   | 'GENERAL';
 
 @Injectable()
@@ -26,6 +28,17 @@ export class IntentClassifierService {
    */
   classify(message: string): Intent {
     const lower = message.toLowerCase().trim();
+
+    // ========== CONFIRMAÇÃO DE AGENDAMENTO (prioridade alta) ==========
+    // Mensagens curtas de confirmação (SIM, S, Confirmo, etc)
+    if (this.isAppointmentConfirmation(lower)) {
+      return 'APPOINTMENT_CONFIRM';
+    }
+
+    // Mensagens curtas de recusa (NÃO, N, Cancelar, etc)
+    if (this.isAppointmentDecline(lower)) {
+      return 'APPOINTMENT_DECLINE';
+    }
 
     // Saudações (verificar primeiro pois são mais comuns no início)
     if (this.matchesAny(lower, INTENT_KEYWORDS.GREETING, true)) {
@@ -98,9 +111,89 @@ export class IntentClassifierService {
       SERVICE_INFO: 'Informação sobre Serviços',
       PRICE_INFO: 'Informação sobre Preços',
       HOURS_INFO: 'Horário de Funcionamento',
+      APPOINTMENT_CONFIRM: 'Confirmação de Agendamento',
+      APPOINTMENT_DECLINE: 'Recusa de Agendamento',
       GENERAL: 'Pergunta Geral',
     };
 
     return descriptions[intent];
+  }
+
+  /**
+   * Verifica se a mensagem é uma confirmação de agendamento
+   * Detecta: SIM, S, Sim, sim, Confirmo, Confirmado, Vou, Estarei aí
+   */
+  private isAppointmentConfirmation(message: string): boolean {
+    const confirmKeywords = [
+      'sim',
+      's',
+      'confirmo',
+      'confirmado',
+      'confirmada',
+      'confirmar',
+      'vou',
+      'vou sim',
+      'com certeza',
+      'pode confirmar',
+      'tá confirmado',
+      'ta confirmado',
+      'estarei aí',
+      'estarei ai',
+      'estarei lá',
+      'estarei la',
+      'ok',
+      'certo',
+      'beleza',
+      'combinado',
+    ];
+
+    // Mensagem deve ser curta (confirmações são geralmente curtas)
+    if (message.length > 50) return false;
+
+    return confirmKeywords.some(keyword => {
+      // Para palavras de 1-2 caracteres, deve ser exata
+      if (keyword.length <= 2) {
+        return message === keyword;
+      }
+      // Para outras, pode estar contida ou ser exata
+      return message === keyword || message.startsWith(keyword + ' ') || message.endsWith(' ' + keyword);
+    });
+  }
+
+  /**
+   * Verifica se a mensagem é uma recusa de agendamento
+   * Detecta: NÃO, N, Não, não, Cancelar, Cancela, Não vou
+   */
+  private isAppointmentDecline(message: string): boolean {
+    const declineKeywords = [
+      'não',
+      'nao',
+      'n',
+      'cancelar',
+      'cancela',
+      'cancelado',
+      'não vou',
+      'nao vou',
+      'não posso',
+      'nao posso',
+      'não dá',
+      'nao da',
+      'não vai dar',
+      'nao vai dar',
+      'desmarcar',
+      'desmarca',
+      'preciso cancelar',
+      'quero cancelar',
+    ];
+
+    // Mensagem deve ser curta
+    if (message.length > 50) return false;
+
+    return declineKeywords.some(keyword => {
+      if (keyword.length <= 2) {
+        return message === keyword;
+      }
+      return message === keyword || message.startsWith(keyword + ' ') || message.endsWith(' ' + keyword);
+    });
   }
 }
