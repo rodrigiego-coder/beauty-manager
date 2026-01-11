@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AutomationController } from './automation.controller';
+import { ZapiWebhookController } from './zapi-webhook.controller';
 import { AutomationService } from './automation.service';
 import { WhatsAppService } from './whatsapp.service';
 import { SMSService } from './sms.service';
@@ -7,7 +8,7 @@ import { MessageSchedulerService } from './message-scheduler.service';
 import { AutomationJobs } from './automation.jobs';
 
 @Module({
-  controllers: [AutomationController],
+  controllers: [AutomationController, ZapiWebhookController],
   providers: [
     AutomationService,
     WhatsAppService,
