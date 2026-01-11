@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { copyToClipboard } from '../utils/clipboard';
 import {
   Crown,
   Check,
@@ -250,9 +251,9 @@ export function SubscriptionPage() {
     }
   };
 
-  const handleCopyPix = () => {
+  const handleCopyPix = async () => {
     if (pixData?.qrCode) {
-      navigator.clipboard.writeText(pixData.qrCode);
+      await copyToClipboard(pixData.qrCode);
       setCopiedPix(true);
       setTimeout(() => setCopiedPix(false), 2000);
     }

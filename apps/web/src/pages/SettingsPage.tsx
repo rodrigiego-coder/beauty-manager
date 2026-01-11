@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { copyToClipboard } from '../utils/clipboard';
 import { Link } from 'react-router-dom';
 import {
   Building2,
@@ -214,9 +215,9 @@ export function SettingsPage() {
     }
   };
 
-  const copyBookingLink = () => {
+  const copyBookingLink = async () => {
     const link = `${window.location.origin}/agendar/${bookingSettings.slug}`;
-    navigator.clipboard.writeText(link);
+    await copyToClipboard(link);
     setMessage({ type: 'success', text: 'Link copiado para a area de transferencia!' });
   };
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { copyToClipboard as copyText } from '../utils/clipboard';
 import {
   Crown,
   Star,
@@ -152,8 +153,8 @@ export function ClientLoyaltyCard({ clientId, clientName, compact = false, onPoi
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string) => {
+    await copyText(text);
     setMessage({ type: 'success', text: 'Código copiado!' });
   };
 

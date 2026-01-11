@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { copyToClipboard as copyText } from '../utils/clipboard';
 import { Plus, Link2, Clipboard, Trash2, Eye, BarChart2, X, CheckCircle } from 'lucide-react';
 import api from '../services/api';
 
@@ -183,13 +184,9 @@ export default function CartLinksPage() {
   };
 
   const copyToClipboard = async (link: CartLink) => {
-    try {
-      await navigator.clipboard.writeText(link.publicUrl);
-      setCopiedId(link.id);
-      setTimeout(() => setCopiedId(null), 2000);
-    } catch (err) {
-      console.error('Erro ao copiar:', err);
-    }
+    await copyText(link.publicUrl);
+    setCopiedId(link.id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const resetForm = () => {
