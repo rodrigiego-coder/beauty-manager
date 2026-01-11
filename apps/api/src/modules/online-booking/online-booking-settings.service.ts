@@ -138,12 +138,22 @@ export class OnlineBookingSettingsService {
     if (dto.reminderHoursBefore !== undefined) updateData.reminderHoursBefore = dto.reminderHoursBefore;
 
     // Atualiza o slug na tabela salons (se fornecido)
+    let updatedSlug: string | null = null;
     if (dto.slug !== undefined && dto.slug !== '') {
       await this.db
         .update(schema.salons)
         .set({ slug: dto.slug, updatedAt: new Date() })
         .where(eq(schema.salons.id, salonId));
+      updatedSlug = dto.slug;
       this.logger.log(`Slug atualizado para salão ${salonId}: ${dto.slug}`);
+    } else {
+      // Busca slug atual do salão
+      const [salon] = await this.db
+        .select({ slug: schema.salons.slug })
+        .from(schema.salons)
+        .where(eq(schema.salons.id, salonId))
+        .limit(1);
+      updatedSlug = salon?.slug || null;
     }
 
     const [updated] = await this.db
@@ -153,7 +163,7 @@ export class OnlineBookingSettingsService {
       .returning();
 
     this.logger.log(`Configurações atualizadas para salão ${salonId}`);
-    return this.mapToResponse(updated);
+    return this.mapToResponse(updated, updatedSlug);
   }
 
   /**
