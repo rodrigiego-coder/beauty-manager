@@ -95,35 +95,35 @@ export class ScheduledMessagesService {
   }
 
   /**
-   * Agenda lembrete 1h antes do agendamento
+   * Agenda lembrete 1h30 antes do agendamento
    */
-  async scheduleReminder1h(appointment: any): Promise<void> {
+  async scheduleReminder1h30(appointment: any): Promise<void> {
     if (!appointment.clientPhone) return;
 
     const appointmentDateTime = this.parseAppointmentDateTime(appointment);
-    const reminderTime = addHours(appointmentDateTime, -1);
+    const reminderTime = addMinutes(appointmentDateTime, -90); // 1h30 = 90 minutos
 
     if (reminderTime <= new Date()) {
-      this.logger.debug(`Lembrete 1h já passou para agendamento ${appointment.id}`);
+      this.logger.debug(`Lembrete 1h30 já passou para agendamento ${appointment.id}`);
       return;
     }
 
     const variables = this.buildTemplateVariables(appointment);
-    const dedupeKey = `${appointment.id}:APPOINTMENT_REMINDER_1H`;
+    const dedupeKey = `${appointment.id}:APPOINTMENT_REMINDER_1H30`;
 
     await this.createNotificationIdempotent({
       salonId: appointment.salonId,
       appointmentId: appointment.id,
       recipientPhone: this.formatPhone(appointment.clientPhone),
       recipientName: appointment.clientName,
-      notificationType: 'APPOINTMENT_REMINDER_1H',
-      templateKey: 'appointment_reminder_1h',
+      notificationType: 'APPOINTMENT_REMINDER_1H30',
+      templateKey: 'appointment_reminder_1h30',
       templateVariables: variables,
       scheduledFor: reminderTime,
       dedupeKey,
     });
 
-    this.logger.log(`Lembrete 1h agendado para ${format(reminderTime, 'dd/MM HH:mm')}`);
+    this.logger.log(`Lembrete 1h30 agendado para ${format(reminderTime, 'dd/MM HH:mm')}`);
   }
 
   /**
@@ -190,7 +190,7 @@ export class ScheduledMessagesService {
     try {
       await this.scheduleAppointmentConfirmation(appointment, triageLink);
       await this.scheduleReminder24h(appointment, triageLink);
-      await this.scheduleReminder1h(appointment);
+      await this.scheduleReminder1h30(appointment);
     } catch (error) {
       this.logger.error(`Erro ao agendar notificações para ${appointment.id}:`, error);
       // Degradação graciosa: não propaga erro

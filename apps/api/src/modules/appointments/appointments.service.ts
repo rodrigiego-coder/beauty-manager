@@ -718,7 +718,7 @@ export class AppointmentsService {
           clientPhone: existing.clientPhone,
           clientName: existing.clientName,
         });
-        await this.scheduledMessagesService.scheduleReminder1h({
+        await this.scheduledMessagesService.scheduleReminder1h30({
           ...appointment,
           salonId,
           clientPhone: existing.clientPhone,

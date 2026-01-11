@@ -32,6 +32,7 @@ import { AppointmentHoldsService } from './appointment-holds.service';
 import { OtpService } from './otp.service';
 import { DepositsService } from './deposits.service';
 import { ClientBookingRulesService } from './client-booking-rules.service';
+import { ScheduledMessagesService } from '../notifications/scheduled-messages.service';
 import { randomUUID } from 'crypto';
 
 /**
@@ -51,6 +52,7 @@ export class PublicBookingController {
     private readonly otpService: OtpService,
     private readonly depositsService: DepositsService,
     private readonly rulesService: ClientBookingRulesService,
+    private readonly scheduledMessagesService: ScheduledMessagesService,
   ) {}
 
   /**
@@ -496,8 +498,11 @@ export class PublicBookingController {
       };
     }
 
-    // TODO: Enviar confirmação via WhatsApp
-    // await this.notificationService.sendBookingConfirmation(appointment);
+    // Agenda notificações automáticas (confirmação, lembrete 24h, lembrete 1h30)
+    await this.scheduledMessagesService.scheduleAllAppointmentNotifications({
+      ...appointment,
+      professionalName: professional.name,
+    });
 
     return {
       appointmentId: appointment.id,

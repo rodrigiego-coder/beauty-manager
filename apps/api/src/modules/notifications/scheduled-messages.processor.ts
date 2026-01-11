@@ -254,9 +254,10 @@ Até lá! 💜`;
       }
 
       case 'APPOINTMENT_REMINDER_1H':
+      case 'APPOINTMENT_REMINDER_1H30':
         return `Oi ${vars.nome}! ⏰
 
-Seu horário é *daqui a 1 hora*!
+Seu horário é *daqui a 1 hora e meia*!
 
 📅 Hoje às ${vars.horario}
 ✂️ ${vars.servico}
