@@ -487,7 +487,7 @@ export function FinancePage() {
                       border: '1px solid #e5e7eb',
                       borderRadius: '8px',
                     }}
-                    formatter={(value: number) => formatCurrency(value)}
+                    formatter={(value) => formatCurrency(value as number)}
                   />
                   <Area
                     type="monotone"
@@ -522,7 +522,7 @@ export function FinancePage() {
             {categoryData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Tooltip formatter={(value) => formatCurrency(value as number)} />
                   <Pie
                     data={categoryData}
                     cx="50%"
