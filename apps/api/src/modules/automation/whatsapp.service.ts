@@ -88,7 +88,7 @@ export class WhatsAppService {
     code: string,
     expirationMinutes: number = 10,
   ): Promise<WhatsAppSendResult> {
-    const message = `🔐 Seu código de verificação é: *${code}*\n\nVálido por ${expirationMinutes} minutos.\n\n_Beauty Manager_`;
+    const message = `Seu codigo de verificacao Beauty Manager e: *${code}*\n\nValido por ${expirationMinutes} minutos.`;
     return this.sendDirectMessage(phoneNumber, message);
   }
 
