@@ -600,7 +600,7 @@ export function ReportsPage() {
                               stroke="#9ca3af"
                             />
                             <Tooltip
-                              formatter={(value: number) => [formatCurrency(value), 'Faturamento']}
+                              formatter={(value) => [formatCurrency(value as number), 'Faturamento']}
                               labelFormatter={formatDate}
                               contentStyle={{
                                 backgroundColor: 'white',
@@ -727,7 +727,7 @@ export function ReportsPage() {
                               width={120}
                             />
                             <Tooltip
-                              formatter={(value: number) => [formatCurrency(value), 'Receita']}
+                              formatter={(value) => [formatCurrency(value as number), 'Receita']}
                               contentStyle={{
                                 backgroundColor: 'white',
                                 border: '1px solid #e5e7eb',
@@ -869,7 +869,7 @@ export function ReportsPage() {
                               width={120}
                             />
                             <Tooltip
-                              formatter={(value: number) => [formatCurrency(value), 'Receita']}
+                              formatter={(value) => [formatCurrency(value as number), 'Receita']}
                               contentStyle={{
                                 backgroundColor: 'white',
                                 border: '1px solid #e5e7eb',
@@ -1137,7 +1137,7 @@ export function ReportsPage() {
                               <Cell fill="#10b981" />
                             </Pie>
                             <Tooltip
-                              formatter={(value: number) => [value, 'Clientes']}
+                              formatter={(value) => [value, 'Clientes']}
                               contentStyle={{
                                 backgroundColor: 'white',
                                 border: '1px solid #e5e7eb',
