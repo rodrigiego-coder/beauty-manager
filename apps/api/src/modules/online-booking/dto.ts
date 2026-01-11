@@ -16,6 +16,7 @@ import {
 // ==================== ENUMS ====================
 
 export enum DepositType {
+  NONE = 'NONE',
   FIXED = 'FIXED',
   PERCENTAGE = 'PERCENTAGE',
 }

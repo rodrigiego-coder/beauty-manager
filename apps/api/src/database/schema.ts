@@ -3492,7 +3492,7 @@ export const onlineBookingSettings = pgTable('online_booking_settings', {
 
   // Depósito/sinal
   requireDeposit: boolean('require_deposit').default(false).notNull(),
-  depositType: varchar('deposit_type', { length: 20 }).default('FIXED'), // FIXED, PERCENTAGE
+  depositType: varchar('deposit_type', { length: 20 }).default('NONE'), // NONE, FIXED, PERCENTAGE
   depositValue: decimal('deposit_value', { precision: 10, scale: 2 }).default('0'),
   depositMinServices: decimal('deposit_min_services', { precision: 10, scale: 2 }).default('100'),
   depositAppliesTo: depositAppliesToEnum('deposit_applies_to').default('ALL'),

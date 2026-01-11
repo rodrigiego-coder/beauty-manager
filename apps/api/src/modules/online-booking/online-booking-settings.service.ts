@@ -64,7 +64,7 @@ export class OnlineBookingSettingsService {
         maxReschedules: 2,
         requirePhoneVerification: true,
         requireDeposit: false,
-        depositType: 'FIXED',
+        depositType: 'NONE',
         depositValue: '0',
         depositMinServices: '100',
         depositAppliesTo: 'ALL',
@@ -110,8 +110,17 @@ export class OnlineBookingSettingsService {
     if (dto.maxReschedules !== undefined) updateData.maxReschedules = dto.maxReschedules;
     if (dto.requirePhoneVerification !== undefined) updateData.requirePhoneVerification = dto.requirePhoneVerification;
     if (dto.requireDeposit !== undefined) updateData.requireDeposit = dto.requireDeposit;
-    if (dto.depositType !== undefined) updateData.depositType = dto.depositType;
-    if (dto.depositValue !== undefined) updateData.depositValue = String(dto.depositValue);
+    if (dto.depositType !== undefined) {
+      updateData.depositType = dto.depositType;
+      // Quando NONE, zera o valor e desabilita exigência de depósito
+      if (dto.depositType === 'NONE') {
+        updateData.depositValue = '0';
+        updateData.requireDeposit = false;
+      }
+    }
+    if (dto.depositValue !== undefined && dto.depositType !== 'NONE') {
+      updateData.depositValue = String(dto.depositValue);
+    }
     if (dto.depositMinServices !== undefined) updateData.depositMinServices = String(dto.depositMinServices);
     if (dto.depositAppliesTo !== undefined) updateData.depositAppliesTo = dto.depositAppliesTo;
     if (dto.allowNewClients !== undefined) updateData.allowNewClients = dto.allowNewClients;
