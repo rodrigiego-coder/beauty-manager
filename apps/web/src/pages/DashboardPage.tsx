@@ -236,11 +236,11 @@ export function DashboardPage() {
     setPeriod(newPeriod);
   };
 
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value: number | null | undefined) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
-    }).format(value);
+    }).format(value ?? 0);
   };
 
   const formatTime = (dateString: string) => {
@@ -547,17 +547,17 @@ export function DashboardPage() {
               <div className="flex items-center gap-2 text-sm">
                 <Banknote className="w-4 h-4 text-emerald-500" />
                 <span className="text-gray-600">Dinheiro:</span>
-                <span className="font-medium">{formatCurrency(stats.revenueByPaymentMethod.cash)}</span>
+                <span className="font-medium">{formatCurrency(stats.revenueByPaymentMethod?.cash ?? 0)}</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <CreditCard className="w-4 h-4 text-blue-500" />
                 <span className="text-gray-600">Cartao:</span>
-                <span className="font-medium">{formatCurrency(stats.revenueByPaymentMethod.creditCard + stats.revenueByPaymentMethod.debitCard)}</span>
+                <span className="font-medium">{formatCurrency((stats.revenueByPaymentMethod?.creditCard ?? 0) + (stats.revenueByPaymentMethod?.debitCard ?? 0))}</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <Smartphone className="w-4 h-4 text-violet-500" />
                 <span className="text-gray-600">PIX:</span>
-                <span className="font-medium">{formatCurrency(stats.revenueByPaymentMethod.pix)}</span>
+                <span className="font-medium">{formatCurrency(stats.revenueByPaymentMethod?.pix ?? 0)}</span>
               </div>
             </div>
           )}
@@ -800,21 +800,21 @@ export function DashboardPage() {
               <div className="flex items-center justify-center gap-2 mb-1">
                 <Users className="w-4 h-4 text-white/80" />
               </div>
-              <p className="text-2xl font-bold">{loyaltyStats.totalEnrolledClients}</p>
+              <p className="text-2xl font-bold">{loyaltyStats.totalEnrolledClients ?? 0}</p>
               <p className="text-xs text-white/80">Clientes Inscritos</p>
             </div>
             <div className="text-center p-4 bg-white/10 rounded-lg">
               <div className="flex items-center justify-center gap-2 mb-1">
                 <Crown className="w-4 h-4 text-white/80" />
               </div>
-              <p className="text-2xl font-bold">{loyaltyStats.pointsInCirculation.toLocaleString()}</p>
+              <p className="text-2xl font-bold">{(loyaltyStats.pointsInCirculation ?? 0).toLocaleString()}</p>
               <p className="text-xs text-white/80">Pontos em Circulacao</p>
             </div>
             <div className="text-center p-4 bg-white/10 rounded-lg">
               <div className="flex items-center justify-center gap-2 mb-1">
                 <Gift className="w-4 h-4 text-white/80" />
               </div>
-              <p className="text-2xl font-bold">{loyaltyStats.redemptionsThisMonth}</p>
+              <p className="text-2xl font-bold">{loyaltyStats.redemptionsThisMonth ?? 0}</p>
               <p className="text-xs text-white/80">Resgates (Mes)</p>
             </div>
           </div>
