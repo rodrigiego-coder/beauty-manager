@@ -25,6 +25,7 @@ import {
   UserX,
   Flag,
   CalendarX,
+  Search,
 } from 'lucide-react';
 import api, { getTriageForAppointment } from '../services/api';
 import { TriageSummary } from '../components/TriageSummary';
@@ -475,6 +476,18 @@ export function AppointmentsPage() {
     });
     setClientSearch(client.name);
     setShowClientDropdown(false);
+  };
+
+  const clearClientSelection = () => {
+    setFormData({
+      ...formData,
+      clientId: '',
+      clientName: '',
+      clientPhone: '',
+      clientEmail: '',
+    });
+    setClientSearch('');
+    setClientResults([]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -973,66 +986,127 @@ export function AppointmentsPage() {
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           {/* Client Section */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Cliente</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={clientSearch}
-                onChange={(e) => {
-                  setClientSearch(e.target.value);
-                  setShowClientDropdown(true);
-                }}
-                onFocus={() => setShowClientDropdown(true)}
-                className="w-full border rounded-lg px-3 py-2"
-                placeholder="Buscar cliente..."
-              />
-              {showClientDropdown && clientResults.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {clientResults.map(client => (
-                    <div
-                      key={client.id}
-                      className="p-2 hover:bg-gray-100 cursor-pointer"
-                      onClick={() => handleClientSelect(client)}
-                    >
-                      <div className="font-medium">{client.name}</div>
-                      <div className="text-sm text-gray-500">{client.phone}</div>
-                      {(client.noShowCount || 0) > 0 && (
-                        <div className="text-xs text-red-500">
-                          <AlertTriangle className="w-3 h-3 inline mr-1" />
-                          {client.noShowCount} no-shows
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-gray-700">Cliente</label>
 
-          {/* Walk-in client fields */}
-          {!formData.clientId && (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Nome</label>
-                <input
-                  type="text"
-                  value={formData.clientName}
-                  onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2"
-                />
+            {/* Cliente selecionado - mostra card */}
+            {formData.clientId ? (
+              <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
+                    <User className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-gray-900">{formData.clientName}</div>
+                    <div className="text-sm text-gray-500 flex items-center gap-1">
+                      <Phone className="w-3 h-3" />
+                      {formData.clientPhone || 'Sem telefone'}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearClientSelection}
+                  className="p-1 hover:bg-emerald-100 rounded-full transition-colors"
+                  title="Limpar seleção"
+                >
+                  <X className="w-5 h-5 text-gray-500 hover:text-gray-700" />
+                </button>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Telefone</label>
-                <input
-                  type="text"
-                  value={formData.clientPhone}
-                  onChange={(e) => setFormData({ ...formData, clientPhone: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2"
-                />
-              </div>
-            </div>
-          )}
+            ) : (
+              <>
+                {/* Campo de busca */}
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-4 w-4 text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    value={clientSearch}
+                    onChange={(e) => {
+                      setClientSearch(e.target.value);
+                      setShowClientDropdown(true);
+                      // Limpa dados de walk-in ao buscar
+                      if (formData.clientName || formData.clientPhone) {
+                        setFormData({ ...formData, clientName: '', clientPhone: '', clientEmail: '' });
+                      }
+                    }}
+                    onFocus={() => setShowClientDropdown(true)}
+                    className="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Buscar cliente pelo nome ou telefone..."
+                  />
+                  {showClientDropdown && clientResults.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {clientResults.map(client => (
+                        <div
+                          key={client.id}
+                          className="p-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0"
+                          onClick={() => handleClientSelect(client)}
+                        >
+                          <div className="font-medium text-gray-900">{client.name}</div>
+                          <div className="text-sm text-gray-500">{client.phone}</div>
+                          {(client.noShowCount || 0) > 0 && (
+                            <div className="text-xs text-red-500 mt-1">
+                              <AlertTriangle className="w-3 h-3 inline mr-1" />
+                              {client.noShowCount} no-show(s)
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Divisor */}
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-200"></div>
+                  </div>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="px-3 bg-white text-gray-500">ou cadastre um novo cliente</span>
+                  </div>
+                </div>
+
+                {/* Campos para novo cliente (walk-in) */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Nome</label>
+                    <input
+                      type="text"
+                      value={formData.clientName}
+                      onChange={(e) => {
+                        setFormData({ ...formData, clientName: e.target.value });
+                        // Limpa busca ao digitar nome
+                        if (clientSearch) {
+                          setClientSearch('');
+                          setClientResults([]);
+                        }
+                      }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Nome do cliente"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Telefone</label>
+                    <input
+                      type="text"
+                      value={formData.clientPhone}
+                      onChange={(e) => {
+                        setFormData({ ...formData, clientPhone: e.target.value });
+                        // Limpa busca ao digitar telefone
+                        if (clientSearch) {
+                          setClientSearch('');
+                          setClientResults([]);
+                        }
+                      }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="(00) 00000-0000"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Service */}
           <div>

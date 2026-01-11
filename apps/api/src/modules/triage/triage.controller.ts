@@ -7,9 +7,11 @@ import {
   Req,
   HttpCode,
   HttpStatus,
-  NotFoundException,
   BadRequestException,
+  Headers,
+  Ip,
 } from '@nestjs/common';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { TriageService } from './triage.service';
 import { Public } from '../../common/decorators/public.decorator';
 
@@ -27,13 +29,20 @@ interface SubmitTriageDto {
   consentAccepted: boolean;
 }
 
+interface OverrideTriageDto {
+  reason: string;
+}
+
 @Controller('triage')
 export class TriageController {
   constructor(private readonly triageService: TriageService) {}
 
+  // ==================== ROTAS AUTENTICADAS ====================
+
   /**
    * Lista todos os formulários do salão
    */
+  @SkipThrottle()
   @Get('forms')
   async listForms(@Req() req: any) {
     const salonId = req.user.salonId;
@@ -43,6 +52,7 @@ export class TriageController {
   /**
    * Busca formulário com perguntas
    */
+  @SkipThrottle()
   @Get('forms/:formId')
   async getForm(@Param('formId') formId: string) {
     return this.triageService.getFormWithQuestions(formId);
@@ -51,6 +61,7 @@ export class TriageController {
   /**
    * Busca formulário para um serviço específico
    */
+  @SkipThrottle()
   @Get('service/:serviceId')
   async getFormForService(@Req() req: any, @Param('serviceId') serviceId: string) {
     const salonId = req.user.salonId;
@@ -66,6 +77,7 @@ export class TriageController {
   /**
    * Busca triagem de um agendamento
    */
+  @SkipThrottle()
   @Get('appointment/:appointmentId')
   async getTriageForAppointment(@Param('appointmentId') appointmentId: string) {
     const triage = await this.triageService.getTriageForAppointment(appointmentId);
@@ -75,6 +87,15 @@ export class TriageController {
     }
 
     return triage;
+  }
+
+  /**
+   * Verifica se pode iniciar atendimento
+   */
+  @SkipThrottle()
+  @Get('appointment/:appointmentId/can-start')
+  async canStartAppointment(@Param('appointmentId') appointmentId: string) {
+    return this.triageService.canStartAppointment(appointmentId);
   }
 
   /**
@@ -98,23 +119,64 @@ export class TriageController {
   }
 
   /**
-   * ========================================
-   * ROTAS PÚBLICAS (acesso via token)
-   * ========================================
+   * Cria override de triagem (libera bloqueio)
+   * CRÍTICO: Requer justificativa mínima de 20 caracteres
    */
+  @Post('appointment/:appointmentId/override')
+  @HttpCode(HttpStatus.OK)
+  async createTriageOverride(
+    @Param('appointmentId') appointmentId: string,
+    @Body() body: OverrideTriageDto,
+    @Req() req: any,
+    @Ip() ip: string,
+  ) {
+    const user = req.user;
+
+    if (!body.reason || body.reason.length < 20) {
+      throw new BadRequestException('Justificativa obrigatória (mínimo 20 caracteres)');
+    }
+
+    await this.triageService.createTriageOverride(
+      appointmentId,
+      body.reason,
+      user.id,
+      user.name,
+      user.role,
+      ip,
+    );
+
+    return {
+      success: true,
+      message: 'Bloqueio liberado. Esta ação foi registrada.',
+    };
+  }
+
+  // ==================== ROTAS PÚBLICAS (SEM AUTENTICAÇÃO) ====================
 
   /**
    * Busca formulário por token público
+   * RATE LIMIT: 5 requests por minuto por IP
    */
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Get('public/:token')
-  async getPublicForm(@Param('token') token: string) {
-    const response = await this.triageService.getResponseByToken(token);
+  async getPublicForm(
+    @Param('token') token: string,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent: string,
+  ) {
+    const result = await this.triageService.getResponseByToken(token, ip, userAgent);
 
-    if (!response) {
-      throw new NotFoundException('Formulário não encontrado ou link inválido');
+    if (!result) {
+      return {
+        error: true,
+        message: 'Formulário não encontrado ou link inválido',
+      };
     }
 
+    const { response, form } = result;
+
+    // Se já foi completado
     if (response.status === 'COMPLETED') {
       return {
         completed: true,
@@ -122,17 +184,6 @@ export class TriageController {
         completedAt: response.completedAt,
       };
     }
-
-    if (response.expiresAt && new Date(response.expiresAt) < new Date()) {
-      return {
-        expired: true,
-        message: 'Este formulário expirou',
-        expiresAt: response.expiresAt,
-      };
-    }
-
-    // Busca o formulário completo com perguntas
-    const form = await this.triageService.getFormWithQuestions(response.formId);
 
     return {
       response: {
@@ -146,48 +197,41 @@ export class TriageController {
 
   /**
    * Submete respostas via token público
+   * RATE LIMIT: 3 requests por minuto por IP
    */
   @Public()
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
   @Post('public/:token/submit')
   @HttpCode(HttpStatus.OK)
   async submitPublicForm(
     @Param('token') token: string,
     @Body() body: SubmitTriageDto,
-    @Req() req: any,
+    @Ip() ip: string,
+    @Headers('user-agent') userAgent: string,
   ) {
-    const response = await this.triageService.getResponseByToken(token);
-
-    if (!response) {
-      throw new NotFoundException('Formulário não encontrado ou link inválido');
-    }
-
     if (!body.answers || !Array.isArray(body.answers)) {
       throw new BadRequestException('answers é obrigatório e deve ser um array');
     }
 
-    // Captura IP do cliente
-    const ipAddress =
-      req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-      req.headers['x-real-ip'] ||
-      req.connection?.remoteAddress ||
-      req.ip;
+    if (body.answers.length === 0) {
+      throw new BadRequestException('É necessário responder pelo menos uma pergunta');
+    }
 
     const result = await this.triageService.submitTriageAnswers(
-      response.id,
+      token,
       body.answers,
       body.consentAccepted,
-      ipAddress,
+      ip,
+      userAgent,
     );
 
     return {
-      success: true,
+      success: result.success,
       hasRisks: result.hasRisks,
       overallRiskLevel: result.overallRiskLevel,
       canProceed: result.canProceed,
       blockers: result.blockers,
-      message: result.canProceed
-        ? 'Pré-avaliação concluída com sucesso!'
-        : 'Pré-avaliação concluída. Atenção: existem condições que impedem o procedimento.',
+      message: result.message,
     };
   }
 }

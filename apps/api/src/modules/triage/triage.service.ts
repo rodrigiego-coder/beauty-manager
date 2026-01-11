@@ -1,20 +1,29 @@
-import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
-import { eq, and, asc } from 'drizzle-orm';
+import {
+  Injectable,
+  Inject,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
+import { eq, and, asc, sql, lte } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.module';
 import {
   triageForms,
   triageQuestions,
   triageResponses,
   triageAnswers,
+  triageOverrides,
   appointments,
   appointmentNotifications,
   TriageForm,
   TriageQuestion,
   TriageResponse,
 } from '../../database/schema';
-import { randomBytes } from 'crypto';
-import { format } from 'date-fns';
+import { randomBytes, createHash } from 'crypto';
+import { format, addHours, min } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { AuditService } from '../audit/audit.service';
 
 interface TriageAnswerInput {
   questionId: string;
@@ -36,11 +45,49 @@ interface RiskSummary {
   low: RiskData[];
 }
 
+// Máximo de tentativas de acesso por token
+const MAX_ACCESS_ATTEMPTS = 10;
+
+// Tempo de expiração padrão (72h) se agendamento não tiver data
+const DEFAULT_EXPIRATION_HOURS = 72;
+
 @Injectable()
 export class TriageService {
   private readonly logger = new Logger(TriageService.name);
 
-  constructor(@Inject(DATABASE_CONNECTION) private db: any) {}
+  constructor(
+    @Inject(DATABASE_CONNECTION) private db: any,
+    private readonly auditService: AuditService,
+  ) {}
+
+  // ==================== UTILIDADES DE SEGURANÇA ====================
+
+  /**
+   * Gera hash SHA-256 do token
+   * IMPORTANTE: Token raw NUNCA é armazenado
+   */
+  private hashToken(rawToken: string): string {
+    return createHash('sha256').update(rawToken).digest('hex');
+  }
+
+  /**
+   * Gera token criptograficamente seguro
+   */
+  private generateSecureToken(): { raw: string; hash: string } {
+    const raw = randomBytes(32).toString('hex'); // 64 chars
+    const hash = this.hashToken(raw);
+    return { raw, hash };
+  }
+
+  /**
+   * Mascara token para logs (nunca expor token completo)
+   */
+  private maskToken(token: string): string {
+    if (!token || token.length < 12) return '***';
+    return `${token.substring(0, 8)}...${token.substring(token.length - 4)}`;
+  }
+
+  // ==================== FORMULÁRIOS ====================
 
   /**
    * Busca formulário ativo para um serviço
@@ -58,7 +105,6 @@ export class TriageService {
 
     if (!forms.length) return null;
 
-    // Tenta encontrar form específico para o serviço
     if (serviceId) {
       const specificForm = forms.find((form: TriageForm) => {
         if (!form.serviceIds) return false;
@@ -67,7 +113,6 @@ export class TriageService {
       if (specificForm) return specificForm;
     }
 
-    // Retorna form padrão (QUIMICA ou primeiro disponível)
     return forms.find((f: TriageForm) => f.serviceCategory === 'QUIMICA') || forms[0];
   }
 
@@ -96,7 +141,6 @@ export class TriageService {
       )
       .orderBy(asc(triageQuestions.sortOrder));
 
-    // Agrupa por categoria
     const groupedQuestions = this.groupQuestionsByCategory(questions);
 
     return {
@@ -107,14 +151,28 @@ export class TriageService {
   }
 
   /**
+   * Lista todos os formulários de um salão
+   */
+  async listForms(salonId: string): Promise<TriageForm[]> {
+    return this.db
+      .select()
+      .from(triageForms)
+      .where(eq(triageForms.salonId, salonId))
+      .orderBy(asc(triageForms.name));
+  }
+
+  // ==================== CRIAÇÃO DE TRIAGEM ====================
+
+  /**
    * Cria resposta de triagem para um agendamento
+   * SEGURANÇA: Armazena apenas hash do token
    */
   async createTriageResponse(
     salonId: string,
     appointmentId: string,
     formId: string,
     clientId?: string,
-  ): Promise<any> {
+  ): Promise<{ id: string; publicLink: string; expiresAt: Date; alreadyExists?: boolean }> {
     // Verifica se já existe resposta para este agendamento
     const [existing] = await this.db
       .select()
@@ -123,9 +181,33 @@ export class TriageService {
       .limit(1);
 
     if (existing) {
+      // Se já existe e está pendente, regenerar token
+      if (existing.status === 'PENDING' && !existing.usedAt) {
+        const { raw, hash } = this.generateSecureToken();
+
+        await this.db
+          .update(triageResponses)
+          .set({
+            tokenHash: hash,
+            accessToken: null, // Remove token legado
+            accessAttempts: 0,
+            updatedAt: new Date(),
+          })
+          .where(eq(triageResponses.id, existing.id));
+
+        return {
+          id: existing.id,
+          publicLink: this.generatePublicLink(raw),
+          expiresAt: existing.expiresAt,
+          alreadyExists: true,
+        };
+      }
+
+      // Já foi usado ou completado
       return {
-        ...existing,
-        publicLink: this.generatePublicLink(existing.accessToken),
+        id: existing.id,
+        publicLink: '', // Não gerar novo link
+        expiresAt: existing.expiresAt,
         alreadyExists: true,
       };
     }
@@ -149,10 +231,16 @@ export class TriageService {
 
     const appointmentDate = appointment?.date
       ? new Date(`${appointment.date}T${appointment.time || appointment.startTime || '23:59'}:00`)
-      : new Date(Date.now() + 24 * 60 * 60 * 1000);
+      : addHours(new Date(), DEFAULT_EXPIRATION_HOURS);
 
-    // Gera token único para acesso público
-    const accessToken = randomBytes(32).toString('hex');
+    // Expiração: menor entre 72h ou data do agendamento
+    const expiresAt = min([
+      addHours(new Date(), DEFAULT_EXPIRATION_HOURS),
+      appointmentDate,
+    ]);
+
+    // Gera token seguro
+    const { raw, hash } = this.generateSecureToken();
 
     const [response] = await this.db
       .insert(triageResponses)
@@ -163,53 +251,184 @@ export class TriageService {
         clientId: clientId || null,
         formVersion: form.version,
         status: 'PENDING',
-        expiresAt: appointmentDate,
-        accessToken,
+        expiresAt,
+        tokenHash: hash,        // ← Armazena HASH
+        accessToken: null,       // ← Não armazena token raw
+        accessAttempts: 0,
       })
       .returning();
 
-    this.logger.log(`Triagem criada para agendamento ${appointmentId}, token: ${accessToken.substring(0, 8)}...`);
+    this.logger.log(
+      `Triagem criada para agendamento ${appointmentId}, token: ${this.maskToken(raw)}`,
+    );
 
     return {
-      ...response,
-      publicLink: this.generatePublicLink(accessToken),
+      id: response.id,
+      publicLink: this.generatePublicLink(raw),
+      expiresAt,
     };
   }
 
+  // ==================== ACESSO PÚBLICO (COM SEGURANÇA) ====================
+
   /**
    * Busca resposta por token (acesso público)
+   * SEGURANÇA: Valida hash, expiração, uso único, rate limit
    */
-  async getResponseByToken(token: string): Promise<TriageResponse | null> {
+  async getResponseByToken(
+    rawToken: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ response: TriageResponse; form: any } | null> {
+    const tokenHash = this.hashToken(rawToken);
+
+    // Busca por hash (não por token raw)
     const [response] = await this.db
       .select()
       .from(triageResponses)
-      .where(eq(triageResponses.accessToken, token))
+      .where(eq(triageResponses.tokenHash, tokenHash))
       .limit(1);
 
-    return response || null;
+    // Fallback: busca por token legado (migração)
+    if (!response) {
+      const [legacyResponse] = await this.db
+        .select()
+        .from(triageResponses)
+        .where(eq(triageResponses.accessToken, rawToken))
+        .limit(1);
+
+      if (legacyResponse) {
+        // Migra para hash
+        await this.db
+          .update(triageResponses)
+          .set({
+            tokenHash,
+            accessToken: null,
+          })
+          .where(eq(triageResponses.id, legacyResponse.id));
+
+        return this.validateAndReturnResponse(legacyResponse, ipAddress, userAgent);
+      }
+
+      throw new NotFoundException('Triagem não encontrada');
+    }
+
+    return this.validateAndReturnResponse(response, ipAddress, userAgent);
   }
 
   /**
+   * Valida resposta e retorna com formulário
+   */
+  private async validateAndReturnResponse(
+    response: TriageResponse,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ response: TriageResponse; form: any }> {
+    // 1. Verifica rate limit (accessAttempts pode ser null em registros antigos)
+    const attempts = response.accessAttempts ?? 0;
+    if (attempts >= MAX_ACCESS_ATTEMPTS) {
+      this.logger.warn(`Rate limit excedido para triagem ${response.id}`);
+      throw new ForbiddenException('Muitas tentativas de acesso. Solicite novo link.');
+    }
+
+    // 2. Verifica expiração
+    if (response.expiresAt && new Date() > new Date(response.expiresAt)) {
+      await this.db
+        .update(triageResponses)
+        .set({ status: 'EXPIRED' })
+        .where(eq(triageResponses.id, response.id));
+
+      await this.auditService.log({
+        salonId: response.salonId,
+        entityType: 'triage',
+        entityId: response.id,
+        action: 'TOKEN_EXPIRED',
+        ipAddress,
+        userAgent,
+      });
+
+      throw new BadRequestException('Link expirado. Solicite novo link ao salão.');
+    }
+
+    // 3. Verifica uso único
+    if (response.usedAt) {
+      throw new BadRequestException('Este formulário já foi preenchido.');
+    }
+
+    // 4. Verifica se foi invalidado
+    if (response.invalidatedAt) {
+      throw new BadRequestException(`Link invalidado: ${response.invalidatedReason || 'Motivo não informado'}`);
+    }
+
+    // 5. Registra acesso
+    await this.db
+      .update(triageResponses)
+      .set({
+        accessAttempts: sql`${triageResponses.accessAttempts} + 1`,
+        lastAccessIp: ipAddress,
+        lastAccessUserAgent: userAgent,
+        updatedAt: new Date(),
+      })
+      .where(eq(triageResponses.id, response.id));
+
+    // 6. Audit log
+    await this.auditService.logPublicAccess({
+      salonId: response.salonId,
+      entityType: 'triage',
+      entityId: response.id,
+      ipAddress,
+      userAgent,
+      metadata: { accessAttempts: attempts + 1 },
+    });
+
+    // 7. Busca formulário com perguntas
+    const form = await this.getFormWithQuestions(response.formId);
+
+    return { response, form };
+  }
+
+  // ==================== SUBMISSÃO DE RESPOSTAS ====================
+
+  /**
    * Submete respostas do formulário
+   * SEGURANÇA: Marca token como usado após submissão
    */
   async submitTriageAnswers(
-    responseId: string,
+    rawToken: string,
     answers: TriageAnswerInput[],
     consentAccepted: boolean,
     ipAddress?: string,
+    userAgent?: string,
   ): Promise<any> {
-    const [response] = await this.db
+    const tokenHash = this.hashToken(rawToken);
+
+    // Busca por hash
+    let [response] = await this.db
       .select()
       .from(triageResponses)
-      .where(eq(triageResponses.id, responseId))
+      .where(eq(triageResponses.tokenHash, tokenHash))
       .limit(1);
 
+    // Fallback legado
     if (!response) {
-      throw new NotFoundException('Resposta de triagem não encontrada');
+      [response] = await this.db
+        .select()
+        .from(triageResponses)
+        .where(eq(triageResponses.accessToken, rawToken))
+        .limit(1);
     }
 
+    if (!response) {
+      throw new NotFoundException('Triagem não encontrada');
+    }
+
+    // Validações de segurança
     if (response.status === 'COMPLETED') {
       throw new BadRequestException('Este formulário já foi preenchido');
+    }
+
+    if (response.usedAt) {
+      throw new BadRequestException('Este link já foi utilizado');
     }
 
     if (response.expiresAt && new Date(response.expiresAt) < new Date()) {
@@ -259,15 +478,13 @@ export class TriageService {
           blockers.push(question.riskMessage || question.questionText);
         }
 
-        // Atualiza nível geral
         if (question.riskLevel === 'CRITICAL') overallRiskLevel = 'CRITICAL';
         else if (question.riskLevel === 'HIGH' && overallRiskLevel !== 'CRITICAL') overallRiskLevel = 'HIGH';
         else if (question.riskLevel === 'MEDIUM' && !['CRITICAL', 'HIGH'].includes(overallRiskLevel)) overallRiskLevel = 'MEDIUM';
       }
 
-      // Salva resposta individual
       await this.db.insert(triageAnswers).values({
-        responseId,
+        responseId: response.id,
         questionId: answer.questionId,
         answerValue: answer.value,
         triggeredRisk,
@@ -276,8 +493,8 @@ export class TriageService {
       });
     }
 
-    // Atualiza resposta principal
-    const [updatedResponse] = await this.db
+    // Atualiza resposta principal - MARCA COMO USADO
+    await this.db
       .update(triageResponses)
       .set({
         status: 'COMPLETED',
@@ -289,14 +506,60 @@ export class TriageService {
         consentIpAddress: ipAddress || null,
         completedAt: new Date(),
         completedVia: 'WEB',
+        usedAt: new Date(),  // ← MARCA TOKEN COMO USADO
+        tokenHash: null,     // ← INVALIDA HASH (opcional, extra segurança)
         updatedAt: new Date(),
       })
-      .where(eq(triageResponses.id, responseId))
-      .returning();
+      .where(eq(triageResponses.id, response.id));
 
-    this.logger.log(`Triagem ${responseId} concluída. Riscos: ${hasRisks}, Nível: ${overallRiskLevel}`);
+    // Audit log
+    await this.auditService.log({
+      salonId: response.salonId,
+      entityType: 'triage',
+      entityId: response.id,
+      action: 'TOKEN_USED',
+      ipAddress,
+      userAgent,
+      metadata: {
+        hasRisks,
+        overallRiskLevel,
+        blockersCount: blockers.length,
+      },
+    });
 
-    // Notificar cliente que triagem foi recebida
+    this.logger.log(
+      `Triagem ${response.id} concluída. Riscos: ${hasRisks}, Nível: ${overallRiskLevel}`,
+    );
+
+    // Notificar cliente
+    await this.scheduleTriageCompletedNotification(response, hasRisks, overallRiskLevel);
+
+    if (riskSummary.critical.length > 0) {
+      this.logger.warn(`ALERTA: Triagem com risco CRÍTICO - Agendamento ${response.appointmentId}`);
+    }
+
+    return {
+      success: true,
+      hasRisks,
+      overallRiskLevel: hasRisks ? overallRiskLevel : null,
+      canProceed: blockers.length === 0,
+      blockers,
+      message: blockers.length > 0
+        ? 'Foram identificados riscos que impedem o procedimento. Entre em contato com o salão.'
+        : hasRisks
+          ? 'Triagem concluída. Alguns pontos de atenção foram identificados.'
+          : 'Triagem concluída com sucesso!',
+    };
+  }
+
+  /**
+   * Agenda notificação de triagem concluída
+   */
+  private async scheduleTriageCompletedNotification(
+    response: TriageResponse,
+    hasRisks: boolean,
+    overallRiskLevel: string,
+  ): Promise<void> {
     try {
       const [appointment] = await this.db
         .select()
@@ -304,58 +567,45 @@ export class TriageService {
         .where(eq(appointments.id, response.appointmentId))
         .limit(1);
 
-      if (appointment?.clientPhone) {
-        const dateFormatted = format(new Date(appointment.date), "EEEE, dd 'de' MMMM", {
-          locale: ptBR,
-        });
+      if (!appointment?.clientPhone) return;
 
-        await this.db.insert(appointmentNotifications).values({
-          salonId: response.salonId,
-          appointmentId: response.appointmentId,
-          recipientPhone: this.formatPhone(appointment.clientPhone),
-          recipientName: appointment.clientName,
-          notificationType: 'TRIAGE_COMPLETED',
-          templateVariables: {
-            nome: appointment.clientName || 'Cliente',
-            data: dateFormatted,
-            horario: appointment.time || appointment.startTime,
-            hasRisks: hasRisks ? 'true' : 'false',
-            riskLevel: overallRiskLevel,
-          },
-          scheduledFor: new Date(), // Enviar imediatamente
-          status: 'PENDING',
-        });
+      const dateFormatted = format(new Date(appointment.date), "EEEE, dd 'de' MMMM", {
+        locale: ptBR,
+      });
 
-        this.logger.log(`Notificação TRIAGE_COMPLETED agendada para ${appointment.clientPhone}`);
+      // DedupeKey para idempotência
+      const dedupeKey = `${response.appointmentId}:TRIAGE_COMPLETED`;
+
+      await this.db.insert(appointmentNotifications).values({
+        salonId: response.salonId,
+        appointmentId: response.appointmentId,
+        recipientPhone: this.formatPhone(appointment.clientPhone),
+        recipientName: appointment.clientName,
+        notificationType: 'TRIAGE_COMPLETED',
+        templateVariables: {
+          nome: appointment.clientName || 'Cliente',
+          data: dateFormatted,
+          horario: appointment.time || appointment.startTime,
+          hasRisks: hasRisks ? 'true' : 'false',
+          riskLevel: overallRiskLevel,
+        },
+        scheduledFor: new Date(),
+        status: 'PENDING',
+        dedupeKey,
+      });
+
+      this.logger.log(`Notificação TRIAGE_COMPLETED agendada para ${appointment.clientPhone}`);
+    } catch (error: any) {
+      // Ignora erro de duplicidade (idempotência)
+      if (error.code === '23505') {
+        this.logger.debug('Notificação TRIAGE_COMPLETED já existe (idempotente)');
+        return;
       }
-
-      // Se tem riscos críticos, logar alerta
-      if (riskSummary.critical.length > 0) {
-        this.logger.warn(
-          `ALERTA: Triagem com risco CRÍTICO - Agendamento ${response.appointmentId}`
-        );
-      }
-    } catch (error) {
       this.logger.warn(`Erro ao notificar conclusão de triagem: ${error}`);
     }
-
-    return {
-      ...updatedResponse,
-      blockers,
-      canProceed: blockers.length === 0,
-    };
   }
 
-  /**
-   * Formata telefone para padrão internacional
-   */
-  private formatPhone(phone: string): string {
-    let cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length <= 11) {
-      cleaned = '55' + cleaned;
-    }
-    return cleaned;
-  }
+  // ==================== CONSULTAS ====================
 
   /**
    * Busca respostas de triagem de um agendamento
@@ -386,22 +636,124 @@ export class TriageService {
       .leftJoin(triageQuestions, eq(triageAnswers.questionId, triageQuestions.id))
       .where(eq(triageAnswers.responseId, response.id));
 
+    // Busca overrides se houver
+    const overrides = await this.db
+      .select()
+      .from(triageOverrides)
+      .where(eq(triageOverrides.triageId, response.id));
+
     return {
       ...response,
       answers,
+      overrides,
+      hasOverride: overrides.length > 0,
     };
   }
 
   /**
-   * Lista todos os formulários de um salão
+   * Verifica se pode iniciar atendimento
    */
-  async listForms(salonId: string): Promise<TriageForm[]> {
-    return this.db
-      .select()
-      .from(triageForms)
-      .where(eq(triageForms.salonId, salonId))
-      .orderBy(asc(triageForms.name));
+  async canStartAppointment(appointmentId: string): Promise<{
+    canStart: boolean;
+    reason?: string;
+    triageStatus?: string;
+    hasBlockers?: boolean;
+    hasOverride?: boolean;
+  }> {
+    const triage = await this.getTriageForAppointment(appointmentId);
+
+    // Sem triagem = pode iniciar
+    if (!triage) {
+      return { canStart: true };
+    }
+
+    // Triagem pendente
+    if (triage.status === 'PENDING') {
+      return {
+        canStart: false,
+        reason: 'Aguardando preenchimento da pré-avaliação pelo cliente.',
+        triageStatus: 'PENDING',
+      };
+    }
+
+    // Triagem com blockers (riscos críticos)
+    if (triage.riskSummary?.critical?.length > 0 && !triage.hasOverride) {
+      return {
+        canStart: false,
+        reason: 'Triagem com riscos críticos que impedem o procedimento.',
+        triageStatus: 'BLOCKED',
+        hasBlockers: true,
+      };
+    }
+
+    // Triagem com override
+    if (triage.hasOverride) {
+      return {
+        canStart: true,
+        triageStatus: 'OVERRIDE',
+        hasOverride: true,
+      };
+    }
+
+    return { canStart: true, triageStatus: 'OK' };
   }
+
+  /**
+   * Cria override de triagem (libera atendimento bloqueado)
+   */
+  async createTriageOverride(
+    appointmentId: string,
+    reason: string,
+    userId: string,
+    userName: string,
+    userRole: string,
+    ipAddress?: string,
+  ): Promise<void> {
+    if (!reason || reason.length < 20) {
+      throw new BadRequestException('Justificativa deve ter no mínimo 20 caracteres');
+    }
+
+    const triage = await this.getTriageForAppointment(appointmentId);
+
+    if (!triage) {
+      throw new NotFoundException('Triagem não encontrada para este agendamento');
+    }
+
+    if (triage.status !== 'COMPLETED') {
+      throw new BadRequestException('Só é possível criar override para triagens completas');
+    }
+
+    // Cria override
+    await this.db.insert(triageOverrides).values({
+      triageId: triage.id,
+      appointmentId,
+      userId,
+      userName,
+      userRole,
+      reason,
+      ipAddress,
+    });
+
+    // Audit log crítico
+    await this.auditService.logCriticalOverride({
+      salonId: triage.salonId,
+      triageId: triage.id,
+      appointmentId,
+      userId,
+      userName,
+      userRole,
+      ipAddress,
+      reason,
+      riskLevel: triage.overallRiskLevel,
+      blockers: triage.riskSummary?.critical?.map((r: RiskData) => r.message) || [],
+    });
+
+    this.logger.warn(
+      `OVERRIDE CRÍTICO: Triagem ${triage.id} liberada por ${userName} (${userRole}). Motivo: ${reason}`,
+    );
+  }
+
+  // ==================== UTILITÁRIOS ====================
 
   /**
    * Gera link público para preenchimento
@@ -409,6 +761,17 @@ export class TriageService {
   generatePublicLink(token: string): string {
     const baseUrl = process.env.PUBLIC_URL || 'http://localhost:5173';
     return `${baseUrl}/pre-avaliacao/${token}`;
+  }
+
+  /**
+   * Formata telefone para padrão internacional
+   */
+  private formatPhone(phone: string): string {
+    let cleaned = phone.replace(/\D/g, '');
+    if (cleaned.length <= 11) {
+      cleaned = '55' + cleaned;
+    }
+    return cleaned;
   }
 
   /**
@@ -476,12 +839,38 @@ export class TriageService {
     const normalizedAnswer = answerValue.toUpperCase().trim();
     const normalizedTrigger = triggerValue.toUpperCase().trim();
 
-    // Para respostas booleanas
     if (question.answerType === 'BOOLEAN') {
       return normalizedAnswer === normalizedTrigger;
     }
 
-    // Para outros tipos, verifica se contém o valor de trigger
     return normalizedAnswer.includes(normalizedTrigger);
+  }
+
+  // ==================== MANUTENÇÃO ====================
+
+  /**
+   * Invalida triagens expiradas (job de limpeza)
+   */
+  async invalidateExpiredTriages(): Promise<number> {
+    const result = await this.db
+      .update(triageResponses)
+      .set({
+        status: 'EXPIRED',
+        invalidatedAt: new Date(),
+        invalidatedReason: 'Expiração automática',
+      })
+      .where(
+        and(
+          eq(triageResponses.status, 'PENDING'),
+          lte(triageResponses.expiresAt, new Date()),
+        ),
+      )
+      .returning();
+
+    if (result.length > 0) {
+      this.logger.log(`${result.length} triagens expiradas invalidadas`);
+    }
+
+    return result.length;
   }
 }
