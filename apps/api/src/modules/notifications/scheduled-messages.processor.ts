@@ -76,8 +76,8 @@ export class ScheduledMessagesProcessor {
       // Monta a mensagem
       const messageText = this.buildMessageText(message);
 
-      // Envia via WhatsApp com timeout
-      const result = await Promise.race([
+      // Tenta enviar via configuração do salão primeiro, se falhar usa Z-API direto
+      let result = await Promise.race([
         this.whatsappService.sendMessage(
           message.salon_id,
           message.recipient_phone,
@@ -85,6 +85,15 @@ export class ScheduledMessagesProcessor {
         ),
         this.createTimeout(30000), // 30s timeout
       ]);
+
+      // Se falhou por configuração do salão, tenta Z-API direto
+      if (!result?.success && result?.error?.includes('não está habilitado')) {
+        this.logger.debug(`Fallback para Z-API direto para ${message.recipient_phone}`);
+        result = await this.whatsappService.sendDirectMessage(
+          message.recipient_phone,
+          messageText,
+        );
+      }
 
       // Processa resultado
       if (result?.success) {
