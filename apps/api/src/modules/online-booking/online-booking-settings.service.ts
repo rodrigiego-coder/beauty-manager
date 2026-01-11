@@ -53,8 +53,11 @@ export class OnlineBookingSettingsService {
       .values({
         salonId,
         enabled: false,
+        operationMode: 'SECRETARY_ONLY',
         minAdvanceHours: 2,
         maxAdvanceDays: 30,
+        slotIntervalMinutes: 30,
+        allowSameDayBooking: true,
         holdDurationMinutes: 10,
         cancellationHours: 24,
         allowRescheduling: true,
@@ -64,6 +67,7 @@ export class OnlineBookingSettingsService {
         depositType: 'FIXED',
         depositValue: '0',
         depositMinServices: '100',
+        depositAppliesTo: 'ALL',
         allowNewClients: true,
         newClientRequiresApproval: false,
         newClientDepositRequired: false,
@@ -94,10 +98,14 @@ export class OnlineBookingSettingsService {
 
     // Mapeia campos do DTO
     if (dto.enabled !== undefined) updateData.enabled = dto.enabled;
+    if (dto.operationMode !== undefined) updateData.operationMode = dto.operationMode;
     if (dto.minAdvanceHours !== undefined) updateData.minAdvanceHours = dto.minAdvanceHours;
     if (dto.maxAdvanceDays !== undefined) updateData.maxAdvanceDays = dto.maxAdvanceDays;
+    if (dto.slotIntervalMinutes !== undefined) updateData.slotIntervalMinutes = dto.slotIntervalMinutes;
+    if (dto.allowSameDayBooking !== undefined) updateData.allowSameDayBooking = dto.allowSameDayBooking;
     if (dto.holdDurationMinutes !== undefined) updateData.holdDurationMinutes = dto.holdDurationMinutes;
     if (dto.cancellationHours !== undefined) updateData.cancellationHours = dto.cancellationHours;
+    if (dto.cancellationPolicy !== undefined) updateData.cancellationPolicy = dto.cancellationPolicy;
     if (dto.allowRescheduling !== undefined) updateData.allowRescheduling = dto.allowRescheduling;
     if (dto.maxReschedules !== undefined) updateData.maxReschedules = dto.maxReschedules;
     if (dto.requirePhoneVerification !== undefined) updateData.requirePhoneVerification = dto.requirePhoneVerification;
@@ -105,6 +113,7 @@ export class OnlineBookingSettingsService {
     if (dto.depositType !== undefined) updateData.depositType = dto.depositType;
     if (dto.depositValue !== undefined) updateData.depositValue = String(dto.depositValue);
     if (dto.depositMinServices !== undefined) updateData.depositMinServices = String(dto.depositMinServices);
+    if (dto.depositAppliesTo !== undefined) updateData.depositAppliesTo = dto.depositAppliesTo;
     if (dto.allowNewClients !== undefined) updateData.allowNewClients = dto.allowNewClients;
     if (dto.newClientRequiresApproval !== undefined) updateData.newClientRequiresApproval = dto.newClientRequiresApproval;
     if (dto.newClientDepositRequired !== undefined) updateData.newClientDepositRequired = dto.newClientDepositRequired;
@@ -162,10 +171,14 @@ export class OnlineBookingSettingsService {
       salonId: settings.salonId,
       slug,
       enabled: settings.enabled,
+      operationMode: settings.operationMode ?? 'SECRETARY_ONLY',
       minAdvanceHours: settings.minAdvanceHours,
       maxAdvanceDays: settings.maxAdvanceDays,
+      slotIntervalMinutes: settings.slotIntervalMinutes ?? 30,
+      allowSameDayBooking: settings.allowSameDayBooking ?? true,
       holdDurationMinutes: settings.holdDurationMinutes,
       cancellationHours: settings.cancellationHours,
+      cancellationPolicy: settings.cancellationPolicy,
       allowRescheduling: settings.allowRescheduling,
       maxReschedules: settings.maxReschedules,
       requirePhoneVerification: settings.requirePhoneVerification,
@@ -173,6 +186,7 @@ export class OnlineBookingSettingsService {
       depositType: settings.depositType,
       depositValue: settings.depositValue,
       depositMinServices: settings.depositMinServices,
+      depositAppliesTo: settings.depositAppliesTo ?? 'ALL',
       allowNewClients: settings.allowNewClients,
       newClientRequiresApproval: settings.newClientRequiresApproval,
       newClientDepositRequired: settings.newClientDepositRequired,

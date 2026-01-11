@@ -49,6 +49,19 @@ export enum BookingRuleType {
 
 // ==================== ONLINE BOOKING SETTINGS DTOs ====================
 
+export enum OperationMode {
+  SECRETARY_ONLY = 'SECRETARY_ONLY',
+  SECRETARY_AND_ONLINE = 'SECRETARY_AND_ONLINE',
+  SECRETARY_WITH_LINK = 'SECRETARY_WITH_LINK',
+}
+
+export enum DepositAppliesTo {
+  ALL = 'ALL',
+  NEW_CLIENTS = 'NEW_CLIENTS',
+  SPECIFIC_SERVICES = 'SPECIFIC_SERVICES',
+  SELECTED_CLIENTS = 'SELECTED_CLIENTS',
+}
+
 export class CreateOnlineBookingSettingsDto {
   @IsBoolean()
   @IsOptional()
@@ -60,6 +73,10 @@ export class CreateOnlineBookingSettingsDto {
   @Matches(/^[a-z0-9-]+$/, { message: 'slug deve conter apenas letras minúsculas, números e hífens' })
   @IsOptional()
   slug?: string;
+
+  @IsEnum(OperationMode)
+  @IsOptional()
+  operationMode?: OperationMode;
 
   @IsNumber()
   @Min(0)
@@ -80,10 +97,25 @@ export class CreateOnlineBookingSettingsDto {
   holdDurationMinutes?: number;
 
   @IsNumber()
+  @Min(15)
+  @Max(120)
+  @IsOptional()
+  slotIntervalMinutes?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  allowSameDayBooking?: boolean;
+
+  @IsNumber()
   @Min(0)
   @Max(168)
   @IsOptional()
   cancellationHours?: number;
+
+  @IsString()
+  @MaxLength(2000)
+  @IsOptional()
+  cancellationPolicy?: string;
 
   @IsBoolean()
   @IsOptional()
@@ -116,6 +148,10 @@ export class CreateOnlineBookingSettingsDto {
   @Min(0)
   @IsOptional()
   depositMinServices?: number;
+
+  @IsEnum(DepositAppliesTo)
+  @IsOptional()
+  depositAppliesTo?: DepositAppliesTo;
 
   @IsBoolean()
   @IsOptional()
@@ -473,10 +509,14 @@ export interface OnlineBookingSettingsResponse {
   salonId: string;
   slug: string | null;
   enabled: boolean;
+  operationMode: string;
   minAdvanceHours: number;
   maxAdvanceDays: number;
+  slotIntervalMinutes: number;
+  allowSameDayBooking: boolean;
   holdDurationMinutes: number;
   cancellationHours: number;
+  cancellationPolicy: string | null;
   allowRescheduling: boolean;
   maxReschedules: number;
   requirePhoneVerification: boolean;
@@ -484,6 +524,7 @@ export interface OnlineBookingSettingsResponse {
   depositType: string | null;
   depositValue: string | null;
   depositMinServices: string | null;
+  depositAppliesTo: string;
   allowNewClients: boolean;
   newClientRequiresApproval: boolean;
   newClientDepositRequired: boolean;

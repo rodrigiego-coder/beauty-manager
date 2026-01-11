@@ -214,6 +214,21 @@ export const bookingRuleTypeEnum = pgEnum('booking_rule_type', [
   'RESTRICTED_SERVICES',
 ]);
 
+// Enum para Modo de Operação do Booking Online
+export const operationModeEnum = pgEnum('operation_mode', [
+  'SECRETARY_ONLY',
+  'SECRETARY_AND_ONLINE',
+  'SECRETARY_WITH_LINK',
+]);
+
+// Enum para Aplicação de Depósito
+export const depositAppliesToEnum = pgEnum('deposit_applies_to', [
+  'ALL',
+  'NEW_CLIENTS',
+  'SPECIFIC_SERVICES',
+  'SELECTED_CLIENTS',
+]);
+
 /**
  * Interface para tipagem do work_schedule
  */
@@ -3450,15 +3465,25 @@ export const onlineBookingSettings = pgTable('online_booking_settings', {
   // Habilitação geral
   enabled: boolean('enabled').default(false).notNull(),
 
+  // Modo de operação
+  operationMode: operationModeEnum('operation_mode').default('SECRETARY_ONLY'),
+
   // Antecedência de agendamento
   minAdvanceHours: integer('min_advance_hours').default(2).notNull(),
   maxAdvanceDays: integer('max_advance_days').default(30).notNull(),
+
+  // Intervalo entre slots
+  slotIntervalMinutes: integer('slot_interval_minutes').default(30),
+
+  // Permitir agendamento no mesmo dia
+  allowSameDayBooking: boolean('allow_same_day_booking').default(true),
 
   // Duração do hold (reserva temporária)
   holdDurationMinutes: integer('hold_duration_minutes').default(10).notNull(),
 
   // Política de cancelamento
   cancellationHours: integer('cancellation_hours').default(24).notNull(),
+  cancellationPolicy: text('cancellation_policy'),
   allowRescheduling: boolean('allow_rescheduling').default(true).notNull(),
   maxReschedules: integer('max_reschedules').default(2).notNull(),
 
@@ -3470,6 +3495,7 @@ export const onlineBookingSettings = pgTable('online_booking_settings', {
   depositType: varchar('deposit_type', { length: 20 }).default('FIXED'), // FIXED, PERCENTAGE
   depositValue: decimal('deposit_value', { precision: 10, scale: 2 }).default('0'),
   depositMinServices: decimal('deposit_min_services', { precision: 10, scale: 2 }).default('100'),
+  depositAppliesTo: depositAppliesToEnum('deposit_applies_to').default('ALL'),
 
   // Regras para novos clientes
   allowNewClients: boolean('allow_new_clients').default(true).notNull(),
