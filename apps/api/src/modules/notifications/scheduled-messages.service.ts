@@ -262,14 +262,15 @@ export class ScheduledMessagesService {
         const messageIds = rows.map((m: any) => m.id);
         this.logger.log(`[getPendingMessagesWithLock] Encontradas ${messageIds.length} mensagens: ${messageIds.join(', ')}`);
 
-        // 2. Marca como em processamento
+        // 2. Marca como em processamento usando IN com sql.join
+        const idPlaceholders = sql.join(messageIds.map((id: string) => sql`${id}`), sql`, `);
         await tx.execute(sql`
           UPDATE appointment_notifications
           SET
             status = 'SENDING',
             processing_started_at = NOW(),
             processing_worker_id = ${WORKER_ID}
-          WHERE id = ANY(${messageIds})
+          WHERE id IN (${idPlaceholders})
         `);
 
         return rows;
