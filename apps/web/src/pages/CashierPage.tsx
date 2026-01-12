@@ -20,6 +20,48 @@ import { ptBR } from 'date-fns/locale';
 import api from '../services/api';
 import { CashRegister } from '../types/cash-register';
 
+// Helper para garantir que o valor é um array (hardening contra API errors)
+const ensureArray = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  // Log para debug se receber formato inesperado
+  if (value && typeof value === 'object' && ('statusCode' in value || 'message' in value)) {
+    console.error('[CashierPage] API retornou erro em vez de array:', value);
+  }
+  return [];
+};
+
+// Helper para parse seguro de datas (hardening contra null/undefined/invalid)
+const safeParseDate = (input: unknown): Date | null => {
+  if (input === null || input === undefined || input === '') {
+    return null;
+  }
+  try {
+    const date = new Date(input as string | number);
+    // Verifica se a data é válida
+    if (isNaN(date.getTime())) {
+      return null;
+    }
+    return date;
+  } catch {
+    return null;
+  }
+};
+
+// Helper para formatação segura de datas (retorna "-" quando inválido)
+const safeFormatDate = (input: unknown, formatStr: string, fallback = '-'): string => {
+  const date = safeParseDate(input);
+  if (!date) {
+    return fallback;
+  }
+  try {
+    return format(date, formatStr, { locale: ptBR });
+  } catch {
+    return fallback;
+  }
+};
+
 interface Command {
   id: string;
   cardNumber: string;
@@ -94,7 +136,7 @@ export function CashierPage() {
           status: 'OPEN,IN_SERVICE,WAITING_PAYMENT',
         },
       });
-      setCommands(response.data);
+      setCommands(ensureArray<Command>(response.data));
     } catch (err: any) {
       console.error('Erro ao carregar comandas:', err);
       setError(err.response?.data?.message || 'Erro ao carregar comandas');
@@ -221,12 +263,12 @@ export function CashierPage() {
     }).format(num || 0);
   };
 
-  const formatTime = (date: string) => {
-    return format(new Date(date), "HH:mm", { locale: ptBR });
+  const formatTime = (date: unknown) => {
+    return safeFormatDate(date, "HH:mm");
   };
 
-  const formatDate = (date: string) => {
-    return format(new Date(date), "dd/MM 'as' HH:mm", { locale: ptBR });
+  const formatDate = (date: unknown) => {
+    return safeFormatDate(date, "dd/MM 'às' HH:mm");
   };
 
   // Calcular saldo atual do caixa
@@ -256,11 +298,12 @@ export function CashierPage() {
     return closing - expected;
   };
 
-  // Filtrar comandas
-  const filteredCommands = commands.filter((cmd) => {
+  // Filtrar comandas (com fallback defensivo)
+  const safeCommands = ensureArray<Command>(commands);
+  const filteredCommands = safeCommands.filter((cmd) => {
     const matchesSearch =
-      cmd.cardNumber.toLowerCase().includes(search.toLowerCase()) ||
-      cmd.code.toLowerCase().includes(search.toLowerCase());
+      (cmd.cardNumber || '').toLowerCase().includes(search.toLowerCase()) ||
+      (cmd.code || '').toLowerCase().includes(search.toLowerCase());
     const matchesStatus = filterStatus === 'all' || cmd.status === filterStatus;
     return matchesSearch && matchesStatus;
   });

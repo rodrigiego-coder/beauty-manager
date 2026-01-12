@@ -37,26 +37,20 @@ interface Message {
   createdAt: string;
 }
 
+// Interface ajustada para o payload REAL da API /alexis/compliance/stats
 interface ComplianceStats {
-  totalBlocks: number;
-  totalFlags: number;
-  byCategory: {
-    ANVISA: number;
-    LGPD: number;
-    PROFANITY: number;
-    CUSTOM: number;
-  };
+  totalBlocked: number;
+  totalInteractions: number;
+  humanTakeovers: number;
+  complianceRate: number;
 }
 
+// Interface ajustada para o payload REAL da API /alexis/metrics
 interface Metrics {
-  totals: {
-    totalSessions: number;
-    totalMessages: number;
-    aiResponses: number;
-    humanResponses: number;
-    humanTakeovers: number;
-    complianceBlocks: number;
-  };
+  totalConversations: number;
+  activeConversations: number;
+  totalMessages: number;
+  avgMessagesPerConversation: number;
 }
 
 export default function AlexisConversationsPage() {
@@ -255,30 +249,30 @@ export default function AlexisConversationsPage() {
         </div>
       </div>
 
-      {/* Metrics Cards */}
+      {/* Metrics Cards - usando campos REAIS da API */}
       <div className="grid grid-cols-5 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 border border-gray-200">
           <div className="flex items-center gap-2 text-gray-500 mb-1">
             <MessageCircle className="w-4 h-4" />
-            <span className="text-xs">Sessões</span>
+            <span className="text-xs">Conversas</span>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{metrics?.totals.totalSessions || 0}</p>
+          <p className="text-2xl font-bold text-gray-900">{metrics?.totalConversations ?? 0}</p>
         </div>
 
         <div className="bg-white rounded-xl p-4 border border-gray-200">
           <div className="flex items-center gap-2 text-gray-500 mb-1">
             <Bot className="w-4 h-4" />
-            <span className="text-xs">Respostas IA</span>
+            <span className="text-xs">Ativas</span>
           </div>
-          <p className="text-2xl font-bold text-blue-600">{metrics?.totals.aiResponses || 0}</p>
+          <p className="text-2xl font-bold text-blue-600">{metrics?.activeConversations ?? 0}</p>
         </div>
 
         <div className="bg-white rounded-xl p-4 border border-gray-200">
           <div className="flex items-center gap-2 text-gray-500 mb-1">
             <User className="w-4 h-4" />
-            <span className="text-xs">Respostas Humanas</span>
+            <span className="text-xs">Total Mensagens</span>
           </div>
-          <p className="text-2xl font-bold text-green-600">{metrics?.totals.humanResponses || 0}</p>
+          <p className="text-2xl font-bold text-green-600">{metrics?.totalMessages ?? 0}</p>
         </div>
 
         <div className="bg-white rounded-xl p-4 border border-gray-200">
@@ -286,7 +280,7 @@ export default function AlexisConversationsPage() {
             <AlertTriangle className="w-4 h-4" />
             <span className="text-xs">Takeovers</span>
           </div>
-          <p className="text-2xl font-bold text-yellow-600">{metrics?.totals.humanTakeovers || 0}</p>
+          <p className="text-2xl font-bold text-yellow-600">{complianceStats?.humanTakeovers ?? 0}</p>
         </div>
 
         <div className="bg-white rounded-xl p-4 border border-gray-200">
@@ -294,7 +288,7 @@ export default function AlexisConversationsPage() {
             <ShieldAlert className="w-4 h-4" />
             <span className="text-xs">Bloqueios Compliance</span>
           </div>
-          <p className="text-2xl font-bold text-red-600">{complianceStats?.totalBlocks || 0}</p>
+          <p className="text-2xl font-bold text-red-600">{complianceStats?.totalBlocked ?? 0}</p>
         </div>
       </div>
 
@@ -512,7 +506,7 @@ export default function AlexisConversationsPage() {
           )}
         </div>
 
-        {/* Compliance Panel */}
+        {/* Compliance Panel - usando campos REAIS da API */}
         <div className="w-64 bg-white rounded-xl border border-gray-200 p-4">
           <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Shield className="w-5 h-5 text-blue-500" />
@@ -522,16 +516,16 @@ export default function AlexisConversationsPage() {
           <div className="space-y-4">
             <div>
               <div className="flex items-center justify-between text-sm mb-1">
-                <span className="text-gray-600">ANVISA</span>
-                <span className="font-medium text-red-600">
-                  {complianceStats?.byCategory.ANVISA || 0}
+                <span className="text-gray-600">Taxa de Compliance</span>
+                <span className="font-medium text-green-600">
+                  {complianceStats?.complianceRate ?? 0}%
                 </span>
               </div>
               <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-red-500 rounded-full"
+                  className="h-full bg-green-500 rounded-full"
                   style={{
-                    width: `${Math.min(100, ((complianceStats?.byCategory.ANVISA || 0) / Math.max(1, complianceStats?.totalBlocks || 1)) * 100)}%`,
+                    width: `${complianceStats?.complianceRate ?? 0}%`,
                   }}
                 />
               </div>
@@ -539,35 +533,10 @@ export default function AlexisConversationsPage() {
 
             <div>
               <div className="flex items-center justify-between text-sm mb-1">
-                <span className="text-gray-600">LGPD</span>
-                <span className="font-medium text-orange-600">
-                  {complianceStats?.byCategory.LGPD || 0}
+                <span className="text-gray-600">Total Interações</span>
+                <span className="font-medium text-blue-600">
+                  {complianceStats?.totalInteractions ?? 0}
                 </span>
-              </div>
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-orange-500 rounded-full"
-                  style={{
-                    width: `${Math.min(100, ((complianceStats?.byCategory.LGPD || 0) / Math.max(1, complianceStats?.totalBlocks || 1)) * 100)}%`,
-                  }}
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between text-sm mb-1">
-                <span className="text-gray-600">Linguagem</span>
-                <span className="font-medium text-yellow-600">
-                  {complianceStats?.byCategory.PROFANITY || 0}
-                </span>
-              </div>
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-yellow-500 rounded-full"
-                  style={{
-                    width: `${Math.min(100, ((complianceStats?.byCategory.PROFANITY || 0) / Math.max(1, complianceStats?.totalBlocks || 1)) * 100)}%`,
-                  }}
-                />
               </div>
             </div>
 
@@ -576,15 +545,15 @@ export default function AlexisConversationsPage() {
               <div className="grid grid-cols-2 gap-2 text-center">
                 <div className="bg-red-50 rounded-lg p-2">
                   <p className="text-lg font-bold text-red-600">
-                    {complianceStats?.totalBlocks || 0}
+                    {complianceStats?.totalBlocked ?? 0}
                   </p>
                   <p className="text-xs text-red-500">Bloqueios</p>
                 </div>
                 <div className="bg-yellow-50 rounded-lg p-2">
                   <p className="text-lg font-bold text-yellow-600">
-                    {complianceStats?.totalFlags || 0}
+                    {complianceStats?.humanTakeovers ?? 0}
                   </p>
-                  <p className="text-xs text-yellow-500">Alertas</p>
+                  <p className="text-xs text-yellow-500">Takeovers</p>
                 </div>
               </div>
             </div>
@@ -592,7 +561,7 @@ export default function AlexisConversationsPage() {
             <div className="pt-4 border-t">
               <div className="flex items-center gap-2 text-sm text-green-600">
                 <CheckCircle className="w-4 h-4" />
-                <span>ANVISA + LGPD Ativo</span>
+                <span>Compliance Ativo</span>
               </div>
             </div>
           </div>

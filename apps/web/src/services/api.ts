@@ -1,7 +1,11 @@
 import axios from 'axios';
 
+// Base URL para produção e dev - normaliza trailing slash e adiciona /api
+const rawBase = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const base = rawBase.endsWith('/') ? rawBase.slice(0, -1) : rawBase;
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000',
+  baseURL: `${base}/api`,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -77,7 +81,7 @@ api.interceptors.response.use(
       try {
         // Tenta renovar o token
         const { data } = await axios.post(
-          `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/auth/refresh`,
+          `${base}/api/auth/refresh`,
           { refreshToken },
           { headers: { 'Content-Type': 'application/json' } }
         );
@@ -236,7 +240,7 @@ import type {
 export async function getTriagePublicForm(token: string): Promise<TriagePublicResponse> {
   try {
     const { data } = await axios.get(
-      `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/triage/public/${token}`
+      `${base}/api/triage/public/${token}`
     );
     return data;
   } catch (error: any) {
@@ -257,7 +261,7 @@ export async function submitTriageAnswers(
   consentAccepted: boolean
 ): Promise<TriageSubmitResult> {
   const { data } = await axios.post(
-    `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/triage/public/${token}/submit`,
+    `${base}/api/triage/public/${token}/submit`,
     { answers, consentAccepted }
   );
   return data;

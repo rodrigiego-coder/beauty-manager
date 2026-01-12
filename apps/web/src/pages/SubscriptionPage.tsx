@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { copyToClipboard } from '../utils/clipboard';
+import api from '../services/api';
 import {
   Crown,
   Check,
@@ -102,32 +103,22 @@ export function SubscriptionPage() {
 
   const loadData = async () => {
     try {
-      const token = localStorage.getItem('access_token');
-      const headers = { Authorization: `Bearer ${token}` };
-
       const [plansRes, subRes, invoicesRes] = await Promise.all([
-        fetch('/api/subscriptions/plans', { headers }),
-        fetch('/api/subscriptions/current', { headers }),
-        fetch('/api/subscriptions/invoices', { headers }),
+        api.get('/subscriptions/plans'),
+        api.get('/subscriptions/current'),
+        api.get('/subscriptions/invoices'),
       ]);
 
-      if (plansRes.ok) {
-        const plansData = await plansRes.json();
-        setPlans(plansData);
-      }
+      setPlans(plansRes.data || []);
 
-      if (subRes.ok) {
-        const subData = await subRes.json();
-        setSubscriptionData(subData);
-        if (subData.subscription?.billingPeriod) {
-          setBillingCycle(subData.subscription.billingPeriod);
+      if (subRes.data) {
+        setSubscriptionData(subRes.data);
+        if (subRes.data.subscription?.billingPeriod) {
+          setBillingCycle(subRes.data.subscription.billingPeriod);
         }
       }
 
-      if (invoicesRes.ok) {
-        const invoicesData = await invoicesRes.json();
-        setInvoices(invoicesData);
-      }
+      setInvoices(invoicesRes.data || []);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       setMessage({ type: 'error', text: 'Erro ao carregar dados da assinatura' });
@@ -141,20 +132,10 @@ export function SubscriptionPage() {
     setLoadingPayment(true);
 
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch('/api/subscriptions/change-plan', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          newPlanId: selectedPlan.id,
-          billingPeriod: billingCycle,
-        }),
+      await api.post('/subscriptions/change-plan', {
+        newPlanId: selectedPlan.id,
+        billingPeriod: billingCycle,
       });
-
-      if (!response.ok) throw new Error('Erro ao trocar plano');
 
       setMessage({ type: 'success', text: 'Plano alterado com sucesso!' });
       setShowChangePlanModal(false);
@@ -171,17 +152,7 @@ export function SubscriptionPage() {
     setLoadingPayment(true);
 
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch('/api/subscriptions/cancel', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ cancelAtPeriodEnd: cancelAtEnd }),
-      });
-
-      if (!response.ok) throw new Error('Erro ao cancelar');
+      await api.post('/subscriptions/cancel', { cancelAtPeriodEnd: cancelAtEnd });
 
       setMessage({ type: 'success', text: cancelAtEnd ? 'Assinatura sera cancelada ao final do periodo' : 'Assinatura cancelada' });
       setShowCancelModal(false);
@@ -197,14 +168,7 @@ export function SubscriptionPage() {
     setLoadingPayment(true);
 
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch('/api/subscriptions/reactivate', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-
-      if (!response.ok) throw new Error('Erro ao reativar');
+      await api.post('/subscriptions/reactivate', {});
 
       setMessage({ type: 'success', text: 'Assinatura reativada!' });
       loadData();
@@ -226,19 +190,8 @@ export function SubscriptionPage() {
     setLoadingPayment(true);
 
     try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch('/api/mercado-pago/create-pix', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ invoiceId: selectedInvoice.id }),
-      });
+      const { data } = await api.post('/mercado-pago/create-pix', { invoiceId: selectedInvoice.id });
 
-      if (!response.ok) throw new Error('Erro ao gerar PIX');
-
-      const data = await response.json();
       setPixData({
         qrCode: data.qrCode,
         qrCodeBase64: data.qrCodeBase64,
