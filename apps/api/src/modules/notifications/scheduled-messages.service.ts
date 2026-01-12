@@ -4,6 +4,7 @@ import { DATABASE_CONNECTION } from '../../database/database.module';
 import {
   appointmentNotifications,
   NewAppointmentNotification,
+  salons,
 } from '../../database/schema';
 import { addHours, addMinutes, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -31,7 +32,9 @@ export class ScheduledMessagesService {
       return;
     }
 
-    const variables = this.buildTemplateVariables(appointment);
+    // Busca dados do salão (endereço e localização)
+    const salonInfo = await this.getSalonInfo(appointment.salonId);
+    const variables = this.buildTemplateVariables(appointment, salonInfo);
 
     if (triageLink) {
       variables.triageLink = triageLink;
@@ -452,9 +455,33 @@ export class ScheduledMessagesService {
   }
 
   /**
+   * Busca informações do salão (endereço e localização)
+   */
+  private async getSalonInfo(salonId: string): Promise<{ address?: string; locationUrl?: string }> {
+    try {
+      const [salon] = await this.db
+        .select({
+          address: salons.address,
+          locationUrl: salons.locationUrl,
+        })
+        .from(salons)
+        .where(eq(salons.id, salonId))
+        .limit(1);
+
+      return salon || {};
+    } catch (error) {
+      this.logger.warn(`Erro ao buscar dados do salão ${salonId}: ${error}`);
+      return {};
+    }
+  }
+
+  /**
    * Monta variáveis do template
    */
-  private buildTemplateVariables(appointment: any): Record<string, any> {
+  private buildTemplateVariables(
+    appointment: any,
+    salonInfo?: { address?: string; locationUrl?: string },
+  ): Record<string, any> {
     const dateFormatted = format(new Date(appointment.date), "EEEE, dd 'de' MMMM", {
       locale: ptBR,
     });
@@ -465,6 +492,8 @@ export class ScheduledMessagesService {
       horario: appointment.time || appointment.startTime,
       servico: appointment.service || '',
       profissional: appointment.professionalName || '',
+      endereco: salonInfo?.address || '',
+      localizacao: salonInfo?.locationUrl || '',
     };
   }
 
