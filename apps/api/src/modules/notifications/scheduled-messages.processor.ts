@@ -219,10 +219,11 @@ export class ScheduledMessagesProcessor {
 
     switch (message.notification_type) {
       case 'APPOINTMENT_CONFIRMATION': {
-        let confirmationText = `Ótimo! Seu agendamento está *confirmado*! ✅
+        let confirmationText = `Olá ${vars.nome}! 👋
 
-📅 ${vars.data}
-🕐 ${vars.horario}
+Seu agendamento foi registrado:
+
+📅 *${vars.data}* às *${vars.horario}*
 ✂️ ${vars.servico}
 💇 ${vars.profissional}`;
 
@@ -230,26 +231,26 @@ export class ScheduledMessagesProcessor {
         if (vars.endereco) {
           confirmationText += `
 
-📍 ${vars.endereco}`;
+📍 *Endereço:*
+${vars.endereco}`;
         }
 
         // Adiciona links de navegação
-        if (vars.localizacao || vars.waze) {
+        if (vars.localizacao) {
           confirmationText += `
-`;
-          if (vars.localizacao) {
-            confirmationText += `
+
 🗺️ Google Maps:
 ${vars.localizacao}`;
-          }
-          if (vars.waze) {
-            confirmationText += `
+        }
+
+        if (vars.waze) {
+          confirmationText += `
 
 🚗 Waze:
 ${vars.waze}`;
-          }
         }
 
+        // Link de triagem se necessário
         if (vars.triageLink) {
           confirmationText += `
 
@@ -260,9 +261,14 @@ Para sua segurança, preencha o formulário antes do atendimento:
 ⚠️ _Sem a pré-avaliação, o procedimento pode ser recusado._`;
         }
 
+        // Pedido de confirmação
         confirmationText += `
 
-Aguardamos você! 💜`;
+Por favor, confirme sua presença:
+👉 Responda *SIM* para confirmar
+👉 Responda *NÃO* para cancelar
+
+Obrigado! 💜`;
 
         return confirmationText;
       }

@@ -487,6 +487,12 @@ export class ScheduledMessagesService {
       locale: ptBR,
     });
 
+    // Gera Waze URL automaticamente se não existir mas tiver Google Maps URL
+    let wazeUrl = salonInfo?.wazeUrl || '';
+    if (!wazeUrl && salonInfo?.locationUrl) {
+      wazeUrl = this.generateWazeUrlFromGoogleMaps(salonInfo.locationUrl);
+    }
+
     return {
       nome: appointment.clientName || 'Cliente',
       data: dateFormatted,
@@ -495,8 +501,43 @@ export class ScheduledMessagesService {
       profissional: appointment.professionalName || '',
       endereco: salonInfo?.address || '',
       localizacao: salonInfo?.locationUrl || '',
-      waze: salonInfo?.wazeUrl || '',
+      waze: wazeUrl,
     };
+  }
+
+  /**
+   * Extrai coordenadas do Google Maps URL e gera Waze URL
+   * Suporta formatos:
+   * - https://maps.google.com/maps?q=-22.6641832,-50.4373021
+   * - https://www.google.com/maps?q=-22.6641832,-50.4373021
+   * - https://goo.gl/maps/... (não suportado, retorna vazio)
+   */
+  private generateWazeUrlFromGoogleMaps(googleMapsUrl: string): string {
+    if (!googleMapsUrl) return '';
+
+    try {
+      // Regex para extrair coordenadas do formato ?q=lat,lng ou @lat,lng
+      const patterns = [
+        /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/,  // ?q=-22.664,-50.437
+        /@(-?\d+\.?\d*),(-?\d+\.?\d*)/,        // @-22.664,-50.437
+        /ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/,      // ll=-22.664,-50.437
+      ];
+
+      for (const pattern of patterns) {
+        const match = googleMapsUrl.match(pattern);
+        if (match && match[1] && match[2]) {
+          const lat = match[1];
+          const lng = match[2];
+          return `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+        }
+      }
+
+      this.logger.debug(`Não foi possível extrair coordenadas de: ${googleMapsUrl}`);
+      return '';
+    } catch (error) {
+      this.logger.warn(`Erro ao gerar Waze URL: ${error}`);
+      return '';
+    }
   }
 
   /**
