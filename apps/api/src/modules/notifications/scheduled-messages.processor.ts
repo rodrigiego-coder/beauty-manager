@@ -86,13 +86,22 @@ export class ScheduledMessagesProcessor {
         this.createTimeout(30000), // 30s timeout
       ]);
 
-      // Se falhou por configuração do salão, tenta Z-API direto
-      if (!result?.success && result?.error?.includes('não está habilitado')) {
-        this.logger.debug(`Fallback para Z-API direto para ${message.recipient_phone}`);
-        result = await this.whatsappService.sendDirectMessage(
-          message.recipient_phone,
-          messageText,
-        );
+      // Se falhou por configuração do salão, tenta Z-API direto como fallback
+      if (!result?.success) {
+        const errorLower = (result?.error || '').toLowerCase();
+        const shouldFallback =
+          errorLower.includes('não está habilitado') ||
+          errorLower.includes('credenciais') ||
+          errorLower.includes('não configurad') ||
+          errorLower.includes('provedor não suportado');
+
+        if (shouldFallback) {
+          this.logger.debug(`Fallback para Z-API direto para ${message.recipient_phone} (erro: ${result?.error})`);
+          result = await this.whatsappService.sendDirectMessage(
+            message.recipient_phone,
+            messageText,
+          );
+        }
       }
 
       // Processa resultado
