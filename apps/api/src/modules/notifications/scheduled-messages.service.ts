@@ -225,6 +225,8 @@ export class ScheduledMessagesService {
    */
   async getPendingMessagesWithLock(limit: number = 20): Promise<any[]> {
     try {
+      this.logger.log(`[getPendingMessagesWithLock] Iniciando busca (limit=${limit})`);
+
       // Usa transaction com FOR UPDATE SKIP LOCKED
       const result = await this.db.transaction(async (tx: any) => {
         // 1. Seleciona mensagens pendentes com lock exclusivo
@@ -239,13 +241,26 @@ export class ScheduledMessagesService {
           FOR UPDATE SKIP LOCKED
         `);
 
-        // Defensive check: messages pode ser undefined ou não ter rows
-        if (!messages?.rows || messages.rows.length === 0) {
+        // DEBUG: Log da estrutura retornada
+        this.logger.log(`[getPendingMessagesWithLock] Resultado bruto: ${JSON.stringify({
+          type: typeof messages,
+          isArray: Array.isArray(messages),
+          hasRows: !!messages?.rows,
+          rowsLength: messages?.rows?.length,
+          keys: messages ? Object.keys(messages) : [],
+          firstItem: Array.isArray(messages) ? messages[0] : messages?.rows?.[0],
+        })}`);
+
+        // Drizzle pode retornar como array direto ou como { rows: [] }
+        const rows = Array.isArray(messages) ? messages : (messages?.rows || []);
+
+        if (!rows || rows.length === 0) {
+          this.logger.log('[getPendingMessagesWithLock] Nenhuma mensagem encontrada após parse');
           return [];
         }
 
-        const messageIds = messages.rows.map((m: any) => m.id);
-        this.logger.debug(`Encontradas ${messageIds.length} mensagens para processar: ${messageIds.join(', ')}`);
+        const messageIds = rows.map((m: any) => m.id);
+        this.logger.log(`[getPendingMessagesWithLock] Encontradas ${messageIds.length} mensagens: ${messageIds.join(', ')}`);
 
         // 2. Marca como em processamento
         await tx.execute(sql`
@@ -257,13 +272,16 @@ export class ScheduledMessagesService {
           WHERE id = ANY(${messageIds})
         `);
 
-        return messages.rows;
+        return rows;
       });
 
       // Garante que sempre retorna array
-      return result || [];
+      const finalResult = result || [];
+      this.logger.log(`[getPendingMessagesWithLock] Retornando ${finalResult.length} mensagens`);
+      return finalResult;
     } catch (error: any) {
-      this.logger.error(`Erro ao buscar mensagens pendentes: ${error.message || error}`);
+      this.logger.error(`[getPendingMessagesWithLock] ERRO: ${error.message || error}`);
+      this.logger.error(`[getPendingMessagesWithLock] Stack: ${error.stack || 'N/A'}`);
       return []; // Degradação graciosa - retorna array vazio em caso de erro
     }
   }
