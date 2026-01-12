@@ -207,7 +207,21 @@ export function OnlineBookingPage() {
 
   // Carrega slots quando seleciona profissional e data
   const loadSlots = useCallback(async () => {
-    if (!salonSlug || !selectedService || !selectedDate) return;
+    console.log('[DEBUG loadSlots] Chamado com:', {
+      salonSlug,
+      selectedService: selectedService?.id,
+      selectedProfessional: selectedProfessional?.id,
+      selectedDate,
+    });
+
+    if (!salonSlug || !selectedService || !selectedDate) {
+      console.log('[DEBUG loadSlots] Retornando cedo - falta:', {
+        salonSlug: !salonSlug,
+        selectedService: !selectedService,
+        selectedDate: !selectedDate,
+      });
+      return;
+    }
 
     try {
       const params = new URLSearchParams({
@@ -218,18 +232,30 @@ export function OnlineBookingPage() {
         params.append('professionalId', selectedProfessional.id);
       }
 
-      const response = await fetch(`${API_BASE}/public/booking/${salonSlug}/slots?${params}`);
+      const url = `${API_BASE}/public/booking/${salonSlug}/slots?${params}`;
+      console.log('[DEBUG loadSlots] Buscando URL:', url);
+
+      const response = await fetch(url);
+      console.log('[DEBUG loadSlots] Response status:', response.status, response.ok);
+
       if (response.ok) {
         const data = await response.json();
+        console.log('[DEBUG loadSlots] Slots recebidos:', data.length, 'slots');
+        console.log('[DEBUG loadSlots] Primeiro slot:', data[0]);
         setSlots(data);
+      } else {
+        const errorText = await response.text();
+        console.error('[DEBUG loadSlots] Erro na resposta:', response.status, errorText);
       }
     } catch (err) {
-      console.error('Erro ao carregar horários:', err);
+      console.error('[DEBUG loadSlots] Erro no fetch:', err);
     }
   }, [salonSlug, selectedService, selectedProfessional, selectedDate]);
 
   useEffect(() => {
+    console.log('[DEBUG useEffect] selectedDate mudou:', selectedDate);
     if (selectedDate) {
+      console.log('[DEBUG useEffect] Chamando loadSlots...');
       loadSlots();
     }
   }, [selectedDate, loadSlots]);
@@ -661,6 +687,16 @@ export function OnlineBookingPage() {
               {selectedDate && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Horário</label>
+                  {(() => {
+                    const filteredSlots = slots.filter(s => s.date === selectedDate);
+                    console.log('[DEBUG render] Total slots:', slots.length);
+                    console.log('[DEBUG render] selectedDate:', selectedDate);
+                    console.log('[DEBUG render] Slots filtrados para data:', filteredSlots.length);
+                    if (slots.length > 0) {
+                      console.log('[DEBUG render] Datas disponíveis nos slots:', [...new Set(slots.map(s => s.date))]);
+                    }
+                    return null;
+                  })()}
                   {slots.filter(s => s.date === selectedDate).length === 0 ? (
                     <p className="text-gray-500 text-center py-8">Nenhum horário disponível nesta data</p>
                   ) : (
