@@ -17,7 +17,9 @@ export class ScheduledMessagesProcessor {
     private readonly scheduledMessagesService: ScheduledMessagesService,
     private readonly whatsappService: WhatsAppService,
     private readonly auditService: AuditService,
-  ) {}
+  ) {
+    this.logger.log('ScheduledMessagesProcessor inicializado - processando appointment_notifications a cada 1 minuto');
+  }
 
   /**
    * Processa mensagens pendentes a cada minuto
@@ -34,15 +36,18 @@ export class ScheduledMessagesProcessor {
     this.isProcessing = true;
 
     try {
+      this.logger.debug('Verificando mensagens pendentes em appointment_notifications...');
+
       // Usa método com SKIP LOCKED para concorrência segura
       const messages = await this.scheduledMessagesService.getPendingMessagesWithLock(BATCH_SIZE);
 
       // Defensive check: messages pode ser undefined se a query falhar
       if (!messages || messages.length === 0) {
+        this.logger.debug('Nenhuma mensagem pendente encontrada');
         return;
       }
 
-      this.logger.log(`Processando ${messages.length} mensagens pendentes`);
+      this.logger.log(`[appointment_notifications] Processando ${messages.length} mensagens pendentes`);
 
       // Processa em paralelo com limite de concorrência
       const results = await Promise.allSettled(
@@ -53,7 +58,7 @@ export class ScheduledMessagesProcessor {
       const succeeded = results.filter((r) => r.status === 'fulfilled').length;
       const failed = results.filter((r) => r.status === 'rejected').length;
 
-      this.logger.log(`Processamento concluído: ${succeeded} sucesso, ${failed} falhas`);
+      this.logger.log(`[appointment_notifications] Processamento concluído: ${succeeded} sucesso, ${failed} falhas`);
     } catch (error) {
       this.logger.error('Erro no processamento de mensagens:', error);
     } finally {

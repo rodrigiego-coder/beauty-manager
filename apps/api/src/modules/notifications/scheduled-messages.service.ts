@@ -245,6 +245,7 @@ export class ScheduledMessagesService {
         }
 
         const messageIds = messages.rows.map((m: any) => m.id);
+        this.logger.debug(`Encontradas ${messageIds.length} mensagens para processar: ${messageIds.join(', ')}`);
 
         // 2. Marca como em processamento
         await tx.execute(sql`
@@ -261,8 +262,8 @@ export class ScheduledMessagesService {
 
       // Garante que sempre retorna array
       return result || [];
-    } catch (error) {
-      this.logger.error('Erro ao buscar mensagens pendentes com lock:', error);
+    } catch (error: any) {
+      this.logger.error(`Erro ao buscar mensagens pendentes: ${error.message || error}`);
       return []; // Degradação graciosa - retorna array vazio em caso de erro
     }
   }

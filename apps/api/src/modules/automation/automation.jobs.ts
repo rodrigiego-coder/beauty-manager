@@ -17,19 +17,25 @@ export class AutomationJobs {
 
   /**
    * Processa mensagens agendadas a cada 5 minutos
+   * NOTA: Este job processa a tabela scheduled_messages (sistema legado de templates)
+   * Para notificações de agendamento, use ScheduledMessagesProcessor que processa appointment_notifications
    */
   @Cron(CronExpression.EVERY_5_MINUTES)
   async processScheduledMessages() {
-    this.logger.log('Processando mensagens agendadas...');
+    this.logger.debug('[scheduled_messages] Processando mensagens do sistema legado...');
 
     try {
       const result = await this.schedulerService.processScheduledMessages();
-      this.logger.log(
-        `Mensagens processadas: ${result.processed}, enviadas: ${result.sent}, falhas: ${result.failed}`,
-      );
+
+      // Só loga se processou algo
+      if (result.processed > 0) {
+        this.logger.log(
+          `[scheduled_messages] Processadas: ${result.processed}, enviadas: ${result.sent}, falhas: ${result.failed}`,
+        );
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-      this.logger.error(`Erro ao processar mensagens: ${errorMessage}`);
+      this.logger.error(`[scheduled_messages] Erro: ${errorMessage}`);
     }
   }
 
