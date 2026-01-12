@@ -457,12 +457,13 @@ export class ScheduledMessagesService {
   /**
    * Busca informações do salão (endereço e localização)
    */
-  private async getSalonInfo(salonId: string): Promise<{ address?: string; locationUrl?: string }> {
+  private async getSalonInfo(salonId: string): Promise<{ address?: string; locationUrl?: string; wazeUrl?: string }> {
     try {
       const [salon] = await this.db
         .select({
           address: salons.address,
           locationUrl: salons.locationUrl,
+          wazeUrl: salons.wazeUrl,
         })
         .from(salons)
         .where(eq(salons.id, salonId))
@@ -480,7 +481,7 @@ export class ScheduledMessagesService {
    */
   private buildTemplateVariables(
     appointment: any,
-    salonInfo?: { address?: string; locationUrl?: string },
+    salonInfo?: { address?: string; locationUrl?: string; wazeUrl?: string },
   ): Record<string, any> {
     const dateFormatted = format(new Date(appointment.date), "EEEE, dd 'de' MMMM", {
       locale: ptBR,
@@ -494,6 +495,7 @@ export class ScheduledMessagesService {
       profissional: appointment.professionalName || '',
       endereco: salonInfo?.address || '',
       localizacao: salonInfo?.locationUrl || '',
+      waze: salonInfo?.wazeUrl || '',
     };
   }
 

@@ -226,16 +226,28 @@ export class ScheduledMessagesProcessor {
 ✂️ ${vars.servico}
 💇 ${vars.profissional}`;
 
-        // Adiciona endereço e localização se disponíveis
+        // Adiciona endereço se disponível
         if (vars.endereco) {
           confirmationText += `
 
 📍 ${vars.endereco}`;
         }
 
-        if (vars.localizacao) {
+        // Adiciona links de navegação
+        if (vars.localizacao || vars.waze) {
           confirmationText += `
-🗺️ ${vars.localizacao}`;
+`;
+          if (vars.localizacao) {
+            confirmationText += `
+🗺️ Google Maps:
+${vars.localizacao}`;
+          }
+          if (vars.waze) {
+            confirmationText += `
+
+🚗 Waze:
+${vars.waze}`;
+          }
         }
 
         if (vars.triageLink) {

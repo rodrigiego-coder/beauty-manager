@@ -35,6 +35,7 @@ interface SalonData {
   name: string;
   address: string;
   locationUrl: string;
+  wazeUrl: string;
   phone: string;
   email: string;
   taxId: string;
@@ -76,6 +77,7 @@ export function SettingsPage() {
     name: '',
     address: '',
     locationUrl: '',
+    wazeUrl: '',
     phone: '',
     email: '',
     taxId: '',
@@ -130,6 +132,7 @@ export function SettingsPage() {
         name: data.name || '',
         address: data.address || '',
         locationUrl: data.locationUrl || '',
+        wazeUrl: data.wazeUrl || '',
         phone: data.phone || '',
         email: data.email || '',
         taxId: data.taxId || '',
@@ -182,6 +185,7 @@ export function SettingsPage() {
         name: salonData.name,
         address: salonData.address,
         locationUrl: salonData.locationUrl,
+        wazeUrl: salonData.wazeUrl,
         phone: salonData.phone,
         email: salonData.email,
         taxId: salonData.taxId,
@@ -350,6 +354,22 @@ export function SettingsPage() {
                       />
                     </div>
                     <p className="mt-1 text-xs text-gray-500">Cole o link do Google Maps para facilitar a chegada dos clientes</p>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Link do Waze</label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input
+                        type="url"
+                        value={salonData.wazeUrl}
+                        onChange={(e) => setSalonData({ ...salonData, wazeUrl: e.target.value })}
+                        disabled={!canEdit}
+                        placeholder="https://waze.com/ul?ll=-22.6641832,-50.4373021&navigate=yes"
+                        className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">Cole o link do Waze para navegacao direta</p>
                   </div>
 
                   <div>

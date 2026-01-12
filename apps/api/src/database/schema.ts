@@ -310,6 +310,7 @@ export const salons = pgTable('salons', {
   slug: varchar('slug', { length: 100 }).unique(), // URL amigável para booking online
   address: text('address'),
   locationUrl: text('location_url'), // Link do Google Maps
+  wazeUrl: text('waze_url'), // Link do Waze
   taxId: varchar('tax_id', { length: 20 }), // CNPJ
   phone: varchar('phone', { length: 20 }),
   email: varchar('email', { length: 255 }),
