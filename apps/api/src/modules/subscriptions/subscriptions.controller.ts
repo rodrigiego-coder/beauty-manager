@@ -42,13 +42,14 @@ export class SubscriptionsController {
    */
   @Get('current')
   async getCurrentSubscription(@CurrentUser() user: any) {
-    const { subscription, plan, limits } = await this.subscriptionsService.getCurrentSubscription(user.salonId);
+    const { subscription, plan, limits, usage } = await this.subscriptionsService.getCurrentSubscription(user.salonId);
 
     if (!subscription) {
       return {
         subscription: null,
         plan: null,
         limits: { users: 1, clients: 50 },
+        usage,
         status: {
           valid: false,
           status: 'NO_SUBSCRIPTION',
@@ -92,6 +93,7 @@ export class SubscriptionsController {
           }
         : null,
       limits,
+      usage,
       status,
     };
   }

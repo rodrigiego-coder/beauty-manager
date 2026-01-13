@@ -51,6 +51,7 @@ interface SubscriptionData {
   } | null;
   plan: Plan | null;
   limits: { users: number; clients: number };
+  usage: { usersCount: number; clientsCount: number };
   status: {
     valid: boolean;
     status: string;
@@ -334,7 +335,7 @@ export function SubscriptionPage() {
             </div>
           </div>
 
-          {/* Limits */}
+          {/* Limits + Usage */}
           <div className="mt-6 grid grid-cols-2 gap-4">
             <div className="p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-2 text-gray-500 text-sm">
@@ -342,7 +343,7 @@ export function SubscriptionPage() {
                 Usuarios
               </div>
               <p className="text-lg font-semibold mt-1">
-                0 / {subscriptionData?.limits.users === 999 ? 'ilimitado' : subscriptionData?.limits.users}
+                {subscriptionData?.usage?.usersCount ?? 0} / {subscriptionData?.limits.users === 999 ? 'ilimitado' : subscriptionData?.limits.users}
               </p>
             </div>
             <div className="p-4 bg-gray-50 rounded-lg">
@@ -351,7 +352,7 @@ export function SubscriptionPage() {
                 Clientes
               </div>
               <p className="text-lg font-semibold mt-1">
-                0 / {subscriptionData?.limits.clients === 99999 ? 'ilimitado' : subscriptionData?.limits.clients}
+                {subscriptionData?.usage?.clientsCount ?? 0} / {subscriptionData?.limits.clients === 99999 ? 'ilimitado' : subscriptionData?.limits.clients}
               </p>
             </div>
           </div>

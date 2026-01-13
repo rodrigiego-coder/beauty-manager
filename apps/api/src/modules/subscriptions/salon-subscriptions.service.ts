@@ -8,6 +8,8 @@ import {
   subscriptionEvents,
   plans,
   salons,
+  users,
+  clients,
   SalonSubscription,
   SubscriptionInvoice,
   Plan,
@@ -29,6 +31,7 @@ export class SalonSubscriptionsService {
     subscription: SalonSubscription | null;
     plan: Plan | null;
     limits: { users: number; clients: number };
+    usage: { usersCount: number; clientsCount: number };
   }> {
     try {
       // Primeiro busca a assinatura
@@ -38,8 +41,23 @@ export class SalonSubscriptionsService {
         .where(eq(salonSubscriptions.salonId, salonId))
         .limit(1);
 
+      // Busca contagens de uso em paralelo
+      const [usersCountResult, clientsCountResult] = await Promise.all([
+        db.select({ count: sql<number>`count(*)::int` })
+          .from(users)
+          .where(and(eq(users.salonId, salonId), eq(users.active, true))),
+        db.select({ count: sql<number>`count(*)::int` })
+          .from(clients)
+          .where(and(eq(clients.salonId, salonId), eq(clients.active, true))),
+      ]);
+
+      const usage = {
+        usersCount: usersCountResult[0]?.count ?? 0,
+        clientsCount: clientsCountResult[0]?.count ?? 0,
+      };
+
       if (subscriptionResult.length === 0) {
-        return { subscription: null, plan: null, limits: { users: 1, clients: 50 } };
+        return { subscription: null, plan: null, limits: { users: 1, clients: 50 }, usage };
       }
 
       const subscription = subscriptionResult[0];
@@ -67,11 +85,12 @@ export class SalonSubscriptionsService {
               clients: plan.maxClients,
             }
           : defaultLimits,
+        usage,
       };
     } catch (error) {
       // Em caso de erro no banco, retorna como se não tivesse assinatura
       console.error(`Erro ao buscar assinatura do salão ${salonId}:`, error);
-      return { subscription: null, plan: null, limits: { users: 1, clients: 50 } };
+      return { subscription: null, plan: null, limits: { users: 1, clients: 50 }, usage: { usersCount: 0, clientsCount: 0 } };
     }
   }
 
