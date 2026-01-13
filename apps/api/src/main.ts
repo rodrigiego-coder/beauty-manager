@@ -30,9 +30,39 @@ async function bootstrap() {
     }),
   );
 
-  // Configurar CORS
+  // Configurar CORS - permitir múltiplos domínios
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    // Domínios de produção (HTTP e HTTPS)
+    'http://app.agendasalaopro.com.br',
+    'https://app.agendasalaopro.com.br',
+    'http://agendasalaopro.com.br',
+    'https://agendasalaopro.com.br',
+    'http://www.agendasalaopro.com.br',
+    'https://www.agendasalaopro.com.br',
+    // IP direto (fallback)
+    'http://72.61.131.18',
+    // Domínios antigos
+    'http://beautymanager.com.br',
+    'https://beautymanager.com.br',
+    'http://www.beautymanager.com.br',
+    'https://www.beautymanager.com.br',
+  ];
+
   app.enableCors({
-    origin: process.env.VITE_API_URL || 'http://localhost:5173',
+    origin: (origin, callback) => {
+      // Permitir requests sem origin (ex: curl, mobile apps)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Log para debug de origens não permitidas
+      console.warn(`[CORS] Origem não permitida: ${origin}`);
+      return callback(null, false);
+    },
     credentials: true,
   });
 
