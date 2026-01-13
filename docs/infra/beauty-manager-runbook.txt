@@ -1,0 +1,21 @@
+BEAUTY MANAGER — RUNBOOK (VPS)
+
+CHECK RÁPIDO (deve dar LOGIN 200 / NGINX OK / active):
+curl -s -o /dev/null -w "LOGIN %{http_code}\n" -X POST https://app.agendasalaopro.com.br/api/auth/login -H 'Content-Type: application/json' --data '{"email":"owner@salao.com","password":"senhaforte"}' && nginx -t >/dev/null && echo "NGINX OK" && systemctl is-active beauty-manager-api
+
+NGINX — ARQUIVOS (fonte da verdade):
+- enabled (symlink): /etc/nginx/sites-enabled/beauty-manager
+- source config:      /etc/nginx/sites-available/beauty-manager
+Regra: sites-enabled deve ter APENAS o symlink (sem .save/.bak)
+
+REGRA DO /api (strip do prefixo /api):
+location /api/ { proxy_pass http://127.0.0.1:3000/; }
+
+COMANDOS PADRÃO NGINX:
+nginx -t && systemctl reload nginx
+
+API (systemd é fonte da verdade):
+systemctl is-enabled beauty-manager-api
+systemctl is-active beauty-manager-api
+systemctl status beauty-manager-api --no-pager -l
+journalctl -u beauty-manager-api -n 50 --no-pager
