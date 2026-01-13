@@ -6,7 +6,18 @@
 - `agendasalaopro.com.br`
 - `www.agendasalaopro.com.br`
 
-## Server Block (sanitized)
+## Active Nginx Site (VPS)
+
+- **Enabled (symlink)**: `/etc/nginx/sites-enabled/beauty-manager`
+- **Source file**: `/etc/nginx/sites-available/beauty-manager`
+
+> Regra: em `/etc/nginx/sites-enabled/` deve existir apenas o symlink do site ativo.
+> Não deixar arquivos extras como `.save`/backups ali, pois podem causar `conflicting server name`
+> e comportamento imprevisível.
+
+## Server Block (sanitized / reference)
+
+> Este bloco é referência/documentação. A configuração real deve ser editada em arquivo e validada com `nginx -t`.
 
 ```nginx
 server {
@@ -21,9 +32,9 @@ server {
     gzip on;
     gzip_types text/plain text/css application/javascript application/json;
 
-    # API PROXY - same-origin (strips /api prefix)
+    # API PROXY - same-origin (strip /api prefix -> backend routes are /auth, /public, etc.)
     location /api/ {
-        proxy_pass http://127.0.0.1:3000/;
+        proxy_pass http://127.0.0.1:3000/;  # barra no final => REMOVE o prefixo /api
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -31,20 +42,44 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Other API routes (auth, public, webhook, automation)
+    # AUTH PROXY
     location /auth/ {
         proxy_pass http://127.0.0.1:3000/auth/;
-        # ... same headers
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # PUBLIC BOOKING PROXY
     location /public/ {
         proxy_pass http://127.0.0.1:3000/public/;
-        # ... same headers
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # WEBHOOK PROXY
     location /webhook/ {
         proxy_pass http://127.0.0.1:3000/webhook/;
-        # ... same headers
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # AUTOMATION PROXY
+    location /automation/ {
+        proxy_pass http://127.0.0.1:3000/automation/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # Static assets - long cache
@@ -58,55 +93,16 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # SSL managed by Certbot
+    # SSL managed by Certbot (Let's Encrypt)
     ssl_certificate /etc/letsencrypt/live/app.agendasalaopro.com.br/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/app.agendasalaopro.com.br/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 }
 
-# HTTP to HTTPS redirect (auto-configured by Certbot)
+# HTTP -> HTTPS redirect
 server {
     listen 80;
     server_name app.agendasalaopro.com.br agendasalaopro.com.br www.agendasalaopro.com.br;
     return 301 https://$host$request_uri;
 }
-```
-
-## SSL Certificate
-
-- **Provider**: Let's Encrypt (free)
-- **Tool**: Certbot with nginx plugin
-- **Auto-renewal**: Enabled via systemd timer (`certbot.timer`)
-- **Expiration**: 90 days (auto-renews ~30 days before expiry)
-
-### Commands
-
-```bash
-# Issue certificate for domains
-certbot --nginx -d app.agendasalaopro.com.br -d agendasalaopro.com.br -d www.agendasalaopro.com.br
-
-# Test renewal
-certbot renew --dry-run
-
-# Check certificate status
-certbot certificates
-```
-
-## API CORS Configuration
-
-The NestJS API (`apps/api/src/main.ts`) allows these origins:
-
-- `https://app.agendasalaopro.com.br`
-- `https://agendasalaopro.com.br`
-- `https://www.agendasalaopro.com.br`
-- `http://localhost:5173` (dev)
-
-## Frontend Configuration
-
-The frontend (`apps/web/src/services/api.ts`) uses:
-
-- **Production**: `/api` (relative, same-origin)
-- **Development**: `http://localhost:3000/api`
-
-This ensures API calls go to the same domain, avoiding CORS preflight issues.
