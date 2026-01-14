@@ -98,6 +98,40 @@ curl -s -o /dev/null -w "healthz=%{http_code}\n" https://app.agendasalaopro.com.
 
 **Nota:** Durante o build (~1-3min) o servico fica offline. Preferir janela de baixo trafego.
 
+### Opcao 3: Deploy via Artefato (CI) - Recomendada
+
+Build executado no GitHub Actions, artefatos enviados ao VPS. Zero risco de OOM.
+
+**Workflow:** `.github/workflows/deploy_prod_artifacts.yml`
+**Script VPS:** `scripts/deploy-prod-artifacts.sh`
+
+```bash
+# Executar manualmente no GitHub:
+# Actions > Deploy Production (Artifacts) > Run workflow
+
+# O workflow:
+# 1. Builda shared, api e web no GitHub
+# 2. Empacota dist/ em tarballs
+# 3. Envia via SCP para o VPS
+# 4. Executa script de deploy com rollback automatico
+# 5. Roda smoke tests (healthz + auth)
+```
+
+**Secrets necessarios no GitHub:**
+
+| Secret | Descricao |
+|--------|-----------|
+| `VPS_HOST` | IP ou hostname do VPS (ex: 72.61.131.18) |
+| `VPS_USER` | Usuario SSH (ex: root) |
+| `VPS_SSH_KEY` | Chave privada SSH (formato PEM) |
+| `VPS_PORT` | Porta SSH (opcional, default 22) |
+
+**Vantagens:**
+- Build fora do VPS (sem OOM)
+- Rollback automatico se falhar
+- Backups timestamped em `/var/www/beauty-manager-backups/`
+- Smoke tests integrados
+
 ---
 
 ## D. Pos-Deploy: Validacao
