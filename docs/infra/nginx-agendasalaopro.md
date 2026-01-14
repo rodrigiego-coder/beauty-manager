@@ -1,12 +1,22 @@
 # Nginx + SSL Configuration for agendasalaopro.com.br
 
-## Domains Served
+## 1. Visao Geral
+
+- **Vhost (config):** `/etc/nginx/sites-available/beauty-manager`
+- **Symlink ativo:** `/etc/nginx/sites-enabled/beauty-manager`
+- **Inspecionar config efetiva:**
+  ```bash
+  nginx -T | grep -n "beauty-manager"
+  nginx -T | sed -n '/upstream beauty_manager_api {/,/}/p'
+  ```
+
+## 2. Domains Served
 
 - `app.agendasalaopro.com.br` (primary)
 - `agendasalaopro.com.br`
 - `www.agendasalaopro.com.br`
 
-## Active Nginx Site (VPS)
+## 3. Active Nginx Site (VPS)
 
 - **Enabled (symlink)**: `/etc/nginx/sites-enabled/beauty-manager`
 - **Source file**: `/etc/nginx/sites-available/beauty-manager`
@@ -15,7 +25,66 @@
 > Não deixar arquivos extras como `.save`/backups ali, pois podem causar `conflicting server name`
 > e comportamento imprevisível.
 
-## Server Block (sanitized / reference)
+## 4. Upstream API
+
+Bloco correto (apenas 1 servidor):
+
+```nginx
+upstream beauty_manager_api {
+    server 127.0.0.1:3000 max_fails=0 fail_timeout=0;
+    keepalive 32;
+}
+```
+
+> **ATENCAO:** Upstream duplicado (2 linhas `server` identicas) ja causou confusao e deve ser evitado.
+> Foi corrigido em 2026-01-14.
+
+## 5. Procedimentos Operacionais
+
+```bash
+# Validar configuracao (SEMPRE antes de reload)
+sudo nginx -t
+
+# Recarregar sem derrubar conexoes
+sudo systemctl reload nginx
+
+# Checar status
+sudo systemctl status nginx --no-pager | head -n 20
+```
+
+## 6. Rollback
+
+Sempre criar backup com timestamp antes de editar:
+
+```bash
+sudo cp /etc/nginx/sites-available/beauty-manager /root/nginx-backup.beauty-manager.$(date +%F_%H%M%S)
+```
+
+Exemplo de rollback (usando backup do incidente 2026-01-14):
+
+```bash
+sudo cp /root/nginx-backup.beauty-manager.2026-01-14_151930 /etc/nginx/sites-available/beauty-manager
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+## 7. Incidente 2026-01-14 (Registro)
+
+- **Sintoma:** HTTP 502 em `/api/auth/login` e outros endpoints.
+- **Causa raiz:** Restarts manuais do servico `beauty-manager-api` durante manutencao de banco de dados (operacoes `DROP SCHEMA`). Durante os ~2-8s entre stop e start, nginx nao conseguia conectar ao upstream (porta 3000 sem listener).
+- **Problema paralelo:** Upstream duplicado no nginx (2 linhas `server` identicas) — corrigido.
+- **Evidencia:** Logs nginx com erro 111 (Connection refused); journalctl com 5 restarts entre 12:30 e 13:48 UTC.
+- **Correcao:** Removida linha duplicada do upstream; reload do nginx; servico estavel desde 13:48:27 UTC.
+
+## 8. Checklist Rapido (Evitar 502 em Manutencao)
+
+- [ ] Preferir `reload` do nginx (nao `restart`)
+- [ ] Se precisar reiniciar API, fazer em janela de manutencao
+- [ ] Validar upstream/porta 3000 antes: `ss -tlnp | grep 3000`
+- [ ] Smoke test apos mudancas: `curl -s -o /dev/null -w "%{http_code}" https://app.agendasalaopro.com.br/api/auth/login -X POST -H "Content-Type: application/json" -d '{}'` (400/401 = OK; 502 = problema)
+
+---
+
+## 9. Server Block (sanitized / reference)
 
 > Este bloco é referência/documentação. A configuração real deve ser editada em arquivo e validada com `nginx -t`.
 
