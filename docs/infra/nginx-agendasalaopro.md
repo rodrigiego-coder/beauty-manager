@@ -9,6 +9,7 @@
   nginx -T | grep -n "beauty-manager"
   nginx -T | sed -n '/upstream beauty_manager_api {/,/}/p'
   ```
+- **Runbook de deploy:** veja `docs/infra/deploy-runbook-vps.md`
 
 ## 2. Domains Served
 
