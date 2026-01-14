@@ -45,7 +45,7 @@ check_prerequisites() {
     done
 
     # Servico existe
-    if ! systemctl list-units --type=service | grep -q "$SERVICE_NAME"; then
+    if ! systemctl list-unit-files --type=service | grep -q "^${SERVICE_NAME}\.service"; then
         log_error "Servico $SERVICE_NAME nao encontrado"
         exit 1
     fi
