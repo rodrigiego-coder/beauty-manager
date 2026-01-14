@@ -167,11 +167,22 @@ sudo systemctl restart beauty-manager-api
 
 ## F. Anti-502: Dicas Operacionais
 
-1. **Evitar restart repetido** — cada restart = ~5s offline
+1. **Evitar restart repetido** — cada restart = **~15s offline** (medido em 2026-01-14)
 2. **Preferir reload para nginx** — `reload` nao derruba conexoes, `restart` sim
 3. **Janela de manutencao** — DDL pesado ou migracao em horario de baixo trafego
 4. **Sempre testar healthz** — antes e depois de qualquer mudanca
 5. **Backup antes de editar nginx** — `cp ... /root/nginx-backup/`
+
+### Medicao Real (2026-01-14 17:45 UTC)
+
+| Fase | Tempo |
+|------|-------|
+| Comando restart | 0s |
+| systemd stop/start | ~0.4s |
+| Node.js inicializa | ~14s |
+| Nest pronto (healthz=200) | **~15s total** |
+
+> **Nota:** Durante esses ~15s, requests para `/api/*` recebem 502 do nginx.
 
 ---
 
@@ -188,4 +199,4 @@ sudo systemctl restart beauty-manager-api
 
 ---
 
-*Atualizado em: 2026-01-14*
+*Atualizado em: 2026-01-14 17:45 UTC (medicoes reais de restart)*
