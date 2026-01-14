@@ -44,11 +44,13 @@ check_prerequisites() {
         fi
     done
 
-    # Servico existe
-    if ! systemctl list-unit-files --type=service | grep -q "^${SERVICE_NAME}\.service"; then
-        log_error "Servico $SERVICE_NAME nao encontrado"
+       # Servico existe (unit file)
+    if ! systemctl cat "${SERVICE_NAME}.service" >/dev/null 2>&1; then
+        log_error "Servico ${SERVICE_NAME}.service nao encontrado"
+        systemctl list-unit-files --type=service --no-pager | grep -i "$SERVICE_NAME" || true
         exit 1
     fi
+
 
     log_info "Pre-requisitos OK"
 }
