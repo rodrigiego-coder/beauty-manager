@@ -6,7 +6,7 @@ on:
       skip_tests:
         description: 'Skip tests before deploy'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 env:
@@ -38,7 +38,7 @@ jobs:
           node -e "require('@rollup/rollup-linux-x64-gnu'); console.log('rollup native OK')"
 
       - name: Run tests
-        if: ${{ inputs.skip_tests != 'true' }}
+        if: ${{ !inputs.skip_tests }}
         run: npm test --workspace=apps/api --if-present
         env:
           NODE_ENV: test
@@ -73,6 +73,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
 
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_PORT: ${{ secrets.VPS_PORT }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+
     steps:
       - name: Checkout (for deploy script)
         uses: actions/checkout@v4
@@ -84,35 +90,80 @@ jobs:
           path: artifact/
 
       - name: Setup SSH
+        shell: bash
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -p ${{ secrets.VPS_PORT || 22 }} ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          set -euo pipefail
+
+          # default do port
+          VPS_PORT="${VPS_PORT:-22}"
+
+          # garante que ~/.ssh é diretório (se for arquivo, remove)
+          if [ -e "$HOME/.ssh" ] && [ ! -d "$HOME/.ssh" ]; then
+            rm -f "$HOME/.ssh"
+          fi
+
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+
+          # grava chave privada (multilinha) sem CRLF
+          printf '%s' "$VPS_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+
+          # known_hosts
+          touch "$HOME/.ssh/known_hosts"
+          chmod 644 "$HOME/.ssh/known_hosts"
+          ssh-keyscan -p "$VPS_PORT" -H "$VPS_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null
+
+          # teste de conexão (falha aqui = para tudo, com erro claro)
+          ssh -i "$HOME/.ssh/deploy_key" -p "$VPS_PORT" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" "echo OK_FROM_RUNNER"
 
       - name: Upload artifacts to VPS
+        shell: bash
         run: |
-          scp -P ${{ secrets.VPS_PORT || 22 }} -i ~/.ssh/deploy_key \
+          set -euo pipefail
+          VPS_PORT="${VPS_PORT:-22}"
+
+          scp -P "$VPS_PORT" -i "$HOME/.ssh/deploy_key" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
             artifact/dist-api.tgz \
             artifact/dist-web.tgz \
             artifact/BUILD_TIMESTAMP \
             artifact/BUILD_SHA \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/
+            "$VPS_USER@$VPS_HOST:/tmp/"
 
       - name: Upload deploy script to VPS
+        shell: bash
         run: |
-          scp -P ${{ secrets.VPS_PORT || 22 }} -i ~/.ssh/deploy_key \
+          set -euo pipefail
+          VPS_PORT="${VPS_PORT:-22}"
+
+          scp -P "$VPS_PORT" -i "$HOME/.ssh/deploy_key" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
             scripts/deploy-prod-artifacts.sh \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/
+            "$VPS_USER@$VPS_HOST:/tmp/"
 
       - name: Execute deploy on VPS
+        shell: bash
         run: |
-          ssh -p ${{ secrets.VPS_PORT || 22 }} -i ~/.ssh/deploy_key \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            "chmod +x /tmp/deploy-prod-artifacts.sh && /tmp/deploy-prod-artifacts.sh"
+          set -euo pipefail
+          VPS_PORT="${VPS_PORT:-22}"
+
+          ssh -p "$VPS_PORT" -i "$HOME/.ssh/deploy_key" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$VPS_USER@$VPS_HOST" \
+            "chmod +x /tmp/deploy-prod-artifacts.sh && DEPLOY_PATH='${{ env.DEPLOY_PATH }}' /tmp/deploy-prod-artifacts.sh"
 
       - name: Smoke tests
+        shell: bash
         run: |
+          set -euo pipefail
+
           echo "Waiting 20s for service to stabilize..."
           sleep 20
 
@@ -141,4 +192,6 @@ jobs:
 
       - name: Cleanup SSH key
         if: always()
-        run: rm -f ~/.ssh/deploy_key
+        shell: bash
+        run: |
+          rm -f "$HOME/.ssh/deploy_key"
