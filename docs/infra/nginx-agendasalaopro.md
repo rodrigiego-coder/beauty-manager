@@ -69,6 +69,18 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## 7. Incidente 2026-01-14 (Registro)
 
+## Healthcheck (monitoramento)
+
+O endpoint público de healthcheck (sem autenticação) é:
+
+- URL (via proxy): `https://app.agendasalaopro.com.br/api/healthz`
+- Resposta esperada: `HTTP 200` com `{"status":"ok"}`
+
+### Teste rápido (VPS ou qualquer máquina)
+
+```bash
+curl -s -o /dev/null -w "HTTP=%{http_code}\n" "https://app.agendasalaopro.com.br/api/healthz"
+
 - **Sintoma:** HTTP 502 em `/api/auth/login` e outros endpoints.
 - **Causa raiz:** Restarts manuais do servico `beauty-manager-api` durante manutencao de banco de dados (operacoes `DROP SCHEMA`). Durante os ~2-8s entre stop e start, nginx nao conseguia conectar ao upstream (porta 3000 sem listener).
 - **Problema paralelo:** Upstream duplicado no nginx (2 linhas `server` identicas) — corrigido.
@@ -175,3 +187,19 @@ server {
     server_name app.agendasalaopro.com.br agendasalaopro.com.br www.agendasalaopro.com.br;
     return 301 https://$host$request_uri;
 }
+
+## Healthcheck (monitoramento)
+
+O endpoint público de healthcheck (sem autenticação) é:
+
+- URL (via proxy): `https://app.agendasalaopro.com.br/api/healthz`
+- Resposta esperada: `HTTP 200` com `{"status":"ok"}`
+
+### Teste rápido (VPS ou qualquer máquina)
+
+```bash
+curl -s -o /dev/null -w "HTTP=%{http_code}\n" "https://app.agendasalaopro.com.br/api/healthz"
+
+
+
+```
