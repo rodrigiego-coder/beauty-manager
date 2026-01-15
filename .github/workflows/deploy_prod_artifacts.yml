@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       skip_tests:
-        description: 'Skip tests before deploy'
+        description: "Skip tests before deploy"
         required: false
         default: false
         type: boolean
 
 env:
-  NODE_VERSION: '20'
-  ARTIFACT_NAME: 'beauty-manager-dist'
-  DEPLOY_PATH: '/var/www/beauty-manager'
+  NODE_VERSION: "20"
+  ARTIFACT_NAME: "beauty-manager-dist"
+  DEPLOY_PATH: "/var/www/beauty-manager"
 
 jobs:
   build:
@@ -27,7 +27,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -38,7 +38,7 @@ jobs:
           node -e "require('@rollup/rollup-linux-x64-gnu'); console.log('rollup native OK')"
 
       - name: Run tests
-        if: ${{ !inputs.skip_tests }}
+        if: ${{ inputs.skip_tests == false }}
         run: npm test --workspace=apps/api --if-present
         env:
           NODE_ENV: test
@@ -94,18 +94,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          # default do port
-          VPS_PORT="${VPS_PORT:-22}"
+          # valida secrets básicos (para erro ficar claro)
+          if [ -z "${VPS_HOST}" ]; then echo "ERRO: Secret VPS_HOST está vazio"; exit 1; fi
+          if [ -z "${VPS_USER}" ]; then echo "ERRO: Secret VPS_USER está vazio"; exit 1; fi
+          if [ -z "${VPS_SSH_KEY}" ]; then echo "ERRO: Secret VPS_SSH_KEY está vazio"; exit 1; fi
 
-          # garante que ~/.ssh é diretório (se for arquivo, remove)
-          if [ -e "$HOME/.ssh" ] && [ ! -d "$HOME/.ssh" ]; then
-            rm -f "$HOME/.ssh"
-          fi
+          # porta padrão se VPS_PORT estiver vazio
+          VPS_PORT="${VPS_PORT:-22}"
 
           mkdir -p "$HOME/.ssh"
           chmod 700 "$HOME/.ssh"
 
-          # VPS_SSH_KEY está em BASE64 -> decodifica para virar a chave privada real
+          # VPS_SSH_KEY está em BASE64 (uma linha). Decodifica e grava como chave real.
           printf '%s' "$VPS_SSH_KEY" | tr -d '\r\n' | base64 -d > "$HOME/.ssh/deploy_key"
           chmod 600 "$HOME/.ssh/deploy_key"
 
@@ -114,11 +114,11 @@ jobs:
           chmod 644 "$HOME/.ssh/known_hosts"
           ssh-keyscan -p "$VPS_PORT" -H "$VPS_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null
 
-          # teste de conexão (falha aqui = para tudo)
+          # teste de conexão (se falhar, para aqui)
           ssh -i "$HOME/.ssh/deploy_key" -p "$VPS_PORT" \
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
-            "$VPS_USER@$VPS_HOST" "echo OK_FROM_RUNNER"
+            "$VPS_USER@$VPS_HOST" "echo OK_FROM_GITHUB_ACTIONS"
 
       - name: Upload artifacts to VPS
         shell: bash
@@ -145,7 +145,7 @@ jobs:
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             scripts/deploy-prod-artifacts.sh \
-            "$VPS_USER@$VPS_HOST:/tmp/"
+            "$VPS_USER@$VPS_HOST:/tmp/deploy-prod-artifacts.sh"
 
       - name: Execute deploy on VPS
         shell: bash
