@@ -40,8 +40,15 @@ export class ProductSubscriptionsController {
   // ==================== PLAN ENDPOINTS ====================
 
   @Get('plans')
-  @Roles('OWNER', 'MANAGER')
-  async getPlans(@Request() req: AuthenticatedRequest) {
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
+  async getPlans(
+    @Request() req: AuthenticatedRequest,
+    @Query('active') active?: string
+  ) {
+    // Se active=true, retorna apenas planos ativos (para UI de assinaturas)
+    if (active === 'true') {
+      return this.service.getAvailablePlans(req.user.salonId);
+    }
     return this.service.getPlans(req.user.salonId);
   }
 
@@ -117,6 +124,17 @@ export class ProductSubscriptionsController {
     return this.service.getStats(req.user.salonId);
   }
 
+  /**
+   * GET /product-subscriptions/subscriptions/my
+   * Retorna as assinaturas de produtos do salao do usuario logado
+   * Usado pela pagina de Assinaturas do frontend
+   */
+  @Get('subscriptions/my')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
+  async getMySubscriptions(@Request() req: AuthenticatedRequest) {
+    return this.service.getSubscriptions(req.user.salonId);
+  }
+
   @Get(':id')
   @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
   async getSubscriptionById(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
@@ -153,15 +171,53 @@ export class ProductSubscriptionsController {
     return this.service.pauseSubscription(id, req.user.salonId, dto);
   }
 
+  /**
+   * POST /product-subscriptions/subscriptions/:id/pause
+   * Rota alternativa para pausar assinatura (compatibilidade com frontend)
+   */
+  @Post('subscriptions/:id/pause')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
+  async pauseSubscriptionAlt(
+    @Param('id') id: string,
+    @Body() dto: PauseSubscriptionDto,
+    @Request() req: AuthenticatedRequest
+  ) {
+    return this.service.pauseSubscription(id, req.user.salonId, dto);
+  }
+
   @Post(':id/resume')
   @Roles('OWNER', 'MANAGER')
   async resumeSubscription(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
     return this.service.resumeSubscription(id, req.user.salonId);
   }
 
+  /**
+   * POST /product-subscriptions/subscriptions/:id/resume
+   * Rota alternativa para retomar assinatura (compatibilidade com frontend)
+   */
+  @Post('subscriptions/:id/resume')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
+  async resumeSubscriptionAlt(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
+    return this.service.resumeSubscription(id, req.user.salonId);
+  }
+
   @Post(':id/cancel')
   @Roles('OWNER', 'MANAGER')
   async cancelSubscription(
+    @Param('id') id: string,
+    @Body() dto: CancelSubscriptionDto,
+    @Request() req: AuthenticatedRequest
+  ) {
+    return this.service.cancelSubscription(id, req.user.salonId, dto);
+  }
+
+  /**
+   * POST /product-subscriptions/subscriptions/:id/cancel
+   * Rota alternativa para cancelar assinatura (compatibilidade com frontend)
+   */
+  @Post('subscriptions/:id/cancel')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
+  async cancelSubscriptionAlt(
     @Param('id') id: string,
     @Body() dto: CancelSubscriptionDto,
     @Request() req: AuthenticatedRequest
