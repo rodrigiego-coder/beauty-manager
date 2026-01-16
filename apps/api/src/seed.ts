@@ -20,6 +20,8 @@ import {
   clientPackages,
   clientPackageBalances,
   clientPackageUsages,
+  addonCatalog,
+  creditPackages,
 } from './database/schema';
 
 /**
@@ -349,6 +351,53 @@ async function seed() {
     }).onConflictDoNothing();
 
     console.log('✅ Assinatura Professional ativa criada\n');
+
+    // ========================================
+    // 10.1 POPULAR CATÁLOGO DE ADD-ONS WHATSAPP
+    // ========================================
+    console.log('📱 Criando catálogo de add-ons WhatsApp...');
+
+    const addonsData = [
+      // WhatsApp BASIC (120, 160, 200, 240)
+      { code: 'WHATSAPP_BASIC_120', family: 'WHATSAPP', tier: 'BASIC', quotaType: 'WHATSAPP_APPOINTMENT', quotaAmount: 120, priceCents: 2990 },
+      { code: 'WHATSAPP_BASIC_160', family: 'WHATSAPP', tier: 'BASIC', quotaType: 'WHATSAPP_APPOINTMENT', quotaAmount: 160, priceCents: 3990 },
+      { code: 'WHATSAPP_BASIC_200', family: 'WHATSAPP', tier: 'BASIC', quotaType: 'WHATSAPP_APPOINTMENT', quotaAmount: 200, priceCents: 4990 },
+      { code: 'WHATSAPP_BASIC_240', family: 'WHATSAPP', tier: 'BASIC', quotaType: 'WHATSAPP_APPOINTMENT', quotaAmount: 240, priceCents: 5990 },
+      // WhatsApp PRO (120, 160, 200, 240)
+      { code: 'WHATSAPP_PRO_120', family: 'WHATSAPP', tier: 'PRO', quotaType: 'WHATSAPP_APPOINTMENT', quotaAmount: 120, priceCents: 4990 },
+      { code: 'WHATSAPP_PRO_160', family: 'WHATSAPP', tier: 'PRO', quotaType: 'WHATSAPP_APPOINTMENT', quotaAmount: 160, priceCents: 6990 },
+      { code: 'WHATSAPP_PRO_200', family: 'WHATSAPP', tier: 'PRO', quotaType: 'WHATSAPP_APPOINTMENT', quotaAmount: 200, priceCents: 8990 },
+      { code: 'WHATSAPP_PRO_240', family: 'WHATSAPP', tier: 'PRO', quotaType: 'WHATSAPP_APPOINTMENT', quotaAmount: 240, priceCents: 9990 },
+    ];
+
+    for (const addon of addonsData) {
+      await db.insert(addonCatalog).values({
+        code: addon.code,
+        family: addon.family,
+        tier: addon.tier,
+        quotaType: addon.quotaType,
+        quotaAmount: addon.quotaAmount,
+        priceCents: addon.priceCents,
+        isActive: true,
+      }).onConflictDoNothing();
+    }
+
+    console.log('✅ 8 add-ons WhatsApp criados (BASIC/PRO 120/160/200/240)\n');
+
+    // ========================================
+    // 10.2 POPULAR PACOTES DE CRÉDITOS EXTRAS
+    // ========================================
+    console.log('💳 Criando pacotes de créditos extras...');
+
+    await db.insert(creditPackages).values({
+      code: 'WHATSAPP_EXTRA_20',
+      quotaType: 'WHATSAPP_APPOINTMENT',
+      qty: 20,
+      priceCents: 1000,
+      isActive: true,
+    }).onConflictDoNothing();
+
+    console.log('✅ Pacote de crédito criado: +20 agendamentos por R$10,00\n');
 
     // ========================================
     // 11. CRIAR CLIENTES DEMO
@@ -1053,6 +1102,11 @@ async function seed() {
     console.log('💳 Assinatura:');
     console.log('   - Plano: Professional (R$199,90/mês)');
     console.log('   - Status: ACTIVE');
+    console.log('');
+    console.log('📱 Add-ons WhatsApp (catálogo):');
+    console.log('   - BASIC: 120 (R$29,90), 160 (R$39,90), 200 (R$49,90), 240 (R$59,90)');
+    console.log('   - PRO: 120 (R$49,90), 160 (R$69,90), 200 (R$89,90), 240 (R$99,90)');
+    console.log('   - Crédito extra: +20 agendamentos por R$10,00');
     console.log('');
     console.log('👥 Clientes demo:');
     console.log('   - Maria Silva, Ana Santos, Carla Oliveira, Juliana Costa, Fernanda Lima');
