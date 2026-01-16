@@ -71,6 +71,7 @@ export class ScheduledMessagesProcessor {
   /**
    * Processa uma mensagem individual com tolerância a falhas
    * DEGRADAÇÃO GRACIOSA: Nunca propaga erro para não parar o loop
+   * HARD-BLOCK: Verifica quota ANTES de enviar para APPOINTMENT_CONFIRMATION
    */
   private async processMessageWithFaultTolerance(message: any): Promise<void> {
     try {
@@ -78,6 +79,20 @@ export class ScheduledMessagesProcessor {
       if (message.attempts >= MAX_RETRY_ATTEMPTS) {
         await this.handleMaxAttemptsReached(message);
         return;
+      }
+
+      // HARD-BLOCK: Para APPOINTMENT_CONFIRMATION, verificar/consumir quota ANTES de enviar
+      if (message.notification_type === 'APPOINTMENT_CONFIRMATION' && message.appointment_id) {
+        const quotaCheck = await this.checkAndConsumeQuotaBeforeSend(message);
+        if (!quotaCheck.allowed) {
+          // Quota excedida: NÃO enviar, marcar como bloqueado
+          await this.handleQuotaBlocked(message, quotaCheck.error);
+          return;
+        }
+        // Quota OK: log e continua para envio
+        this.logger.log(
+          `[Quota] PERMITIDO: salonId=${message.salon_id}, appointmentId=${message.appointment_id}, remaining=${quotaCheck.remaining}`,
+        );
       }
 
       // Monta a mensagem
@@ -125,7 +140,7 @@ export class ScheduledMessagesProcessor {
 
   /**
    * Trata sucesso no envio
-   * Também consome quota para mensagens de confirmação (APPOINTMENT_CONFIRMATION)
+   * NOTA: Consumo de quota agora ocorre ANTES do envio em checkAndConsumeQuotaBeforeSend
    */
   private async handleSendSuccess(message: any, result: any): Promise<void> {
     await this.scheduledMessagesService.updateMessageStatus(
@@ -133,33 +148,6 @@ export class ScheduledMessagesProcessor {
       'SENT',
       result.messageId,
     );
-
-    // Consumir quota WhatsApp apenas para mensagens de CONFIRMAÇÃO
-    // Não consome para lembretes/outros tipos (um appointment = 1 quota)
-    if (message.notification_type === 'APPOINTMENT_CONFIRMATION' && message.appointment_id) {
-      try {
-        const quotaResult = await this.addonsService.consumeWhatsAppQuota(
-          message.salon_id,
-          message.appointment_id,
-          'APPOINTMENT_CONFIRMATION',
-        );
-        this.logger.debug(
-          `[Quota] Consumido ${quotaResult.source} para appointment ${message.appointment_id}. Saldo: ${quotaResult.remaining.total}`,
-        );
-      } catch (quotaError: any) {
-        // Log do erro mas não falha o envio da mensagem (degradação graciosa)
-        // A mensagem já foi enviada, apenas não conseguimos debitar a quota
-        if (quotaError.status === 402) {
-          this.logger.warn(
-            `[Quota] Quota excedida para salão ${message.salon_id} (mensagem já enviada): ${quotaError.message}`,
-          );
-        } else {
-          this.logger.error(
-            `[Quota] Erro ao consumir quota para appointment ${message.appointment_id}: ${quotaError.message}`,
-          );
-        }
-      }
-    }
 
     // Audit log
     await this.auditService.logWhatsAppSent({
@@ -222,6 +210,75 @@ export class ScheduledMessagesProcessor {
     );
 
     this.logger.warn(`Mensagem ${message.id} falhou após ${MAX_RETRY_ATTEMPTS} tentativas`);
+  }
+
+  /**
+   * HARD-BLOCK: Verifica e consome quota ANTES de enviar mensagem
+   * Retorna { allowed: true, remaining } se pode enviar
+   * Retorna { allowed: false, error } se quota excedida
+   */
+  private async checkAndConsumeQuotaBeforeSend(
+    message: any,
+  ): Promise<{ allowed: true; remaining: number } | { allowed: false; error: string }> {
+    try {
+      const quotaResult = await this.addonsService.consumeWhatsAppQuota(
+        message.salon_id,
+        message.appointment_id,
+        'APPOINTMENT_CONFIRMATION',
+      );
+
+      return {
+        allowed: true,
+        remaining: quotaResult.remaining.total,
+      };
+    } catch (error: any) {
+      // Se for erro 402 (quota excedida), retorna bloqueio
+      if (error.status === 402 || error.response?.code === 'QUOTA_EXCEEDED') {
+        const errorPayload = error.response || error.getResponse?.() || {};
+        return {
+          allowed: false,
+          error: `QUOTA_EXCEEDED: ${errorPayload.message || 'Quota de WhatsApp excedida'}`,
+        };
+      }
+
+      // Outros erros: log e permite envio (degradação graciosa)
+      this.logger.error(
+        `[Quota] Erro ao verificar quota para appointment ${message.appointment_id}: ${error.message}`,
+      );
+      // Em caso de erro técnico, permite envio para não bloquear operação
+      return { allowed: true, remaining: -1 };
+    }
+  }
+
+  /**
+   * Trata mensagem bloqueada por quota excedida
+   * Marca como FAILED com erro QUOTA_EXCEEDED para não reprocessar
+   */
+  private async handleQuotaBlocked(message: any, errorMessage: string): Promise<void> {
+    // Log estruturado de bloqueio
+    this.logger.warn(
+      `[Quota] BLOQUEADO: salonId=${message.salon_id}, appointmentId=${message.appointment_id}, ` +
+        `notificationId=${message.id}, motivo=${errorMessage}`,
+    );
+
+    // Marca como FAILED com erro específico para não reprocessar
+    await this.scheduledMessagesService.updateMessageStatus(
+      message.id,
+      'FAILED',
+      undefined,
+      errorMessage,
+    );
+
+    // Audit log de bloqueio
+    await this.auditService.logWhatsAppSent({
+      salonId: message.salon_id,
+      notificationId: message.id,
+      appointmentId: message.appointment_id,
+      recipientPhone: message.recipient_phone,
+      notificationType: message.notification_type,
+      success: false,
+      error: errorMessage,
+    });
   }
 
   /**
