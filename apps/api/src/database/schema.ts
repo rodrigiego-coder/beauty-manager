@@ -3683,3 +3683,113 @@ export type AppointmentDeposit = typeof appointmentDeposits.$inferSelect;
 export type NewAppointmentDeposit = typeof appointmentDeposits.$inferInsert;
 export type OtpCode = typeof otpCodes.$inferSelect;
 export type NewOtpCode = typeof otpCodes.$inferInsert;
+
+// ==================== MÓDULO DE ADD-ONS E QUOTAS (WhatsApp) ====================
+
+/**
+ * Enum para status de add-on do salão
+ */
+export const addonStatusEnum = pgEnum('addon_status', ['ACTIVE', 'SUSPENDED', 'CANCELED']);
+
+/**
+ * Enum para tipo de evento de quota (ledger)
+ */
+export const quotaEventTypeEnum = pgEnum('quota_event_type', [
+  'CONSUME',    // Consumo de quota (agendamento enviou mensagem)
+  'PURCHASE',   // Compra de créditos extras
+  'GRANT',      // Concessão manual ou ativação de add-on
+  'ADJUST',     // Ajuste manual (admin)
+  'REFUND',     // Estorno
+]);
+
+/**
+ * Catálogo de Add-ons disponíveis
+ * Ex: WHATSAPP_BASIC_120, WHATSAPP_PRO_160
+ */
+export const addonCatalog = pgTable('addon_catalog', {
+  code: varchar('code', { length: 50 }).primaryKey(),
+  family: varchar('family', { length: 30 }).notNull(),           // WHATSAPP
+  tier: varchar('tier', { length: 20 }).notNull(),               // BASIC, PRO
+  quotaType: varchar('quota_type', { length: 50 }).notNull(),    // WHATSAPP_APPOINTMENT
+  quotaAmount: integer('quota_amount').notNull(),                // 120, 160, 200, 240
+  priceCents: integer('price_cents').notNull(),                  // 2990, 3990, ...
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Pacotes de créditos extras
+ * Ex: WHATSAPP_EXTRA_20 = +20 agendamentos por R$10
+ */
+export const creditPackages = pgTable('credit_packages', {
+  code: varchar('code', { length: 50 }).primaryKey(),
+  quotaType: varchar('quota_type', { length: 50 }).notNull(),    // WHATSAPP_APPOINTMENT
+  qty: integer('qty').notNull(),                                 // 20
+  priceCents: integer('price_cents').notNull(),                  // 1000
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Add-ons ativos por salão
+ * Indica quais add-ons o salão contratou
+ */
+export const salonAddons = pgTable('salon_addons', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  addonCode: varchar('addon_code', { length: 50 }).references(() => addonCatalog.code).notNull(),
+  status: addonStatusEnum('status').default('ACTIVE').notNull(),
+  currentPeriodStart: timestamp('current_period_start'),
+  currentPeriodEnd: timestamp('current_period_end'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+/**
+ * Quotas mensais por salão
+ * Controla saldo de agendamentos WhatsApp por mês
+ */
+export const salonQuotas = pgTable('salon_quotas', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  periodYyyymm: integer('period_yyyymm').notNull(),              // 202601
+  whatsappIncluded: integer('whatsapp_included').default(0).notNull(),
+  whatsappUsed: integer('whatsapp_used').default(0).notNull(),
+  whatsappExtraPurchased: integer('whatsapp_extra_purchased').default(0).notNull(),
+  whatsappExtraUsed: integer('whatsapp_extra_used').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  uniqueSalonPeriod: unique().on(table.salonId, table.periodYyyymm),
+}));
+
+/**
+ * Ledger de quotas (auditoria)
+ * Registra todos os eventos de consumo, compra, ajuste
+ */
+export const quotaLedger = pgTable('quota_ledger', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  periodYyyymm: integer('period_yyyymm').notNull(),
+  eventType: quotaEventTypeEnum('event_type').notNull(),
+  quotaType: varchar('quota_type', { length: 50 }).notNull(),    // WHATSAPP_APPOINTMENT
+  qty: integer('qty').notNull(),                                 // pode ser negativo (consumo)
+  refType: varchar('ref_type', { length: 30 }),                  // APPOINTMENT, MANUAL, INVOICE
+  refId: varchar('ref_id', { length: 100 }),
+  metadata: json('metadata').$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Types para Add-ons e Quotas
+export type AddonCatalog = typeof addonCatalog.$inferSelect;
+export type NewAddonCatalog = typeof addonCatalog.$inferInsert;
+export type CreditPackage = typeof creditPackages.$inferSelect;
+export type NewCreditPackage = typeof creditPackages.$inferInsert;
+export type SalonAddon = typeof salonAddons.$inferSelect;
+export type NewSalonAddon = typeof salonAddons.$inferInsert;
+export type SalonQuota = typeof salonQuotas.$inferSelect;
+export type NewSalonQuota = typeof salonQuotas.$inferInsert;
+export type QuotaLedgerEntry = typeof quotaLedger.$inferSelect;
+export type NewQuotaLedgerEntry = typeof quotaLedger.$inferInsert;
