@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { ScheduledMessagesService } from './scheduled-messages.service';
 import { WhatsAppService } from '../automation/whatsapp.service';
 import { AuditService } from '../audit/audit.service';
+import { AddonsService } from '../subscriptions/addons.service';
 
 // Constantes de configuração
 const MAX_RETRY_ATTEMPTS = 3;
@@ -17,6 +18,7 @@ export class ScheduledMessagesProcessor {
     private readonly scheduledMessagesService: ScheduledMessagesService,
     private readonly whatsappService: WhatsAppService,
     private readonly auditService: AuditService,
+    private readonly addonsService: AddonsService,
   ) {
     this.logger.log('ScheduledMessagesProcessor inicializado - processando appointment_notifications a cada 1 minuto');
   }
@@ -123,6 +125,7 @@ export class ScheduledMessagesProcessor {
 
   /**
    * Trata sucesso no envio
+   * Também consome quota para mensagens de confirmação (APPOINTMENT_CONFIRMATION)
    */
   private async handleSendSuccess(message: any, result: any): Promise<void> {
     await this.scheduledMessagesService.updateMessageStatus(
@@ -130,6 +133,33 @@ export class ScheduledMessagesProcessor {
       'SENT',
       result.messageId,
     );
+
+    // Consumir quota WhatsApp apenas para mensagens de CONFIRMAÇÃO
+    // Não consome para lembretes/outros tipos (um appointment = 1 quota)
+    if (message.notification_type === 'APPOINTMENT_CONFIRMATION' && message.appointment_id) {
+      try {
+        const quotaResult = await this.addonsService.consumeWhatsAppQuota(
+          message.salon_id,
+          message.appointment_id,
+          'APPOINTMENT_CONFIRMATION',
+        );
+        this.logger.debug(
+          `[Quota] Consumido ${quotaResult.source} para appointment ${message.appointment_id}. Saldo: ${quotaResult.remaining.total}`,
+        );
+      } catch (quotaError: any) {
+        // Log do erro mas não falha o envio da mensagem (degradação graciosa)
+        // A mensagem já foi enviada, apenas não conseguimos debitar a quota
+        if (quotaError.status === 402) {
+          this.logger.warn(
+            `[Quota] Quota excedida para salão ${message.salon_id} (mensagem já enviada): ${quotaError.message}`,
+          );
+        } else {
+          this.logger.error(
+            `[Quota] Erro ao consumir quota para appointment ${message.appointment_id}: ${quotaError.message}`,
+          );
+        }
+      }
+    }
 
     // Audit log
     await this.auditService.logWhatsAppSent({

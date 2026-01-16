@@ -1,10 +1,39 @@
-import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
-import { eq, and } from 'drizzle-orm';
+import { Injectable, Inject, NotFoundException, BadRequestException, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { eq, and, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../../database/schema';
 
+/**
+ * Resultado do consumo de quota
+ */
+export interface ConsumeQuotaResult {
+  success: boolean;
+  source: 'INCLUDED' | 'EXTRA';
+  periodYyyymm: number;
+  ledgerId: string;
+  remaining: {
+    included: number;
+    extra: number;
+    total: number;
+  };
+}
+
+/**
+ * Erro de quota excedida
+ */
+export interface QuotaExceededError {
+  code: 'QUOTA_EXCEEDED';
+  message: string;
+  needed: number;
+  remaining: number;
+  suggestedAction: 'buy_credit_or_upgrade';
+  packageCode: string;
+}
+
 @Injectable()
 export class AddonsService {
+  private readonly logger = new Logger(AddonsService.name);
+
   constructor(
     @Inject('DATABASE_CONNECTION') private db: NodePgDatabase<typeof schema>,
   ) {}
@@ -358,5 +387,230 @@ export class AddonsService {
       totalFormatted: `R$ ${(totalCents / 100).toFixed(2).replace('.', ',')}`,
       ledgerId: ledgerEntry.id,
     };
+  }
+
+  /**
+   * Consome 1 unidade de quota WhatsApp para um agendamento
+   * IDEMPOTENTE: Se já foi consumido para este appointment no período, retorna sucesso sem consumir novamente
+   *
+   * Ordem de consumo:
+   * 1. Primeiro tenta usar quota INCLUDED (do plano)
+   * 2. Se não houver, tenta usar quota EXTRA (créditos comprados)
+   * 3. Se não houver nenhuma, lança erro HTTP 402 (Payment Required)
+   *
+   * @param salonId - ID do salão
+   * @param appointmentId - ID do agendamento (chave de idempotência)
+   * @param reason - Motivo do consumo (para auditoria)
+   * @returns ConsumeQuotaResult ou lança HttpException
+   */
+  async consumeWhatsAppQuota(
+    salonId: string,
+    appointmentId: string,
+    reason: string = 'APPOINTMENT_CONFIRMATION',
+  ): Promise<ConsumeQuotaResult> {
+    const periodYyyymm = this.getCurrentPeriod();
+    const quotaType = 'WHATSAPP_APPOINTMENT';
+
+    this.logger.debug(`[consumeQuota] salonId=${salonId}, appointmentId=${appointmentId}, period=${periodYyyymm}`);
+
+    // 1. Verificar se já existe consumo para este appointment no período (idempotência)
+    const existingConsume = await this.db
+      .select()
+      .from(schema.quotaLedger)
+      .where(
+        and(
+          eq(schema.quotaLedger.salonId, salonId),
+          eq(schema.quotaLedger.periodYyyymm, periodYyyymm),
+          eq(schema.quotaLedger.eventType, 'CONSUME'),
+          eq(schema.quotaLedger.refType, 'APPOINTMENT'),
+          eq(schema.quotaLedger.refId, appointmentId),
+        ),
+      )
+      .limit(1);
+
+    if (existingConsume.length > 0) {
+      this.logger.debug(`[consumeQuota] Já consumido anteriormente (idempotente): ledgerId=${existingConsume[0].id}`);
+
+      // Buscar saldos atuais para retornar
+      const quota = await this.getOrCreateQuotaRecord(salonId, periodYyyymm);
+      const includedRemaining = Math.max(0, quota.whatsappIncluded - quota.whatsappUsed);
+      const extraRemaining = Math.max(0, quota.whatsappExtraPurchased - quota.whatsappExtraUsed);
+
+      return {
+        success: true,
+        source: (existingConsume[0].metadata as any)?.source || 'INCLUDED',
+        periodYyyymm,
+        ledgerId: existingConsume[0].id,
+        remaining: {
+          included: includedRemaining,
+          extra: extraRemaining,
+          total: includedRemaining + extraRemaining,
+        },
+      };
+    }
+
+    // 2. Buscar ou criar registro de quota do mês
+    const quota = await this.getOrCreateQuotaRecord(salonId, periodYyyymm);
+
+    // 3. Calcular saldos disponíveis
+    const includedRemaining = Math.max(0, quota.whatsappIncluded - quota.whatsappUsed);
+    const extraRemaining = Math.max(0, quota.whatsappExtraPurchased - quota.whatsappExtraUsed);
+    const totalRemaining = includedRemaining + extraRemaining;
+
+    this.logger.debug(`[consumeQuota] Saldos: included=${includedRemaining}, extra=${extraRemaining}, total=${totalRemaining}`);
+
+    // 4. Se não houver saldo, lançar erro
+    if (totalRemaining <= 0) {
+      const errorPayload: QuotaExceededError = {
+        code: 'QUOTA_EXCEEDED',
+        message: 'Quota de WhatsApp excedida. Adquira créditos extras ou faça upgrade do plano.',
+        needed: 1,
+        remaining: 0,
+        suggestedAction: 'buy_credit_or_upgrade',
+        packageCode: 'WHATSAPP_EXTRA_20',
+      };
+
+      this.logger.warn(`[consumeQuota] Quota excedida para salão ${salonId}`);
+      throw new HttpException(errorPayload, HttpStatus.PAYMENT_REQUIRED);
+    }
+
+    // 5. Determinar fonte do consumo (INCLUDED primeiro, depois EXTRA)
+    const source: 'INCLUDED' | 'EXTRA' = includedRemaining > 0 ? 'INCLUDED' : 'EXTRA';
+    const now = new Date();
+
+    // 6. Usar transação para garantir atomicidade
+    try {
+      const result = await this.db.transaction(async (tx) => {
+        // 6a. Atualizar contadores em salon_quotas
+        if (source === 'INCLUDED') {
+          await tx
+            .update(schema.salonQuotas)
+            .set({
+              whatsappUsed: sql`${schema.salonQuotas.whatsappUsed} + 1`,
+              updatedAt: now,
+            })
+            .where(eq(schema.salonQuotas.id, quota.id));
+        } else {
+          await tx
+            .update(schema.salonQuotas)
+            .set({
+              whatsappExtraUsed: sql`${schema.salonQuotas.whatsappExtraUsed} + 1`,
+              updatedAt: now,
+            })
+            .where(eq(schema.salonQuotas.id, quota.id));
+        }
+
+        // 6b. Registrar no ledger (com constraint de idempotência no banco)
+        const [ledgerEntry] = await tx
+          .insert(schema.quotaLedger)
+          .values({
+            salonId,
+            periodYyyymm,
+            eventType: 'CONSUME',
+            quotaType,
+            qty: -1, // Negativo = consumo
+            refType: 'APPOINTMENT',
+            refId: appointmentId,
+            metadata: {
+              source,
+              reason,
+              consumedAt: now.toISOString(),
+            },
+          })
+          .returning();
+
+        return ledgerEntry;
+      });
+
+      // 7. Calcular saldos após consumo
+      const newIncludedRemaining = source === 'INCLUDED' ? includedRemaining - 1 : includedRemaining;
+      const newExtraRemaining = source === 'EXTRA' ? extraRemaining - 1 : extraRemaining;
+
+      this.logger.log(`[consumeQuota] Consumido 1 quota ${source} para appointment ${appointmentId}. Novo saldo: ${newIncludedRemaining + newExtraRemaining}`);
+
+      return {
+        success: true,
+        source,
+        periodYyyymm,
+        ledgerId: result.id,
+        remaining: {
+          included: newIncludedRemaining,
+          extra: newExtraRemaining,
+          total: newIncludedRemaining + newExtraRemaining,
+        },
+      };
+    } catch (error: any) {
+      // Se for violação de constraint única (idempotência), não é erro real
+      if (error.code === '23505') {
+        this.logger.debug(`[consumeQuota] Consumo duplicado detectado pelo banco (idempotente)`);
+
+        // Buscar o registro existente
+        const existing = await this.db
+          .select()
+          .from(schema.quotaLedger)
+          .where(
+            and(
+              eq(schema.quotaLedger.salonId, salonId),
+              eq(schema.quotaLedger.periodYyyymm, periodYyyymm),
+              eq(schema.quotaLedger.eventType, 'CONSUME'),
+              eq(schema.quotaLedger.refType, 'APPOINTMENT'),
+              eq(schema.quotaLedger.refId, appointmentId),
+            ),
+          )
+          .limit(1);
+
+        if (existing.length > 0) {
+          const updatedQuota = await this.getOrCreateQuotaRecord(salonId, periodYyyymm);
+          return {
+            success: true,
+            source: (existing[0].metadata as any)?.source || 'INCLUDED',
+            periodYyyymm,
+            ledgerId: existing[0].id,
+            remaining: {
+              included: Math.max(0, updatedQuota.whatsappIncluded - updatedQuota.whatsappUsed),
+              extra: Math.max(0, updatedQuota.whatsappExtraPurchased - updatedQuota.whatsappExtraUsed),
+              total: Math.max(0, updatedQuota.whatsappIncluded - updatedQuota.whatsappUsed) +
+                     Math.max(0, updatedQuota.whatsappExtraPurchased - updatedQuota.whatsappExtraUsed),
+            },
+          };
+        }
+      }
+
+      this.logger.error(`[consumeQuota] Erro ao consumir quota: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Busca ou cria registro de quota para o salão/período
+   */
+  private async getOrCreateQuotaRecord(salonId: string, periodYyyymm: number) {
+    let quotaRecord = await this.db
+      .select()
+      .from(schema.salonQuotas)
+      .where(
+        and(
+          eq(schema.salonQuotas.salonId, salonId),
+          eq(schema.salonQuotas.periodYyyymm, periodYyyymm),
+        ),
+      )
+      .limit(1);
+
+    if (quotaRecord.length === 0) {
+      const inserted = await this.db
+        .insert(schema.salonQuotas)
+        .values({
+          salonId,
+          periodYyyymm,
+          whatsappIncluded: 0,
+          whatsappUsed: 0,
+          whatsappExtraPurchased: 0,
+          whatsappExtraUsed: 0,
+        })
+        .returning();
+      quotaRecord = inserted;
+    }
+
+    return quotaRecord[0];
   }
 }
