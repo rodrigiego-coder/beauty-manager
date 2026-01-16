@@ -4,6 +4,7 @@ import {
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
 import { ValidationPipe } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import fastifyCookie from '@fastify/cookie';
 import { AppModule } from './app.module';
 
@@ -65,6 +66,40 @@ async function bootstrap() {
     },
     credentials: true,
   });
+
+  // Swagger - apenas em DEV
+  const swaggerEnabled =
+    process.env.SWAGGER_ENABLED === 'true' ||
+    process.env.NODE_ENV === 'development';
+
+  if (swaggerEnabled) {
+    const config = new DocumentBuilder()
+      .setTitle('Beauty Manager API')
+      .setDescription('API do sistema de gestão de salões de beleza')
+      .setVersion('1.0')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          name: 'Authorization',
+          in: 'header',
+        },
+        'access-token',
+      )
+      .build();
+
+    const document = SwaggerModule.createDocument(app, config);
+
+    // UI Swagger em /docs (também expõe /docs-json automaticamente)
+    SwaggerModule.setup('docs', app, document, {
+      swaggerOptions: {
+        persistAuthorization: true,
+      },
+    });
+
+    console.log('📚 Swagger docs available at /docs');
+  }
 
   const port = process.env.API_PORT || 3000;
   await app.listen(port, '0.0.0.0');
