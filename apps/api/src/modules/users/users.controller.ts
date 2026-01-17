@@ -11,8 +11,7 @@ import {
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto, UpdateWorkScheduleDto, UpdateProfileDto, ChangePasswordDto } from './dto';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { JwtPayload } from '../auth/jwt.strategy';
+import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('users')
 export class UsersController {
@@ -21,14 +20,15 @@ export class UsersController {
   /**
    * GET /users/me
    * Retorna o perfil do usuario logado
+   * (Alias para /profile - mesma logica)
    */
   @Get('me')
-  async getProfile(@CurrentUser() user: JwtPayload) {
-    if (!user || !user.sub) {
+  async getMe(@CurrentUser() user: AuthenticatedUser) {
+    if (!user || !user.id) {
       throw new UnauthorizedException('Usuario nao autenticado');
     }
 
-    const userData = await this.usersService.findById(user.sub);
+    const userData = await this.usersService.findById(user.id);
 
     if (!userData) {
       throw new NotFoundException('Usuario nao encontrado');
@@ -41,17 +41,18 @@ export class UsersController {
   /**
    * PATCH /users/me
    * Atualiza o perfil do usuario logado
+   * (Alias para PATCH /profile - mesma logica)
    */
   @Patch('me')
-  async updateProfile(
-    @CurrentUser() user: JwtPayload,
+  async updateMe(
+    @CurrentUser() user: AuthenticatedUser,
     @Body() data: UpdateProfileDto,
   ) {
-    if (!user || !user.sub) {
+    if (!user || !user.id) {
       throw new UnauthorizedException('Usuario nao autenticado');
     }
 
-    const updatedUser = await this.usersService.updateProfile(user.sub, data);
+    const updatedUser = await this.usersService.updateProfile(user.id, data);
 
     if (!updatedUser) {
       throw new NotFoundException('Usuario nao encontrado');
@@ -67,18 +68,19 @@ export class UsersController {
   /**
    * POST /users/me/change-password
    * Altera a senha do usuario logado
+   * (Alias para POST /profile/change-password - mesma logica)
    */
   @Post('me/change-password')
-  async changePassword(
-    @CurrentUser() user: JwtPayload,
+  async changeMyPassword(
+    @CurrentUser() user: AuthenticatedUser,
     @Body() data: ChangePasswordDto,
   ) {
-    if (!user || !user.sub) {
+    if (!user || !user.id) {
       throw new UnauthorizedException('Usuario nao autenticado');
     }
 
     return this.usersService.changePassword(
-      user.sub,
+      user.id,
       data.currentPassword,
       data.newPassword,
     );
