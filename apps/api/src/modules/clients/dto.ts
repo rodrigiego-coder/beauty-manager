@@ -10,6 +10,7 @@ import {
   Validate,
   MinLength,
 } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
  * Validador customizado para nome completo (mínimo 2 palavras)
@@ -55,29 +56,35 @@ export class IsBrazilianPhoneConstraint implements ValidatorConstraintInterface 
  * DTO para criar cliente
  */
 export class CreateClientDto {
+  @ApiProperty({ description: 'Nome completo do cliente (nome e sobrenome)', example: 'Maria Silva Santos', minLength: 3 })
   @IsString({ message: 'Nome deve ser uma string' })
   @IsNotEmpty({ message: 'Nome é obrigatório' })
   @MinLength(3, { message: 'Nome deve ter pelo menos 3 caracteres' })
   @Validate(IsFullNameConstraint)
   name!: string;
 
+  @ApiProperty({ description: 'Telefone brasileiro (DDD + número)', example: '11999998888' })
   @IsString({ message: 'Telefone deve ser uma string' })
   @IsNotEmpty({ message: 'Telefone é obrigatório' })
   @Validate(IsBrazilianPhoneConstraint)
   phone!: string;
 
+  @ApiPropertyOptional({ description: 'Email do cliente', example: 'maria@exemplo.com' })
   @IsEmail({}, { message: 'Email inválido' })
   @IsOptional()
   email?: string;
 
+  @ApiPropertyOptional({ description: 'Notas técnicas (visíveis apenas para profissionais)', example: 'Alergia a amônia, preferir coloração sem' })
   @IsString({ message: 'Notas técnicas deve ser uma string' })
   @IsOptional()
   technicalNotes?: string;
 
+  @ApiPropertyOptional({ description: 'Preferências do cliente', example: 'Prefere atendimento pela manhã, gosta de café' })
   @IsString({ message: 'Preferências deve ser uma string' })
   @IsOptional()
   preferences?: string;
 
+  @ApiPropertyOptional({ description: 'Ativar assistente IA para este cliente', example: true })
   @IsBoolean({ message: 'aiActive deve ser um booleano' })
   @IsOptional()
   aiActive?: boolean;
@@ -87,29 +94,35 @@ export class CreateClientDto {
  * DTO para atualizar cliente
  */
 export class UpdateClientDto {
+  @ApiPropertyOptional({ description: 'Nome completo do cliente (nome e sobrenome)', example: 'Maria Silva Santos', minLength: 3 })
   @IsString({ message: 'Nome deve ser uma string' })
   @IsOptional()
   @MinLength(3, { message: 'Nome deve ter pelo menos 3 caracteres' })
   @Validate(IsFullNameConstraint)
   name?: string;
 
+  @ApiPropertyOptional({ description: 'Telefone brasileiro (DDD + número)', example: '11999998888' })
   @IsString({ message: 'Telefone deve ser uma string' })
   @IsOptional()
   @Validate(IsBrazilianPhoneConstraint)
   phone?: string;
 
+  @ApiPropertyOptional({ description: 'Email do cliente', example: 'maria@exemplo.com' })
   @IsEmail({}, { message: 'Email inválido' })
   @IsOptional()
   email?: string;
 
+  @ApiPropertyOptional({ description: 'Notas técnicas (visíveis apenas para profissionais)', example: 'Alergia a amônia, preferir coloração sem' })
   @IsString({ message: 'Notas técnicas deve ser uma string' })
   @IsOptional()
   technicalNotes?: string;
 
+  @ApiPropertyOptional({ description: 'Preferências do cliente', example: 'Prefere atendimento pela manhã, gosta de café' })
   @IsString({ message: 'Preferências deve ser uma string' })
   @IsOptional()
   preferences?: string;
 
+  @ApiPropertyOptional({ description: 'Ativar assistente IA para este cliente', example: true })
   @IsBoolean({ message: 'aiActive deve ser um booleano' })
   @IsOptional()
   aiActive?: boolean;
