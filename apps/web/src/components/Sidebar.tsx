@@ -7,6 +7,7 @@ import {
   Package,
   Users,
   UserCog,
+  UsersRound,
   FileText,
   Settings,
   LogOut,
@@ -56,6 +57,7 @@ const navigation: NavItem[] = [
   { name: 'Recomendacoes', href: '/recomendacoes/regras', icon: Lightbulb, roles: ['OWNER', 'MANAGER'] },
   { name: 'Clientes', href: '/clientes', icon: Users, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
   { name: 'Equipe', href: '/equipe', icon: UserCog, roles: ['OWNER', 'MANAGER'] },
+  { name: 'Usuarios', href: '/usuarios', icon: UsersRound, roles: ['OWNER', 'MANAGER'] },
   { name: 'Relatorios', href: '/relatorios', icon: FileText, roles: ['OWNER', 'MANAGER'] },
 ];
 

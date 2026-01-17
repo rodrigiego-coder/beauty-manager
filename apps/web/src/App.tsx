@@ -35,6 +35,7 @@ import {
   ABTestsPage,
   PaymentMethodsPage,
   PaymentDestinationsPage,
+  UsersManagementPage,
 } from './pages';
 import AlexisConversationsPage from './pages/AlexisConversationsPage';
 import AlexisSettingsPage from './pages/AlexisSettingsPage';
@@ -140,13 +141,21 @@ function App() {
                 </RoleGuard>
               }
             />
-            <Route 
-              path="/equipe/*" 
+            <Route
+              path="/equipe/*"
               element={
                 <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
                   <TeamPage />
                 </RoleGuard>
-              } 
+              }
+            />
+            <Route
+              path="/usuarios"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <UsersManagementPage />
+                </RoleGuard>
+              }
             />
             <Route 
               path="/relatorios" 
