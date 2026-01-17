@@ -11,6 +11,7 @@ import {
   Request,
 } from '@nestjs/common';
 import { IsString, IsOptional, IsBoolean, IsIn } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import { AlexisService } from './alexis.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -26,75 +27,93 @@ import { Public } from '../../common/decorators/public.decorator';
 
 // DTOs
 class ProcessMessageDto {
+  @ApiProperty({ description: 'ID do salão (UUID)', example: '550e8400-e29b-41d4-a716-446655440000' })
   @IsString()
   salonId!: string;
 
+  @ApiProperty({ description: 'Telefone do cliente', example: '11999998888' })
   @IsString()
   clientPhone!: string;
 
+  @ApiProperty({ description: 'Mensagem recebida', example: 'Olá, gostaria de agendar um corte' })
   @IsString()
   message!: string;
 
+  @ApiPropertyOptional({ description: 'Nome do cliente', example: 'Maria Silva' })
   @IsOptional()
   @IsString()
   clientName?: string;
 
+  @ApiPropertyOptional({ description: 'ID do remetente', example: '550e8400-e29b-41d4-a716-446655440001' })
   @IsOptional()
   @IsString()
   senderId?: string;
 
+  @ApiPropertyOptional({ description: 'Tipo do remetente', enum: ['client', 'agent'], example: 'client' })
   @IsOptional()
   @IsIn(['client', 'agent'])
   senderType?: 'client' | 'agent';
 }
 
 class UpdateSettingsDto {
+  @ApiPropertyOptional({ description: 'Alexis está habilitada', example: true })
   @IsOptional()
   @IsBoolean()
   isEnabled?: boolean;
 
+  @ApiPropertyOptional({ description: 'Nome da assistente', example: 'Alexis' })
   @IsOptional()
   @IsString()
   assistantName?: string;
 
+  @ApiPropertyOptional({ description: 'Mensagem de boas-vindas', example: 'Olá! Sou a Alexis, assistente virtual do salão.' })
   @IsOptional()
   @IsString()
   greetingMessage?: string;
 
+  @ApiPropertyOptional({ description: 'Mensagem quando humano assume', example: 'Um atendente humano irá te atender agora.' })
   @IsOptional()
   @IsString()
   humanTakeoverMessage?: string;
 
+  @ApiPropertyOptional({ description: 'Mensagem quando IA retoma', example: 'A Alexis voltou a te atender!' })
   @IsOptional()
   @IsString()
   aiResumeMessage?: string;
 
+  @ApiPropertyOptional({ description: 'Comando para humano assumir', example: '#eu' })
   @IsOptional()
   @IsString()
   humanTakeoverCommand?: string;
 
+  @ApiPropertyOptional({ description: 'Comando para IA retomar', example: '#ia' })
   @IsOptional()
   @IsString()
   aiResumeCommand?: string;
 
+  @ApiPropertyOptional({ description: 'Agendamento automático habilitado', example: true })
   @IsOptional()
   @IsBoolean()
   autoSchedulingEnabled?: boolean;
 
+  @ApiPropertyOptional({ description: 'Horário de início do expediente', example: '08:00' })
   @IsOptional()
   @IsString()
   workingHoursStart?: string;
 
+  @ApiPropertyOptional({ description: 'Horário de fim do expediente', example: '18:00' })
   @IsOptional()
   @IsString()
   workingHoursEnd?: string;
 }
 
 class DashboardChatDto {
+  @ApiProperty({ description: 'Mensagem para a Alexis', example: 'Quantos agendamentos tenho hoje?' })
   @IsString()
   message!: string;
 }
 
+@ApiTags('Alexis')
 @Controller('alexis')
 export class AlexisController {
   constructor(private readonly alexisService: AlexisService) {}
