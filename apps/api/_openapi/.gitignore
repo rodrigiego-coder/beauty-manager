@@ -1,0 +1,6 @@
+# OpenAPI snapshots (too large, generated)
+*.json
+
+# Keep CSVs and LAUDOs in version control
+!*.csv
+!*.md
