@@ -13,6 +13,7 @@ import {
   clients,
   paymentMethods,
   paymentDestinations,
+  appointments,
   Command,
   CommandItem,
   CommandPayment,
@@ -319,6 +320,52 @@ export class CommandsService {
     const discount = data.discount || 0;
     const totalPrice = (quantity * data.unitPrice) - discount;
 
+    // ========================================
+    // P0: Calcular effectivePerformerId para SERVICE
+    // ========================================
+    let effectivePerformerId: string | null = data.performerId || null;
+
+    if (data.type === 'SERVICE' && !data.performerId) {
+      // a) STYLIST logado => autoatribui para si
+      if (currentUser.role === 'STYLIST') {
+        effectivePerformerId = currentUser.id;
+        this.logger.log(`[addItem] SERVICE sem performerId - STYLIST logado, autoatribuído: ${currentUser.id}`);
+      }
+      // b) Comanda veio de agendamento => usa professionalId do appointment
+      else if (command.appointmentId) {
+        const [apt] = await this.db
+          .select({ professionalId: appointments.professionalId })
+          .from(appointments)
+          .where(eq(appointments.id, command.appointmentId))
+          .limit(1);
+
+        if (apt?.professionalId) {
+          effectivePerformerId = apt.professionalId;
+          this.logger.log(`[addItem] SERVICE sem performerId - usando professionalId do agendamento: ${apt.professionalId}`);
+        }
+      }
+      // c) Comanda aberta por STYLIST => usa openedById
+      else if (command.openedById) {
+        const [opener] = await this.db
+          .select({ id: users.id, role: users.role })
+          .from(users)
+          .where(eq(users.id, command.openedById))
+          .limit(1);
+
+        if (opener?.role === 'STYLIST') {
+          effectivePerformerId = opener.id;
+          this.logger.log(`[addItem] SERVICE sem performerId - usando openedById (STYLIST): ${opener.id}`);
+        }
+      }
+
+      // d) Se ainda não resolveu => erro para OWNER/MANAGER
+      if (!effectivePerformerId) {
+        throw new BadRequestException(
+          'Serviço requer profissional executante (performerId). Selecione o profissional que realizará o atendimento.'
+        );
+      }
+    }
+
     // Se for PRODUTO, baixar estoque antes de adicionar
     // HARDENING: validação multi-tenant + existência do produto
     if (data.type === 'PRODUCT' && data.referenceId) {
@@ -383,7 +430,7 @@ export class CommandsService {
               clientPackageId: packageCheck.clientPackage.id,
               serviceId,
               commandId,
-              professionalId: data.performerId,
+              professionalId: effectivePerformerId || undefined,
               notes: `Auto-consumed via command ${command.cardNumber}`,
             });
 
@@ -417,7 +464,7 @@ export class CommandsService {
         unitPrice: paidByPackage ? '0' : data.unitPrice.toString(),
         discount: discount.toString(),
         totalPrice: finalTotalPrice.toString(),
-        performerId: data.performerId || null,
+        performerId: effectivePerformerId,
         referenceId: data.referenceId || null,
         variantId: data.variantId || null, // Variante da receita (tamanho cabelo)
         addedById: currentUser.id,
@@ -446,7 +493,8 @@ export class CommandsService {
       quantity,
       unitPrice: paidByPackage ? 0 : data.unitPrice,
       totalPrice: finalTotalPrice,
-      performerId: data.performerId,
+      performerId: effectivePerformerId,
+      performerAutoAssigned: data.type === 'SERVICE' && !data.performerId && !!effectivePerformerId,
       paidByPackage,
       clientPackageId,
       clientPackageUsageId,
@@ -532,19 +580,27 @@ export class CommandsService {
     // Recalcula totais
     await this.recalculateTotals(commandId);
 
-    // Registra evento
+    // Detecta troca de performer para auditoria
+    const oldPerformerId = existingItem.performerId;
+    const newPerformerId = data.performerId ?? existingItem.performerId;
+    const performerChanged = data.performerId !== undefined && data.performerId !== oldPerformerId;
+
+    // Registra evento com auditoria de troca de performer
     await this.addEvent(commandId, currentUser.id, 'ITEM_UPDATED', {
       itemId,
       from: {
         quantity: existingItem.quantity,
         unitPrice: existingItem.unitPrice,
         discount: existingItem.discount,
+        ...(performerChanged && { performerId: oldPerformerId }),
       },
       to: {
         quantity,
         unitPrice,
         discount,
+        ...(performerChanged && { performerId: newPerformerId }),
       },
+      ...(performerChanged && { performerChanged: true }),
     });
 
     return updatedItem;
