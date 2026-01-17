@@ -1252,7 +1252,7 @@ export class AppointmentsService {
       throw new BadRequestException('Agendamento já possui uma comanda');
     }
 
-    // Create command
+    // Create command with appointmentId link and IN_SERVICE status
     const cardNumber = await this.generateCardNumber(salonId);
     const [newCommand] = await this.db
       .insert(commands)
@@ -1260,7 +1260,8 @@ export class AppointmentsService {
         salonId,
         cardNumber,
         clientId: appointment.clientId,
-        status: 'OPEN',
+        appointmentId: appointment.id, // P0: Link to source appointment
+        status: 'IN_SERVICE', // P0: Start as IN_SERVICE since it already has a service item
         openedById: userId,
         openedAt: new Date(),
         totalGross: '0',
@@ -1269,12 +1270,12 @@ export class AppointmentsService {
       })
       .returning();
 
-    // Add service as command item
+    // Add service as command item with referenceId from appointment.serviceId
     const price = parseFloat(appointment.price || '0');
     await this.db.insert(commandItems).values({
       commandId: newCommand.id,
       type: 'SERVICE',
-      referenceId: null,
+      referenceId: appointment.serviceId ? String(appointment.serviceId) : null, // P0: Link to service
       description: appointment.service,
       quantity: '1',
       unitPrice: price.toFixed(2),
