@@ -5,6 +5,7 @@ import {
   Body,
   UseGuards,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
 import { AddonsService } from './addons.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -12,6 +13,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { ActivateAddonDto, GrantCreditsDto } from './addons.dto';
 
+@ApiTags('Subscriptions - Add-ons')
+@ApiBearerAuth('access-token')
 @Controller('subscriptions/addons')
 @UseGuards(AuthGuard, RolesGuard)
 export class AddonsController {
@@ -24,6 +27,7 @@ export class AddonsController {
    */
   @Get('catalog')
   @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
+  @ApiOperation({ summary: 'Listar catálogo de add-ons disponíveis' })
   async getCatalog() {
     return this.addonsService.getCatalog();
   }
@@ -35,6 +39,7 @@ export class AddonsController {
    */
   @Get('status')
   @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
+  @ApiOperation({ summary: 'Status dos add-ons e quotas do salão' })
   async getStatus(@CurrentUser() user: any) {
     return this.addonsService.getStatus(user.salonId);
   }
@@ -46,6 +51,8 @@ export class AddonsController {
    */
   @Post('activate')
   @Roles('OWNER', 'MANAGER')
+  @ApiOperation({ summary: 'Ativar add-on para o salão' })
+  @ApiBody({ type: ActivateAddonDto })
   async activateAddon(
     @CurrentUser() user: any,
     @Body() dto: ActivateAddonDto,
@@ -54,6 +61,8 @@ export class AddonsController {
   }
 }
 
+@ApiTags('Subscriptions - Créditos')
+@ApiBearerAuth('access-token')
 @Controller('subscriptions/credits')
 @UseGuards(AuthGuard, RolesGuard)
 export class CreditsController {
@@ -66,6 +75,8 @@ export class CreditsController {
    */
   @Post('grant')
   @Roles('OWNER', 'MANAGER')
+  @ApiOperation({ summary: 'Comprar créditos extras' })
+  @ApiBody({ type: GrantCreditsDto })
   async grantCredits(
     @CurrentUser() user: any,
     @Body() dto: GrantCreditsDto,
