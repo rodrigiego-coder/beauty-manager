@@ -1,42 +1,51 @@
 import { IsString, IsOptional, IsNumber, IsBoolean, IsUUID, IsArray, ValidateNested, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // ==================== Program DTOs ====================
 
 export class CreateProgramDto {
+  @ApiPropertyOptional({ description: 'Nome do programa de fidelidade', example: 'Programa Fidelidade Beleza' })
   @IsOptional()
   @IsString()
   name?: string;
 
+  @ApiPropertyOptional({ description: 'Pontos ganhos por real gasto em serviços', example: 1, minimum: 0 })
   @IsOptional()
   @IsNumber()
   @Min(0)
   pointsPerRealService?: number;
 
+  @ApiPropertyOptional({ description: 'Pontos ganhos por real gasto em produtos', example: 0.5, minimum: 0 })
   @IsOptional()
   @IsNumber()
   @Min(0)
   pointsPerRealProduct?: number;
 
+  @ApiPropertyOptional({ description: 'Dias para expiração dos pontos (null = não expira)', example: 365 })
   @IsOptional()
   @IsNumber()
   pointsExpireDays?: number;
 
+  @ApiPropertyOptional({ description: 'Mínimo de pontos para resgate', example: 100, minimum: 1 })
   @IsOptional()
   @IsNumber()
   @Min(1)
   minimumRedeemPoints?: number;
 
+  @ApiPropertyOptional({ description: 'Pontos de boas-vindas ao se cadastrar', example: 50, minimum: 0 })
   @IsOptional()
   @IsNumber()
   @Min(0)
   welcomePoints?: number;
 
+  @ApiPropertyOptional({ description: 'Pontos de aniversário', example: 100, minimum: 0 })
   @IsOptional()
   @IsNumber()
   @Min(0)
   birthdayPoints?: number;
 
+  @ApiPropertyOptional({ description: 'Pontos por indicação de novo cliente', example: 200, minimum: 0 })
   @IsOptional()
   @IsNumber()
   @Min(0)
@@ -44,6 +53,7 @@ export class CreateProgramDto {
 }
 
 export class UpdateProgramDto extends CreateProgramDto {
+  @ApiPropertyOptional({ description: 'Programa ativo', example: true })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
@@ -52,90 +62,109 @@ export class UpdateProgramDto extends CreateProgramDto {
 // ==================== Tier DTOs ====================
 
 export class TierBenefitsDto {
+  @ApiPropertyOptional({ description: 'Percentual de desconto do tier', example: 10, minimum: 0, maximum: 100 })
   @IsOptional()
   @IsNumber()
   @Min(0)
   @Max(100)
   discountPercent?: number;
 
+  @ApiPropertyOptional({ description: 'Prioridade no agendamento', example: true })
   @IsOptional()
   @IsBoolean()
   priorityBooking?: boolean;
 
+  @ApiPropertyOptional({ description: 'Lista de serviços gratuitos', example: ['corte', 'escova'], isArray: true, type: String })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   freeServices?: string[];
 
+  @ApiPropertyOptional({ description: 'Benefícios extras em texto', example: 'Acesso VIP, estacionamento gratuito' })
   @IsOptional()
   @IsString()
   extraBenefits?: string;
 }
 
 export class CreateTierDto {
+  @ApiProperty({ description: 'Nome do tier', example: 'Ouro' })
   @IsString()
   name!: string;
 
+  @ApiProperty({ description: 'Código único do tier', example: 'GOLD' })
   @IsString()
   code!: string;
 
+  @ApiProperty({ description: 'Pontos mínimos para atingir o tier', example: 1000, minimum: 0 })
   @IsNumber()
   @Min(0)
   minPoints!: number;
 
+  @ApiPropertyOptional({ description: 'Cor do tier em hexadecimal', example: '#FFD700' })
   @IsOptional()
   @IsString()
   color?: string;
 
+  @ApiPropertyOptional({ description: 'Ícone do tier', example: 'crown' })
   @IsOptional()
   @IsString()
   icon?: string;
 
+  @ApiPropertyOptional({ description: 'Benefícios do tier', type: TierBenefitsDto })
   @IsOptional()
   @ValidateNested()
   @Type(() => TierBenefitsDto)
   benefits?: TierBenefitsDto;
 
+  @ApiPropertyOptional({ description: 'Multiplicador de pontos', example: 1.5, minimum: 1, maximum: 10 })
   @IsOptional()
   @IsNumber()
   @Min(1)
   @Max(10)
   pointsMultiplier?: number;
 
+  @ApiPropertyOptional({ description: 'Ordem de exibição', example: 2 })
   @IsOptional()
   @IsNumber()
   sortOrder?: number;
 }
 
 export class UpdateTierDto {
+  @ApiPropertyOptional({ description: 'Nome do tier', example: 'Ouro' })
   @IsOptional()
   @IsString()
   name?: string;
 
+  @ApiPropertyOptional({ description: 'Pontos mínimos para atingir o tier', example: 1000, minimum: 0 })
   @IsOptional()
   @IsNumber()
   @Min(0)
   minPoints?: number;
 
+  @ApiPropertyOptional({ description: 'Cor do tier em hexadecimal', example: '#FFD700' })
   @IsOptional()
   @IsString()
   color?: string;
 
+  @ApiPropertyOptional({ description: 'Ícone do tier', example: 'crown' })
   @IsOptional()
   @IsString()
   icon?: string;
 
+  @ApiPropertyOptional({ description: 'Benefícios do tier', type: TierBenefitsDto })
   @IsOptional()
   @ValidateNested()
   @Type(() => TierBenefitsDto)
   benefits?: TierBenefitsDto;
 
+  @ApiPropertyOptional({ description: 'Multiplicador de pontos', example: 1.5, minimum: 1, maximum: 10 })
   @IsOptional()
   @IsNumber()
   @Min(1)
   @Max(10)
   pointsMultiplier?: number;
 
+  @ApiPropertyOptional({ description: 'Ordem de exibição', example: 2 })
   @IsOptional()
   @IsNumber()
   sortOrder?: number;
@@ -147,58 +176,71 @@ export const RewardTypes = ['DISCOUNT_VALUE', 'DISCOUNT_PERCENT', 'FREE_SERVICE'
 export type RewardType = typeof RewardTypes[number];
 
 export class CreateRewardDto {
+  @ApiProperty({ description: 'Nome da recompensa', example: 'Desconto de R$50' })
   @IsString()
   name!: string;
 
+  @ApiPropertyOptional({ description: 'Descrição da recompensa', example: 'Desconto de R$50 em qualquer serviço' })
   @IsOptional()
   @IsString()
   description?: string;
 
+  @ApiProperty({ description: 'Tipo da recompensa', enum: ['DISCOUNT_VALUE', 'DISCOUNT_PERCENT', 'FREE_SERVICE', 'FREE_PRODUCT', 'GIFT'], example: 'DISCOUNT_VALUE' })
   @IsString()
   type!: RewardType;
 
+  @ApiProperty({ description: 'Custo em pontos', example: 500, minimum: 1 })
   @IsNumber()
   @Min(1)
   pointsCost!: number;
 
+  @ApiPropertyOptional({ description: 'Valor do desconto (R$ ou %)', example: 50, minimum: 0 })
   @IsOptional()
   @IsNumber()
   @Min(0)
   value?: number;
 
+  @ApiPropertyOptional({ description: 'ID do produto (para FREE_PRODUCT)', example: 123 })
   @IsOptional()
   @IsNumber()
   productId?: number;
 
+  @ApiPropertyOptional({ description: 'ID do serviço (para FREE_SERVICE)', example: 456 })
   @IsOptional()
   @IsNumber()
   serviceId?: number;
 
+  @ApiPropertyOptional({ description: 'Tier mínimo para resgatar', example: 'GOLD' })
   @IsOptional()
   @IsString()
   minTier?: string;
 
+  @ApiPropertyOptional({ description: 'Máximo de resgates por cliente', example: 3, minimum: 1 })
   @IsOptional()
   @IsNumber()
   @Min(1)
   maxRedemptionsPerClient?: number;
 
+  @ApiPropertyOptional({ description: 'Total disponível para resgate', example: 100, minimum: 0 })
   @IsOptional()
   @IsNumber()
   @Min(0)
   totalAvailable?: number;
 
+  @ApiPropertyOptional({ description: 'Dias de validade após resgate', example: 30, minimum: 1 })
   @IsOptional()
   @IsNumber()
   @Min(1)
   validDays?: number;
 
+  @ApiPropertyOptional({ description: 'URL da imagem da recompensa', example: 'https://example.com/reward.jpg' })
   @IsOptional()
   @IsString()
   imageUrl?: string;
 }
 
 export class UpdateRewardDto extends CreateRewardDto {
+  @ApiPropertyOptional({ description: 'Recompensa ativa', example: true })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
@@ -207,15 +249,18 @@ export class UpdateRewardDto extends CreateRewardDto {
 // ==================== Account DTOs ====================
 
 export class EnrollClientDto {
+  @ApiPropertyOptional({ description: 'Código de indicação', example: 'ABC123' })
   @IsOptional()
   @IsString()
   referralCode?: string;
 }
 
 export class AdjustPointsDto {
+  @ApiProperty({ description: 'Quantidade de pontos (positivo para adicionar, negativo para remover)', example: 100 })
   @IsNumber()
   points!: number;
 
+  @ApiProperty({ description: 'Motivo do ajuste', example: 'Compensação por problema no serviço' })
   @IsString()
   description!: string;
 }
@@ -228,6 +273,7 @@ export type TransactionType = typeof TransactionTypes[number];
 // ==================== Voucher DTOs ====================
 
 export class UseVoucherDto {
+  @ApiProperty({ description: 'ID da comanda onde usar o voucher', example: '550e8400-e29b-41d4-a716-446655440000' })
   @IsUUID()
   commandId!: string;
 }
@@ -235,9 +281,11 @@ export class UseVoucherDto {
 // ==================== Referral DTOs ====================
 
 export class ApplyReferralDto {
+  @ApiProperty({ description: 'ID do novo cliente indicado', example: '550e8400-e29b-41d4-a716-446655440000' })
   @IsUUID()
   newClientId!: string;
 
+  @ApiProperty({ description: 'Código de indicação do cliente que indicou', example: 'ABC123' })
   @IsString()
   referralCode!: string;
 }
