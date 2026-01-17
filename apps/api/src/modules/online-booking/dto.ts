@@ -12,6 +12,7 @@ import {
   MaxLength,
   Matches,
 } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // ==================== ENUMS ====================
 
@@ -64,10 +65,12 @@ export enum DepositAppliesTo {
 }
 
 export class CreateOnlineBookingSettingsDto {
+  @ApiPropertyOptional({ description: 'Agendamento online habilitado', example: true })
   @IsBoolean()
   @IsOptional()
   enabled?: boolean;
 
+  @ApiPropertyOptional({ description: 'Slug único do salão para URL pública', example: 'meu-salao', minLength: 3, maxLength: 100 })
   @IsString()
   @MinLength(3)
   @MaxLength(100)
@@ -75,140 +78,169 @@ export class CreateOnlineBookingSettingsDto {
   @IsOptional()
   slug?: string;
 
+  @ApiPropertyOptional({ description: 'Modo de operação', enum: OperationMode, example: 'SECRETARY_AND_ONLINE' })
   @IsEnum(OperationMode)
   @IsOptional()
   operationMode?: OperationMode;
 
+  @ApiPropertyOptional({ description: 'Antecedência mínima em horas', example: 2, minimum: 0, maximum: 168 })
   @IsNumber()
   @Min(0)
-  @Max(168) // máximo 1 semana em horas
+  @Max(168)
   @IsOptional()
   minAdvanceHours?: number;
 
+  @ApiPropertyOptional({ description: 'Antecedência máxima em dias', example: 30, minimum: 1, maximum: 365 })
   @IsNumber()
   @Min(1)
   @Max(365)
   @IsOptional()
   maxAdvanceDays?: number;
 
+  @ApiPropertyOptional({ description: 'Duração da reserva temporária em minutos', example: 15, minimum: 5, maximum: 60 })
   @IsNumber()
   @Min(5)
   @Max(60)
   @IsOptional()
   holdDurationMinutes?: number;
 
+  @ApiPropertyOptional({ description: 'Intervalo entre slots em minutos', example: 30, minimum: 15, maximum: 120 })
   @IsNumber()
   @Min(15)
   @Max(120)
   @IsOptional()
   slotIntervalMinutes?: number;
 
+  @ApiPropertyOptional({ description: 'Permitir agendamento no mesmo dia', example: true })
   @IsBoolean()
   @IsOptional()
   allowSameDayBooking?: boolean;
 
+  @ApiPropertyOptional({ description: 'Horas mínimas para cancelamento', example: 24, minimum: 0, maximum: 168 })
   @IsNumber()
   @Min(0)
   @Max(168)
   @IsOptional()
   cancellationHours?: number;
 
+  @ApiPropertyOptional({ description: 'Política de cancelamento', example: 'Cancelamentos devem ser feitos com 24h de antecedência', maxLength: 2000 })
   @IsString()
   @MaxLength(2000)
   @IsOptional()
   cancellationPolicy?: string;
 
+  @ApiPropertyOptional({ description: 'Permitir reagendamento', example: true })
   @IsBoolean()
   @IsOptional()
   allowRescheduling?: boolean;
 
+  @ApiPropertyOptional({ description: 'Máximo de reagendamentos permitidos', example: 2, minimum: 0, maximum: 10 })
   @IsNumber()
   @Min(0)
   @Max(10)
   @IsOptional()
   maxReschedules?: number;
 
+  @ApiPropertyOptional({ description: 'Exigir verificação de telefone por OTP', example: true })
   @IsBoolean()
   @IsOptional()
   requirePhoneVerification?: boolean;
 
+  @ApiPropertyOptional({ description: 'Exigir depósito/sinal', example: false })
   @IsBoolean()
   @IsOptional()
   requireDeposit?: boolean;
 
+  @ApiPropertyOptional({ description: 'Tipo de depósito', enum: DepositType, example: 'FIXED' })
   @IsEnum(DepositType)
   @IsOptional()
   depositType?: DepositType;
 
+  @ApiPropertyOptional({ description: 'Valor do depósito (fixo ou percentual)', example: 50.00, minimum: 0 })
   @IsNumber()
   @Min(0)
   @IsOptional()
   depositValue?: number;
 
+  @ApiPropertyOptional({ description: 'Mínimo de serviços para exigir depósito', example: 1, minimum: 0 })
   @IsNumber()
   @Min(0)
   @IsOptional()
   depositMinServices?: number;
 
+  @ApiPropertyOptional({ description: 'A quem se aplica o depósito', enum: DepositAppliesTo, example: 'NEW_CLIENTS' })
   @IsEnum(DepositAppliesTo)
   @IsOptional()
   depositAppliesTo?: DepositAppliesTo;
 
+  @ApiPropertyOptional({ description: 'Permitir novos clientes', example: true })
   @IsBoolean()
   @IsOptional()
   allowNewClients?: boolean;
 
+  @ApiPropertyOptional({ description: 'Novos clientes precisam aprovação', example: false })
   @IsBoolean()
   @IsOptional()
   newClientRequiresApproval?: boolean;
 
+  @ApiPropertyOptional({ description: 'Novos clientes exigem depósito', example: true })
   @IsBoolean()
   @IsOptional()
   newClientDepositRequired?: boolean;
 
+  @ApiPropertyOptional({ description: 'Máximo de agendamentos por dia', example: 50, minimum: 1 })
   @IsNumber()
   @Min(1)
   @IsOptional()
   maxDailyBookings?: number;
 
+  @ApiPropertyOptional({ description: 'Máximo de agendamentos semanais por cliente', example: 3, minimum: 1, maximum: 20 })
   @IsNumber()
   @Min(1)
   @Max(20)
   @IsOptional()
   maxWeeklyBookingsPerClient?: number;
 
+  @ApiPropertyOptional({ description: 'Mensagem de boas-vindas', example: 'Bem-vindo ao nosso sistema de agendamento!', maxLength: 1000 })
   @IsString()
   @MaxLength(1000)
   @IsOptional()
   welcomeMessage?: string;
 
+  @ApiPropertyOptional({ description: 'Mensagem de confirmação', example: 'Seu agendamento foi confirmado!', maxLength: 1000 })
   @IsString()
   @MaxLength(1000)
   @IsOptional()
   confirmationMessage?: string;
 
+  @ApiPropertyOptional({ description: 'Mensagem de cancelamento', example: 'Seu agendamento foi cancelado.', maxLength: 1000 })
   @IsString()
   @MaxLength(1000)
   @IsOptional()
   cancellationMessage?: string;
 
+  @ApiPropertyOptional({ description: 'URL dos termos de uso', example: 'https://meusalao.com/termos', maxLength: 500 })
   @IsString()
   @MaxLength(500)
   @IsOptional()
   termsUrl?: string;
 
+  @ApiPropertyOptional({ description: 'Exigir aceite dos termos', example: true })
   @IsBoolean()
   @IsOptional()
   requireTermsAcceptance?: boolean;
 
+  @ApiPropertyOptional({ description: 'Enviar confirmação via WhatsApp', example: true })
   @IsBoolean()
   @IsOptional()
   sendWhatsappConfirmation?: boolean;
 
+  @ApiPropertyOptional({ description: 'Enviar lembrete via WhatsApp', example: true })
   @IsBoolean()
   @IsOptional()
   sendWhatsappReminder?: boolean;
 
+  @ApiPropertyOptional({ description: 'Horas antes para enviar lembrete', example: 24, minimum: 1, maximum: 72 })
   @IsNumber()
   @Min(1)
   @Max(72)
@@ -221,29 +253,37 @@ export class UpdateOnlineBookingSettingsDto extends CreateOnlineBookingSettingsD
 // ==================== APPOINTMENT HOLD DTOs ====================
 
 export class CreateHoldDto {
+  @ApiProperty({ description: 'ID do profissional (UUID)', example: '550e8400-e29b-41d4-a716-446655440000' })
   @IsUUID()
   professionalId!: string;
 
+  @ApiProperty({ description: 'ID do serviço', example: 1 })
   @IsNumber()
   serviceId!: number;
 
+  @ApiProperty({ description: 'Data do agendamento (YYYY-MM-DD)', example: '2024-02-15' })
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'date deve estar no formato YYYY-MM-DD' })
   date!: string;
 
+  @ApiProperty({ description: 'Horário de início (HH:MM)', example: '14:00' })
   @Matches(/^\d{2}:\d{2}$/, { message: 'startTime deve estar no formato HH:MM' })
   startTime!: string;
 
+  @ApiProperty({ description: 'Horário de fim (HH:MM)', example: '15:00' })
   @Matches(/^\d{2}:\d{2}$/, { message: 'endTime deve estar no formato HH:MM' })
   endTime!: string;
 
+  @ApiProperty({ description: 'Telefone do cliente (10-11 dígitos)', example: '11999998888' })
   @Matches(/^\d{10,11}$/, { message: 'clientPhone deve ter 10 ou 11 dígitos' })
   clientPhone!: string;
 
+  @ApiPropertyOptional({ description: 'Nome do cliente', example: 'Maria Silva', maxLength: 255 })
   @IsString()
   @MaxLength(255)
   @IsOptional()
   clientName?: string;
 
+  @ApiPropertyOptional({ description: 'ID da sessão do cliente', example: 'sess_abc123', maxLength: 100 })
   @IsString()
   @MaxLength(100)
   @IsOptional()
@@ -277,28 +317,35 @@ export class ConvertHoldDto {
 // ==================== OTP DTOs ====================
 
 export class SendOtpDto {
+  @ApiProperty({ description: 'Telefone para envio do OTP (10-11 dígitos)', example: '11999998888' })
   @Matches(/^\d{10,11}$/, { message: 'phone deve ter 10 ou 11 dígitos' })
   phone!: string;
 
+  @ApiProperty({ description: 'Tipo de OTP', enum: OtpType, example: 'PHONE_VERIFICATION' })
   @IsEnum(OtpType)
   type!: OtpType;
 
+  @ApiPropertyOptional({ description: 'ID da reserva temporária (UUID)', example: '550e8400-e29b-41d4-a716-446655440001' })
   @IsUUID()
   @IsOptional()
   holdId?: string;
 
+  @ApiPropertyOptional({ description: 'ID do agendamento (UUID)', example: '550e8400-e29b-41d4-a716-446655440002' })
   @IsUUID()
   @IsOptional()
   appointmentId?: string;
 }
 
 export class VerifyOtpDto {
+  @ApiProperty({ description: 'Telefone usado no envio (10-11 dígitos)', example: '11999998888' })
   @Matches(/^\d{10,11}$/, { message: 'phone deve ter 10 ou 11 dígitos' })
   phone!: string;
 
+  @ApiProperty({ description: 'Código OTP de 6 dígitos', example: '123456' })
   @Matches(/^\d{6}$/, { message: 'code deve ter 6 dígitos' })
   code!: string;
 
+  @ApiProperty({ description: 'Tipo de OTP', enum: OtpType, example: 'PHONE_VERIFICATION' })
   @IsEnum(OtpType)
   type!: OtpType;
 }
