@@ -20,7 +20,9 @@ import {
   PayInvoiceDto,
   InvoiceFiltersDto,
 } from './dto';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Subscriptions')
 @Controller('subscriptions')
 @UseGuards(AuthGuard, RolesGuard)
 export class SubscriptionsController {

@@ -11,7 +11,9 @@ import { CommissionsService } from './commissions.service';
 import { PayCommissionsDto, PayProfessionalCommissionsDto, ListCommissionsQueryDto } from './dto';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { CurrentUser } from '../../common/decorators';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Commissions')
 @Controller('commissions')
 @UseGuards(AuthGuard)
 export class CommissionsController {

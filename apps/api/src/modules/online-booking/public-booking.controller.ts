@@ -34,11 +34,13 @@ import { DepositsService } from './deposits.service';
 import { ClientBookingRulesService } from './client-booking-rules.service';
 import { ScheduledMessagesService } from '../notifications/scheduled-messages.service';
 import { randomUUID } from 'crypto';
+import { ApiTags } from '@nestjs/swagger';
 
 /**
  * Controller público para agendamento online
  * Não requer autenticação - acessível por clientes
  */
+@ApiTags('PublicBooking')
 @Public()
 @Controller('public/booking')
 export class PublicBookingController {

@@ -22,11 +22,13 @@ import { OnlineBookingSettingsService } from './online-booking-settings.service'
 import { ClientBookingRulesService } from './client-booking-rules.service';
 import { AppointmentHoldsService } from './appointment-holds.service';
 import { DepositsService } from './deposits.service';
+import { ApiTags } from '@nestjs/swagger';
 
 /**
  * Controller administrativo para gerenciar agendamento online
  * Requer autenticação e permissões de OWNER/MANAGER
  */
+@ApiTags('OnlineBooking')
 @Controller('online-booking')
 @UseGuards(AuthGuard, RolesGuard)
 export class AdminBookingController {

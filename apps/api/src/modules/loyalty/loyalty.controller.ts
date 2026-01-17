@@ -27,6 +27,7 @@ import {
   RewardTypeLabels,
   TransactionTypeLabels,
 } from './dto';
+import { ApiTags } from '@nestjs/swagger';
 
 interface AuthenticatedRequest extends Request {
   user: {
@@ -40,6 +41,7 @@ interface AuthenticatedRequest extends Request {
  * LoyaltyController
  * Endpoints para gerenciamento do programa de fidelidade
  */
+@ApiTags('Loyalty')
 @Controller('loyalty')
 @UseGuards(AuthGuard, RolesGuard)
 export class LoyaltyController {
