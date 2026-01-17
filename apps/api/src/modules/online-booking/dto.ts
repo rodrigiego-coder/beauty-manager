@@ -353,51 +353,62 @@ export class VerifyOtpDto {
 // ==================== CLIENT BOOKING RULE DTOs ====================
 
 export class CreateClientBookingRuleDto {
+  @ApiPropertyOptional({ description: 'Telefone do cliente (10-11 dígitos)', example: '11999998888' })
   @Matches(/^\d{10,11}$/, { message: 'clientPhone deve ter 10 ou 11 dígitos' })
   @IsOptional()
   clientPhone?: string;
 
+  @ApiPropertyOptional({ description: 'ID do cliente (UUID)', example: '550e8400-e29b-41d4-a716-446655440000' })
   @IsUUID()
   @IsOptional()
   clientId?: string;
 
+  @ApiProperty({ description: 'Tipo da regra de bloqueio', enum: ['BLOCKED', 'VIP_ONLY', 'DEPOSIT_REQUIRED', 'RESTRICTED_SERVICES'], example: 'BLOCKED' })
   @IsEnum(BookingRuleType)
   ruleType!: BookingRuleType;
 
+  @ApiPropertyOptional({ description: 'Motivo da regra', example: 'Cliente não compareceu 3x seguidas', maxLength: 500 })
   @IsString()
   @MaxLength(500)
   @IsOptional()
   reason?: string;
 
+  @ApiPropertyOptional({ description: 'IDs dos serviços restritos (para RESTRICTED_SERVICES)', example: [1, 2, 3], isArray: true, type: Number })
   @IsArray()
   @IsNumber({}, { each: true })
   @IsOptional()
   restrictedServiceIds?: number[];
 
+  @ApiPropertyOptional({ description: 'Data de expiração da regra (ISO 8601)', example: '2024-12-31T23:59:59Z' })
   @IsString()
   @IsOptional()
   expiresAt?: string;
 }
 
 export class UpdateClientBookingRuleDto {
+  @ApiPropertyOptional({ description: 'Tipo da regra de bloqueio', enum: ['BLOCKED', 'VIP_ONLY', 'DEPOSIT_REQUIRED', 'RESTRICTED_SERVICES'], example: 'BLOCKED' })
   @IsEnum(BookingRuleType)
   @IsOptional()
   ruleType?: BookingRuleType;
 
+  @ApiPropertyOptional({ description: 'Motivo da regra', example: 'Cliente não compareceu 3x seguidas', maxLength: 500 })
   @IsString()
   @MaxLength(500)
   @IsOptional()
   reason?: string;
 
+  @ApiPropertyOptional({ description: 'IDs dos serviços restritos (para RESTRICTED_SERVICES)', example: [1, 2, 3], isArray: true, type: Number })
   @IsArray()
   @IsNumber({}, { each: true })
   @IsOptional()
   restrictedServiceIds?: number[];
 
+  @ApiPropertyOptional({ description: 'Data de expiração da regra (ISO 8601)', example: '2024-12-31T23:59:59Z' })
   @IsString()
   @IsOptional()
   expiresAt?: string;
 
+  @ApiPropertyOptional({ description: 'Regra ativa', example: true })
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
