@@ -67,38 +67,75 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Swagger - apenas em DEV
-  const swaggerEnabled =
-    process.env.SWAGGER_ENABLED === 'true' ||
-    process.env.NODE_ENV === 'development';
+  // Swagger - habilitado apenas quando ENABLE_SWAGGER=true e credenciais definidas
+  const swaggerEnabled = process.env.ENABLE_SWAGGER === 'true';
+  const swaggerUser = process.env.SWAGGER_USER;
+  const swaggerPass = process.env.SWAGGER_PASS;
 
   if (swaggerEnabled) {
-    const config = new DocumentBuilder()
-      .setTitle('Beauty Manager API')
-      .setDescription('API do sistema de gestão de salões de beleza')
-      .setVersion('1.0')
-      .addBearerAuth(
-        {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
-          name: 'Authorization',
-          in: 'header',
+    if (!swaggerUser || !swaggerPass) {
+      console.warn(
+        '⚠️  [Swagger] ENABLE_SWAGGER=true mas SWAGGER_USER ou SWAGGER_PASS não definidos. Swagger NÃO será montado.',
+      );
+    } else {
+      const fastifyInstance = app.getHttpAdapter().getInstance();
+
+      // Basic Auth middleware para proteger /docs e /docs-json
+      fastifyInstance.addHook('onRequest', async (request, reply) => {
+        const url = request.url;
+        if (!url.startsWith('/docs')) {
+          return;
+        }
+
+        const authHeader = request.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Basic ')) {
+          reply
+            .code(401)
+            .header('WWW-Authenticate', 'Basic realm="Swagger Docs"')
+            .send({ statusCode: 401, message: 'Unauthorized' });
+          return;
+        }
+
+        const base64Credentials = authHeader.slice(6);
+        const credentials = Buffer.from(base64Credentials, 'base64').toString('utf8');
+        const [user, pass] = credentials.split(':');
+
+        if (user !== swaggerUser || pass !== swaggerPass) {
+          reply
+            .code(401)
+            .header('WWW-Authenticate', 'Basic realm="Swagger Docs"')
+            .send({ statusCode: 401, message: 'Unauthorized' });
+          return;
+        }
+      });
+
+      // Swagger com documentFactory lazy - documento criado sob demanda
+      SwaggerModule.setup('docs', app, () => {
+        const config = new DocumentBuilder()
+          .setTitle('Beauty Manager API')
+          .setDescription('API do sistema de gestão de salões de beleza')
+          .setVersion('1.0')
+          .addBearerAuth(
+            {
+              type: 'http',
+              scheme: 'bearer',
+              bearerFormat: 'JWT',
+              name: 'Authorization',
+              in: 'header',
+            },
+            'access-token',
+          )
+          .build();
+
+        return SwaggerModule.createDocument(app, config);
+      }, {
+        swaggerOptions: {
+          persistAuthorization: true,
         },
-        'access-token',
-      )
-      .build();
+      });
 
-    const document = SwaggerModule.createDocument(app, config);
-
-    // UI Swagger em /docs (também expõe /docs-json automaticamente)
-    SwaggerModule.setup('docs', app, document, {
-      swaggerOptions: {
-        persistAuthorization: true,
-      },
-    });
-
-    console.log('📚 Swagger docs available at /docs');
+      console.log('📚 Swagger docs available at /docs (protected by Basic Auth)');
+    }
   }
 
   const port = process.env.API_PORT || 3000;
