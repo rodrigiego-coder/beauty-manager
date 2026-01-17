@@ -481,58 +481,72 @@ export class GetAvailableSlotsDto {
 }
 
 export class CreateOnlineBookingDto {
+  @ApiProperty({ description: 'ID do profissional (UUID)', example: '550e8400-e29b-41d4-a716-446655440000' })
   @IsUUID()
   professionalId!: string;
 
+  @ApiProperty({ description: 'ID do serviço', example: 123 })
   @IsNumber()
   serviceId!: number;
 
+  @ApiProperty({ description: 'Data do agendamento (YYYY-MM-DD)', example: '2024-02-15' })
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'date deve estar no formato YYYY-MM-DD' })
   date!: string;
 
+  @ApiProperty({ description: 'Horário do agendamento (HH:MM)', example: '14:30' })
   @Matches(/^\d{2}:\d{2}$/, { message: 'time deve estar no formato HH:MM' })
   time!: string;
 
+  @ApiProperty({ description: 'Telefone do cliente (10-11 dígitos)', example: '11999998888' })
   @Matches(/^\d{10,11}$/, { message: 'clientPhone deve ter 10 ou 11 dígitos' })
   clientPhone!: string;
 
+  @ApiProperty({ description: 'Nome do cliente', example: 'Maria Silva', minLength: 2, maxLength: 255 })
   @IsString()
   @MinLength(2)
   @MaxLength(255)
   clientName!: string;
 
+  @ApiPropertyOptional({ description: 'Email do cliente', example: 'maria@email.com', maxLength: 255 })
   @IsString()
   @MaxLength(255)
   @IsOptional()
   clientEmail?: string;
 
+  @ApiPropertyOptional({ description: 'Observações do agendamento', example: 'Primeira vez no salão', maxLength: 1000 })
   @IsString()
   @MaxLength(1000)
   @IsOptional()
   notes?: string;
 
+  @ApiPropertyOptional({ description: 'Cliente aceitou os termos', example: true })
   @IsBoolean()
   @IsOptional()
   acceptedTerms?: boolean;
 
+  @ApiPropertyOptional({ description: 'Código OTP de verificação', example: '123456' })
   @IsString()
   @IsOptional()
   otpCode?: string;
 }
 
 export class CancelOnlineBookingDto {
+  @ApiProperty({ description: 'ID do agendamento a cancelar (UUID)', example: '550e8400-e29b-41d4-a716-446655440000' })
   @IsUUID()
   appointmentId!: string;
 
+  @ApiPropertyOptional({ description: 'Motivo do cancelamento', example: 'Imprevisto pessoal', maxLength: 500 })
   @IsString()
   @MaxLength(500)
   @IsOptional()
   reason?: string;
 
+  @ApiPropertyOptional({ description: 'Código OTP de verificação', example: '123456' })
   @IsString()
   @IsOptional()
   otpCode?: string;
 
+  @ApiPropertyOptional({ description: 'Token de acesso do cliente (UUID)', example: '550e8400-e29b-41d4-a716-446655440001' })
   @IsUUID()
   @IsOptional()
   clientAccessToken?: string;
