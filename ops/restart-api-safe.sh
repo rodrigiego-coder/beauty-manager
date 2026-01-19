@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # ops/restart-api-safe.sh - Restart seguro da API com verificação de health
-# Uso: ./restart-api-safe.sh [SERVICE_NAME] [MAX_WAIT]
-# Exemplo: ./restart-api-safe.sh beauty-api 60
+# Uso: ./restart-api-safe.sh [MAX_WAIT]
+# Exemplo: ./restart-api-safe.sh 60
 
 set -euo pipefail
 
-SERVICE_NAME="${1:-beauty-api}"
-MAX_WAIT="${2:-60}"
-HEALTH_URL="http://localhost:3000/healthz"
+# ============================================
+# CONFIGURAÇÃO - Nome correto do serviço systemd
+# ============================================
+SERVICE="beauty-manager-api"
+MAX_WAIT="${1:-60}"
+HEALTH_URL="http://127.0.0.1:3000/healthz"
 CHECK_INTERVAL=2
+LOG_LINES_ON_FAIL=80
 
 # Cores
 RED='\033[0;31m'
@@ -28,17 +32,9 @@ log_error() {
   echo -e "${RED}[ERROR]${NC} $(date '+%H:%M:%S') $1"
 }
 
-# Verificar se está rodando como root ou com sudo
-check_permissions() {
-  if [ "$EUID" -ne 0 ] && ! groups | grep -q sudo; then
-    log_error "Este script precisa de permissoes sudo"
-    exit 1
-  fi
-}
-
 # Verificar status do serviço
 check_service_status() {
-  if systemctl is-active --quiet "$SERVICE_NAME"; then
+  if systemctl is-active --quiet "$SERVICE"; then
     return 0
   else
     return 1
@@ -72,47 +68,46 @@ wait_for_health() {
 # Main
 main() {
   echo "========================================"
-  echo "  RESTART SEGURO - $SERVICE_NAME"
+  echo "  RESTART SEGURO - $SERVICE"
   echo "========================================"
   echo ""
 
-  # 1. Verificar permissões
-  log_info "Verificando permissoes..."
-
-  # 2. Verificar status atual
+  # 1. Verificar status atual
   log_info "Verificando status atual do servico..."
   if check_service_status; then
-    log_success "Servico $SERVICE_NAME esta rodando"
+    log_success "Servico $SERVICE esta rodando"
   else
-    log_info "Servico $SERVICE_NAME nao esta rodando"
+    log_info "Servico $SERVICE nao esta rodando"
   fi
 
-  # 3. Fazer restart
-  log_info "Reiniciando $SERVICE_NAME..."
-  if sudo systemctl restart "$SERVICE_NAME"; then
+  # 2. Fazer restart
+  log_info "Reiniciando $SERVICE..."
+  if sudo systemctl restart "$SERVICE"; then
     log_success "Comando de restart enviado"
   else
     log_error "Falha ao enviar comando de restart"
+    sudo journalctl -u "$SERVICE" --no-pager -n "$LOG_LINES_ON_FAIL"
     exit 1
   fi
 
-  # 4. Aguardar serviço subir no systemd
+  # 3. Aguardar serviço subir no systemd
   sleep 2
   if check_service_status; then
     log_success "Servico iniciado no systemd"
   else
     log_error "Servico falhou ao iniciar"
-    sudo journalctl -u "$SERVICE_NAME" --no-pager -n 20
+    log_info "Exibindo ultimas $LOG_LINES_ON_FAIL linhas do journal:"
+    sudo journalctl -u "$SERVICE" --no-pager -n "$LOG_LINES_ON_FAIL"
     exit 1
   fi
 
-  # 5. Aguardar health check
+  # 4. Aguardar health check
   if wait_for_health; then
     log_success "Restart concluido com sucesso!"
   else
     log_error "API nao respondeu ao health check"
-    log_info "Verificando logs..."
-    sudo journalctl -u "$SERVICE_NAME" --no-pager -n 30
+    log_info "Exibindo ultimas $LOG_LINES_ON_FAIL linhas do journal:"
+    sudo journalctl -u "$SERVICE" --no-pager -n "$LOG_LINES_ON_FAIL"
     exit 1
   fi
 

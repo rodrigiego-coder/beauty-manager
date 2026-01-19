@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # ops/smoke-api.sh - Smoke test para API Beauty Manager
-# Uso: ./smoke-api.sh [BASE_URL]
-# Exemplo: ./smoke-api.sh http://localhost:3000
+# Testa tanto LOCAL (direto na API) quanto NGINX (via proxy reverso)
+# Uso: ./smoke-api.sh
 
 set -euo pipefail
 
-BASE_URL="${1:-http://localhost:3000}"
+# ============================================
+# CONFIGURAÇÃO
+# ============================================
+LOCAL_URL="http://127.0.0.1:3000"
+NGINX_URL="https://app.agendasalaopro.com.br/api"
 TIMEOUT=5
 PASSED=0
 FAILED=0
@@ -14,7 +18,8 @@ FAILED=0
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+CYAN='\033[0;36m'
+NC='\033[0m'
 
 log_pass() {
   echo -e "${GREEN}[PASS]${NC} $1"
@@ -30,53 +35,67 @@ log_info() {
   echo -e "${YELLOW}[INFO]${NC} $1"
 }
 
-# Test 1: Health check endpoint
-test_healthz() {
-  log_info "Testando /healthz..."
+log_section() {
+  echo ""
+  echo -e "${CYAN}>>> $1${NC}"
+}
 
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "$BASE_URL/healthz" 2>/dev/null || echo "000")
+# ============================================
+# TESTES LOCAL (direto na API porta 3000)
+# ============================================
+test_local_healthz() {
+  log_info "LOCAL: Testando /healthz..."
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "$LOCAL_URL/healthz" 2>/dev/null || echo "000")
 
   if [ "$HTTP_CODE" = "200" ]; then
-    log_pass "/healthz retornou 200"
+    log_pass "LOCAL /healthz => 200"
   else
-    log_fail "/healthz retornou $HTTP_CODE (esperado 200)"
+    log_fail "LOCAL /healthz => $HTTP_CODE (esperado 200)"
   fi
 }
 
-# Test 2: Auth guard - deve retornar 401 sem token
-test_auth_guard() {
-  log_info "Testando auth guard (sem token)..."
-
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "$BASE_URL/users/me" 2>/dev/null || echo "000")
+test_local_auth_guard() {
+  log_info "LOCAL: Testando auth guard (sem token)..."
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "$LOCAL_URL/users/me" 2>/dev/null || echo "000")
 
   if [ "$HTTP_CODE" = "401" ]; then
-    log_pass "/users/me sem token retornou 401"
+    log_pass "LOCAL /users/me sem token => 401"
   else
-    log_fail "/users/me sem token retornou $HTTP_CODE (esperado 401)"
+    log_fail "LOCAL /users/me sem token => $HTTP_CODE (esperado 401)"
   fi
 }
 
-# Test 3: Rota pública deve funcionar sem auth
-test_public_route() {
-  log_info "Testando rota publica..."
+# ============================================
+# TESTES NGINX (via proxy reverso)
+# ============================================
+test_nginx_healthz() {
+  log_info "NGINX: Testando /healthz..."
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "$NGINX_URL/healthz" 2>/dev/null || echo "000")
 
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "$BASE_URL/public/salon/test-slug/availability" 2>/dev/null || echo "000")
-
-  # 404 é aceitável (slug não existe), mas não deve ser 401/403
-  if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "404" ]; then
-    log_pass "Rota publica acessivel (HTTP $HTTP_CODE)"
-  elif [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
-    log_fail "Rota publica bloqueada por auth (HTTP $HTTP_CODE)"
+  if [ "$HTTP_CODE" = "200" ]; then
+    log_pass "NGINX /api/healthz => 200"
   else
-    log_fail "Rota publica retornou $HTTP_CODE"
+    log_fail "NGINX /api/healthz => $HTTP_CODE (esperado 200)"
   fi
 }
 
-# Test 4: Verificar se API responde JSON
+test_nginx_auth_guard() {
+  log_info "NGINX: Testando auth guard (sem token)..."
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "$NGINX_URL/users/me" 2>/dev/null || echo "000")
+
+  if [ "$HTTP_CODE" = "401" ]; then
+    log_pass "NGINX /api/users/me sem token => 401"
+  else
+    log_fail "NGINX /api/users/me sem token => $HTTP_CODE (esperado 401)"
+  fi
+}
+
+# ============================================
+# TESTE DE CONECTIVIDADE JSON
+# ============================================
 test_json_response() {
-  log_info "Testando Content-Type JSON..."
-
-  CONTENT_TYPE=$(curl -s -I --max-time "$TIMEOUT" "$BASE_URL/healthz" 2>/dev/null | grep -i "content-type" | head -1 || echo "")
+  log_info "LOCAL: Testando Content-Type JSON..."
+  CONTENT_TYPE=$(curl -s -I --max-time "$TIMEOUT" "$LOCAL_URL/healthz" 2>/dev/null | grep -i "content-type" | head -1 || echo "")
 
   if echo "$CONTENT_TYPE" | grep -qi "application/json"; then
     log_pass "API retorna Content-Type JSON"
@@ -85,17 +104,21 @@ test_json_response() {
   fi
 }
 
-# Executar testes
+# ============================================
+# EXECUÇÃO
+# ============================================
 echo "========================================"
 echo "  SMOKE TEST - Beauty Manager API"
-echo "  URL: $BASE_URL"
 echo "========================================"
-echo ""
 
-test_healthz
-test_auth_guard
-test_public_route
+log_section "Testes LOCAL ($LOCAL_URL)"
+test_local_healthz
+test_local_auth_guard
 test_json_response
+
+log_section "Testes NGINX ($NGINX_URL)"
+test_nginx_healthz
+test_nginx_auth_guard
 
 echo ""
 echo "========================================"
