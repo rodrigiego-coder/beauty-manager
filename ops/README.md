@@ -2,18 +2,27 @@
 
 Guia operacional para deploy e manutenção do sistema.
 
+## Fonte da Verdade
+
+**VPS Hostinger (Ubuntu 22.04)**:
+- **Serviço systemd**: `beauty-manager-api`
+- **Proxy reverso**: nginx
+- **Domínio**: https://app.agendasalaopro.com.br
+
+> **IMPORTANTE**: Não usar PM2. Systemd é a única fonte da verdade para gerenciamento do processo.
+
 ## Estrutura
 
 ```
 ops/
-├── smoke-api.sh        # Smoke test da API
+├── smoke-api.sh        # Smoke test (LOCAL + NGINX)
 ├── restart-api-safe.sh # Restart com health check
 └── README.md           # Este arquivo
 ```
 
 ## Deploy Checklist
 
-### 1. Pré-Deploy
+### 1. Pré-Deploy (máquina local)
 
 ```bash
 # Verificar branch e status
@@ -28,11 +37,14 @@ cd apps/web && npm run build
 npm test
 ```
 
-### 2. Deploy API
+### 2. Deploy API (no VPS)
 
 ```bash
-# No servidor
-cd /path/to/sistema-salao
+# Conectar no VPS
+ssh root@72.61.131.18
+
+# Ir para o diretório do projeto
+cd /var/www/beauty-manager
 
 # Pull das mudanças
 git pull origin main
@@ -40,24 +52,24 @@ git pull origin main
 # Instalar dependências (se necessário)
 npm install
 
-# Build
-cd apps/api && npm run build
+# Build da API
+cd apps/api && npm run build && cd ../..
 
-# Restart seguro
-./ops/restart-api-safe.sh beauty-api
+# Restart seguro (usa beauty-manager-api)
+./ops/restart-api-safe.sh
 
 # Smoke test
-./ops/smoke-api.sh http://localhost:3000
+./ops/smoke-api.sh
 ```
 
-### 3. Deploy Web
+### 3. Deploy Web (no VPS)
 
 ```bash
 # Build
 cd apps/web && npm run build
 
 # Copiar dist para nginx
-sudo cp -r dist/* /var/www/beauty-manager/
+sudo cp -r dist/* /var/www/beauty-manager-web/
 
 # Verificar nginx
 sudo nginx -t && sudo systemctl reload nginx
@@ -69,29 +81,48 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ```bash
 # Logs da API (tempo real)
-sudo journalctl -u beauty-api -f
+sudo journalctl -u beauty-manager-api -f
 
 # Últimas 100 linhas
-sudo journalctl -u beauty-api -n 100 --no-pager
+sudo journalctl -u beauty-manager-api -n 100 --no-pager
 
 # Logs de hoje
-sudo journalctl -u beauty-api --since today
+sudo journalctl -u beauty-manager-api --since today
 ```
 
 ### Systemd
 
 ```bash
 # Status
-sudo systemctl status beauty-api
+sudo systemctl status beauty-manager-api
 
 # Restart
-sudo systemctl restart beauty-api
+sudo systemctl restart beauty-manager-api
 
 # Stop
-sudo systemctl stop beauty-api
+sudo systemctl stop beauty-manager-api
 
 # Enable on boot
-sudo systemctl enable beauty-api
+sudo systemctl enable beauty-manager-api
+
+# Ver unit file
+sudo systemctl cat beauty-manager-api
+```
+
+### Nginx
+
+```bash
+# Status
+sudo systemctl status nginx
+
+# Testar configuração
+sudo nginx -t
+
+# Reload (sem downtime)
+sudo systemctl reload nginx
+
+# Ver config do site
+cat /etc/nginx/sites-enabled/beauty-manager
 ```
 
 ### Database
@@ -100,9 +131,11 @@ sudo systemctl enable beauty-api
 # Verificar conexão
 psql -h localhost -U postgres -d beauty_manager -c "SELECT 1"
 
-# Backup
-pg_dump -h localhost -U postgres beauty_manager > backup_$(date +%Y%m%d).sql
+# Backup (FORA do repo!)
+pg_dump -h localhost -U postgres beauty_manager > /root/backups/backup_$(date +%Y%m%d).sql
 ```
+
+> **IMPORTANTE**: Nunca criar pastas de backup dentro do repositório no VPS. Usar `/root/backups/` ou outro diretório fora do repo.
 
 ## Troubleshooting
 
@@ -110,12 +143,12 @@ pg_dump -h localhost -U postgres beauty_manager > backup_$(date +%Y%m%d).sql
 
 1. Verificar se serviço está rodando:
    ```bash
-   sudo systemctl status beauty-api
+   sudo systemctl status beauty-manager-api
    ```
 
 2. Verificar logs:
    ```bash
-   sudo journalctl -u beauty-api -n 50 --no-pager
+   sudo journalctl -u beauty-manager-api -n 80 --no-pager
    ```
 
 3. Verificar porta:
@@ -123,16 +156,21 @@ pg_dump -h localhost -U postgres beauty_manager > backup_$(date +%Y%m%d).sql
    ss -tlnp | grep 3000
    ```
 
-4. Testar healthz:
+4. Testar healthz local:
    ```bash
-   curl -v http://localhost:3000/healthz
+   curl -v http://127.0.0.1:3000/healthz
+   ```
+
+5. Testar healthz via nginx:
+   ```bash
+   curl -v https://app.agendasalaopro.com.br/api/healthz
    ```
 
 ### Erro 401 em rotas protegidas
 
 1. Verificar se está enviando token:
    ```bash
-   curl -H "Authorization: Bearer TOKEN" http://localhost:3000/users/me
+   curl -H "Authorization: Bearer TOKEN" http://127.0.0.1:3000/users/me
    ```
 
 2. Verificar validade do token (JWT decode)
@@ -157,6 +195,23 @@ pg_dump -h localhost -U postgres beauty_manager > backup_$(date +%Y%m%d).sql
    psql "$DATABASE_URL" -c "SELECT 1"
    ```
 
+### Nginx retorna 502 Bad Gateway
+
+1. API está rodando?
+   ```bash
+   sudo systemctl status beauty-manager-api
+   ```
+
+2. API está ouvindo na porta correta?
+   ```bash
+   ss -tlnp | grep 3000
+   ```
+
+3. Verificar logs do nginx:
+   ```bash
+   sudo tail -50 /var/log/nginx/error.log
+   ```
+
 ### Memory leak / Alta CPU
 
 1. Verificar consumo:
@@ -177,7 +232,7 @@ pg_dump -h localhost -U postgres beauty_manager > backup_$(date +%Y%m%d).sql
 
 ## Variáveis de Ambiente
 
-Arquivo `.env` necessário na raiz de `apps/api/`:
+Arquivo `.env` na raiz de `apps/api/` (não commitar!):
 
 ```env
 # Database
@@ -198,7 +253,17 @@ PORT=3000
 NODE_ENV=production
 ```
 
+## Arquitetura de Produção
+
+```
+[Internet]
+    │
+    ▼
+[Nginx :443]  ─────► /api/* ────► [Node :3000] beauty-manager-api
+    │
+    └────────► /* (static) ────► /var/www/beauty-manager-web/
+```
+
 ## Contatos
 
-- **Suporte técnico**: [seu-email]
-- **Repositório**: [url-do-repo]
+- **Repositório**: github.com/rodrigiego-coder/beauty-manager
