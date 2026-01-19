@@ -14,6 +14,7 @@ SERVICE="beauty-manager-api"
 LOCAL_HEALTHZ="http://127.0.0.1:3000/healthz"
 NGINX_HEALTHZ="https://app.agendasalaopro.com.br/api/healthz"
 LOG_LINES=120
+JOURNAL_SINCE_MIN="30min"
 
 # Cores
 RED='\033[0;31m'
@@ -21,6 +22,24 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
+
+# ============================================
+# HELPERS
+# ============================================
+have() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+safe() {
+  local label="$1"
+  shift
+  if "$@" 2>&1; then
+    return 0
+  else
+    echo -e "${RED}Falha: $label${NC}"
+    return 0  # nao interrompe o script
+  fi
+}
 
 section() {
   echo ""
@@ -50,13 +69,25 @@ fi
 section "SYSTEMD STATUS"
 echo "Service: $SERVICE"
 echo -n "is-active: "
-systemctl is-active "$SERVICE" 2>/dev/null || echo "UNKNOWN"
+safe "systemctl is-active" systemctl is-active "$SERVICE" || true
 echo ""
 echo "--- systemctl status (resumo) ---"
-systemctl status "$SERVICE" --no-pager -l 2>/dev/null | head -20 || echo "Falha ao obter status"
+safe "systemctl status" systemctl status "$SERVICE" --no-pager -l 2>/dev/null | head -20
 
-section "JOURNAL LOGS (ultimas $LOG_LINES linhas)"
-journalctl -u "$SERVICE" --no-pager -n "$LOG_LINES" 2>/dev/null || echo "Falha ao obter logs"
+echo ""
+echo "--- systemctl show (sinais de falha) ---"
+systemctl show "$SERVICE" --property=ActiveState,SubState,Result,ExecMainStatus,ExecMainCode,NRestarts,MainPID,ActiveEnterTimestamp 2>/dev/null || echo "Falha ao obter propriedades"
+
+section "JOURNAL LOGS (warnings+errors since $JOURNAL_SINCE_MIN)"
+if have journalctl; then
+  echo "--- Warnings/Errors recentes ---"
+  journalctl -u "$SERVICE" --since "-${JOURNAL_SINCE_MIN}" -p warning..emerg --no-pager 2>/dev/null || echo "Nenhum warning/error recente"
+  echo ""
+  echo "--- Fallback: ultimas $LOG_LINES linhas ---"
+  journalctl -u "$SERVICE" --no-pager -n "$LOG_LINES" 2>/dev/null || echo "Falha ao obter logs"
+else
+  echo -e "${RED}journalctl nao disponivel${NC}"
+fi
 
 section "LISTENER PORTA 3000"
 if ss -ltnp 2>/dev/null | grep -q ':3000'; then
@@ -82,7 +113,11 @@ else
 fi
 
 section "NGINX CONFIG TEST"
-nginx -t 2>&1 || echo "Falha ou nginx nao instalado"
+if have nginx; then
+  nginx -t 2>&1 || echo "Falha no teste de config"
+else
+  echo -e "${YELLOW}nginx nao encontrado no PATH${NC}"
+fi
 
 section "MEMORIA (free -h)"
 free -h 2>/dev/null || echo "Comando free nao disponivel"
@@ -92,11 +127,17 @@ df -h 2>/dev/null | grep -E '^/|Filesystem' || echo "Comando df nao disponivel"
 
 section "RESUMO"
 echo ""
-echo "  Service:      $SERVICE"
-echo "  is-active:    $(systemctl is-active "$SERVICE" 2>/dev/null || echo 'UNKNOWN')"
-echo "  Listener:     $(ss -ltnp 2>/dev/null | grep -q ':3000' && echo 'OK' || echo 'NO')"
+echo "  Service:       $SERVICE"
+echo "  is-active:     $(systemctl is-active "$SERVICE" 2>/dev/null || echo 'UNKNOWN')"
+echo "  Listener:      $(ss -ltnp 2>/dev/null | grep -q ':3000' && echo 'OK' || echo 'NO')"
 echo "  Healthz Local: $HTTP_LOCAL"
 echo "  Healthz Nginx: $HTTP_NGINX"
+echo "  Journal:       warnings+errors since $JOURNAL_SINCE_MIN"
 echo ""
 echo -e "${YELLOW}Cole este output completo no chat para diagnostico.${NC}"
+echo ""
+echo -e "${CYAN}--- Dica P0 (comandos uteis sem secrets) ---${NC}"
+echo "  sudo systemctl restart $SERVICE"
+echo "  sudo journalctl -u $SERVICE -f"
+echo "  curl -v http://127.0.0.1:3000/healthz"
 echo ""
