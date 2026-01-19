@@ -18,8 +18,33 @@ ops/
 ├── deploy-api-safe.sh  # Deploy completo (pull + restart + rollback hint)
 ├── restart-api-safe.sh # Restart com health check
 ├── smoke-api.sh        # Smoke test (LOCAL + NGINX)
+├── triage-api.sh       # Coleta evidencias para diagnostico
 └── README.md           # Este arquivo
 ```
+
+## Triage Rapido (P0)
+
+Quando algo der errado, rode este comando no VPS para coletar evidencias:
+
+```bash
+cd /var/www/beauty-manager
+sudo bash ops/triage-api.sh
+```
+
+**O que o script coleta (sem expor secrets):**
+- Data/hora, hostname, uptime
+- Branch e commit atual
+- Status do systemd (is-active, status resumido)
+- Ultimos 120 logs do journal
+- Listener na porta 3000
+- Healthz local (127.0.0.1:3000) e via nginx
+- Teste de config do nginx
+- Memoria e disco
+
+**Cole o output completo no chat para diagnostico.**
+
+> **IMPORTANTE**: O script NAO usa `systemctl cat` e NAO expoe variaveis de ambiente.
+> Seguro para colar em tickets/chat.
 
 ## Deploy Checklist
 
