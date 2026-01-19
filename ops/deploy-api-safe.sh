@@ -67,14 +67,22 @@ validate_repo() {
 # RESTORE POINT
 # ============================================
 create_restore_point() {
-  local TAG_NAME="vps-restore-$(date '+%Y%m%d-%H%M')"
-
-  log_info "Criando restore point: $TAG_NAME"
+  local BASE_TAG="vps-restore-$(date '+%Y%m%d-%H%M%S')"
+  local TAG_NAME="$BASE_TAG"
+  local COUNTER=1
 
   cd "$REPO_ROOT"
 
-  # Criar tag local
-  if git tag -a "$TAG_NAME" -m "Restore point antes do deploy $(date '+%Y-%m-%d %H:%M')"; then
+  # Se tag ja existe, adicionar sufixo incremental
+  while git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null 2>&1; do
+    TAG_NAME="${BASE_TAG}-${COUNTER}"
+    ((++COUNTER))
+  done
+
+  log_info "Criando restore point: $TAG_NAME"
+
+  # Criar tag anotada
+  if git tag -a "$TAG_NAME" -m "Restore point antes do deploy $(date '+%Y-%m-%d %H:%M:%S')"; then
     log_success "Tag criada: $TAG_NAME"
     echo "$TAG_NAME"
   else
