@@ -15,8 +15,9 @@ Guia operacional para deploy e manutenção do sistema.
 
 ```
 ops/
-├── smoke-api.sh        # Smoke test (LOCAL + NGINX)
+├── deploy-api-safe.sh  # Deploy completo (pull + restart + rollback hint)
 ├── restart-api-safe.sh # Restart com health check
+├── smoke-api.sh        # Smoke test (LOCAL + NGINX)
 └── README.md           # Este arquivo
 ```
 
@@ -37,7 +38,12 @@ cd apps/web && npm run build
 npm test
 ```
 
-### 2. Deploy API (no VPS)
+### 2. Deploy API (fonte da verdade)
+
+**Fluxo correto**: Build no Windows -> Push -> Pull no VPS -> Restart
+
+> **IMPORTANTE**: O build da API (`npm run build`) deve ser feito **no Windows antes do push**.
+> O VPS apenas faz pull + restart. Isso evita instalar devDependencies no servidor.
 
 ```bash
 # Conectar no VPS
@@ -46,21 +52,29 @@ ssh root@72.61.131.18
 # Ir para o diretório do projeto
 cd /var/www/beauty-manager
 
-# Pull das mudanças
-git pull origin main
+# Deploy completo (cria restore point, pull, restart, valida healthz)
+sudo bash ops/deploy-api-safe.sh
 
-# Instalar dependências (se necessário)
-npm install
-
-# Build da API
-cd apps/api && npm run build && cd ../..
-
-# Restart seguro (usa beauty-manager-api)
-./ops/restart-api-safe.sh
-
-# Smoke test
+# (Opcional) Smoke test adicional
 ./ops/smoke-api.sh
 ```
+
+**O que `deploy-api-safe.sh` faz:**
+1. Valida que está no repositório correto
+2. Cria tag de restore point: `vps-restore-YYYYMMDD-HHMM`
+3. `git fetch --all --prune`
+4. `git pull --ff-only`
+5. Chama `restart-api-safe.sh` (que valida healthz)
+6. Imprime instrução de rollback
+
+**Rollback manual (se necessário):**
+```bash
+git reset --hard vps-restore-YYYYMMDD-HHMM
+sudo bash ops/restart-api-safe.sh
+```
+
+> **NOTA**: O `smoke-api.sh` pode falhar temporariamente após restart enquanto a API sobe.
+> O `restart-api-safe.sh` já aguarda o healthz ficar 200 antes de retornar.
 
 ### 3. Deploy Web (no VPS)
 
