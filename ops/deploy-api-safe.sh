@@ -65,6 +65,7 @@ validate_repo() {
 
 # ============================================
 # RESTORE POINT
+# Retorna somente a tag via stdout; logs vao para stderr
 # ============================================
 create_restore_point() {
   local BASE_TAG="vps-restore-$(date '+%Y%m%d-%H%M%S')"
@@ -79,14 +80,15 @@ create_restore_point() {
     ((++COUNTER))
   done
 
-  log_info "Criando restore point: $TAG_NAME"
+  log_info "Criando restore point: $TAG_NAME" >&2
 
   # Criar tag anotada
   if git tag -a "$TAG_NAME" -m "Restore point antes do deploy $(date '+%Y-%m-%d %H:%M:%S')"; then
-    log_success "Tag criada: $TAG_NAME"
+    log_success "Tag criada: $TAG_NAME" >&2
+    # Somente a tag limpa vai para stdout (capturada pela subshell)
     echo "$TAG_NAME"
   else
-    log_error "Falha ao criar tag de restore point"
+    log_error "Falha ao criar tag de restore point" >&2
     exit 1
   fi
 }
