@@ -1,11 +1,24 @@
 #!/usr/bin/env bash
 # ops/triage-api.sh - Coleta evidencias para diagnostico rapido
-# Uso: sudo bash ops/triage-api.sh
+# Uso: sudo bash ops/triage-api.sh [--short|--full]
+#   --short: pula fallback de 120 linhas (menos ruido)
+#   --full:  mostra tudo (padrao)
 #
 # IMPORTANTE: Este script NAO expoe secrets (.env, tokens, senhas).
 # Saida segura para colar em chat/ticket.
 
 set -uo pipefail
+
+# ============================================
+# PARSE ARGS
+# ============================================
+MODE="full"
+for arg in "$@"; do
+  case "$arg" in
+    --short) MODE="short" ;;
+    --full)  MODE="full" ;;
+  esac
+done
 
 # ============================================
 # CONFIGURACAO
@@ -82,9 +95,14 @@ section "JOURNAL LOGS (warnings+errors since $JOURNAL_SINCE_MIN)"
 if have journalctl; then
   echo "--- Warnings/Errors recentes ---"
   journalctl -u "$SERVICE" --since "-${JOURNAL_SINCE_MIN}" -p warning..emerg --no-pager 2>/dev/null || echo "Nenhum warning/error recente"
-  echo ""
-  echo "--- Fallback: ultimas $LOG_LINES linhas ---"
-  journalctl -u "$SERVICE" --no-pager -n "$LOG_LINES" 2>/dev/null || echo "Falha ao obter logs"
+  if [ "$MODE" = "full" ]; then
+    echo ""
+    echo "--- Fallback: ultimas $LOG_LINES linhas ---"
+    journalctl -u "$SERVICE" --no-pager -n "$LOG_LINES" 2>/dev/null || echo "Falha ao obter logs"
+  else
+    echo ""
+    echo -e "${YELLOW}(--short: fallback de $LOG_LINES linhas omitido)${NC}"
+  fi
 else
   echo -e "${RED}journalctl nao disponivel${NC}"
 fi
@@ -127,6 +145,7 @@ df -h 2>/dev/null | grep -E '^/|Filesystem' || echo "Comando df nao disponivel"
 
 section "RESUMO"
 echo ""
+echo "  Mode:          $MODE"
 echo "  Service:       $SERVICE"
 echo "  is-active:     $(systemctl is-active "$SERVICE" 2>/dev/null || echo 'UNKNOWN')"
 echo "  Listener:      $(ss -ltnp 2>/dev/null | grep -q ':3000' && echo 'OK' || echo 'NO')"
