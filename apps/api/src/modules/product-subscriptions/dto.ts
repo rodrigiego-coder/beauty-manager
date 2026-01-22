@@ -195,6 +195,8 @@ export interface PlanResponse {
   name: string;
   description: string | null;
   billingPeriod: string;
+  /** Alias for billingPeriod (frontend compatibility) */
+  frequency: string;
   originalPrice: string;
   discountPercent: string | null;
   finalPrice: string;
