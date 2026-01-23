@@ -31,3 +31,4 @@ export { default as ABTestsPage } from './ABTestsPage';
 export { PaymentMethodsPage } from './PaymentMethodsPage';
 export { PaymentDestinationsPage } from './PaymentDestinationsPage';
 export { UsersManagementPage } from './UsersManagementPage';
+export { MyPlanPage } from './MyPlanPage';

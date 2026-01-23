@@ -36,6 +36,7 @@ import {
   PaymentMethodsPage,
   PaymentDestinationsPage,
   UsersManagementPage,
+  MyPlanPage,
 } from './pages';
 import AlexisConversationsPage from './pages/AlexisConversationsPage';
 import AlexisSettingsPage from './pages/AlexisSettingsPage';
@@ -334,6 +335,14 @@ function App() {
               element={
                 <RoleGuard allowedRoles={['OWNER']}>
                   <SubscriptionPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/meu-plano"
+              element={
+                <RoleGuard allowedRoles={['OWNER']}>
+                  <MyPlanPage />
                 </RoleGuard>
               }
             />

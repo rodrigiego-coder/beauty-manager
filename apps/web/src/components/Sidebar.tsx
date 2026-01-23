@@ -65,7 +65,8 @@ const bottomNavigation: NavItem[] = [
   { name: 'Fidelidade', href: '/configuracoes/fidelidade', icon: Crown, roles: ['OWNER', 'MANAGER'] },
   { name: 'Integracoes', href: '/integracoes', icon: Link2, roles: ['OWNER', 'MANAGER', 'STYLIST'] },
   { name: 'Automacao', href: '/automacao', icon: MessageSquare, roles: ['OWNER', 'MANAGER'] },
-  { name: 'Assinatura', href: '/assinatura', icon: CreditCard, roles: ['OWNER'] },
+  { name: 'Meu Plano', href: '/meu-plano', icon: Sparkles, roles: ['OWNER'] },
+  { name: 'Faturamento', href: '/assinatura', icon: CreditCard, roles: ['OWNER'] },
   { name: 'Configuracoes', href: '/configuracoes', icon: Settings, roles: ['OWNER', 'MANAGER'] },
 ];
 

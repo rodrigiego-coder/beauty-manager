@@ -344,7 +344,7 @@ export function AvailableSubscriptionsPage() {
                   <div className="p-6 bg-gradient-to-r from-primary-600 to-primary-700 text-white">
                     <div className="flex items-center justify-between mb-2">
                       <span className="px-2 py-1 bg-white/20 rounded text-xs font-medium">
-                        {frequencyLabels[plan.frequency]}
+                        {frequencyLabels[plan.frequency] || 'Mensal'}
                       </span>
                       {plan.discount > 0 && (
                         <span className="px-2 py-1 bg-yellow-400 text-yellow-900 rounded text-xs font-bold">
@@ -362,7 +362,7 @@ export function AvailableSubscriptionsPage() {
                   <div className="p-6 border-b border-gray-100">
                     <div className="flex items-end gap-2">
                       <span className="text-3xl font-bold text-gray-900">{formatCurrency(plan.price)}</span>
-                      <span className="text-gray-500 mb-1">/{frequencyLabels[plan.frequency].toLowerCase()}</span>
+                      <span className="text-gray-500 mb-1">/{(frequencyLabels[plan.frequency] || 'mensal').toLowerCase()}</span>
                     </div>
                     {savings > 0 && (
                       <div className="mt-2 flex items-center gap-2">
@@ -394,7 +394,7 @@ export function AvailableSubscriptionsPage() {
                     <div className="flex items-center gap-4 text-xs text-gray-500">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        A cada {frequencyDays[plan.frequency]} dias
+                        A cada {frequencyDays[plan.frequency] || 30} dias
                       </span>
                       <span className="flex items-center gap-1">
                         <CreditCard className="w-3 h-3" />
@@ -446,7 +446,7 @@ export function AvailableSubscriptionsPage() {
                 <p className="text-2xl font-bold text-primary-700 mt-1">
                   {formatCurrency(selectedPlan.price)}
                   <span className="text-sm font-normal text-primary-600">
-                    /{frequencyLabels[selectedPlan.frequency].toLowerCase()}
+                    /{(frequencyLabels[selectedPlan.frequency] || 'mensal').toLowerCase()}
                   </span>
                 </p>
               </div>

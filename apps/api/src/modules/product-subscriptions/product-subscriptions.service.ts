@@ -32,7 +32,11 @@ export class ProductSubscriptionsService {
     const plansWithItems = await Promise.all(
       plans.map(async (plan) => {
         const items = await this.getPlanItems(plan.id);
-        return { ...plan, items };
+        return {
+          ...plan,
+          frequency: plan.billingPeriod || 'MONTHLY',
+          items,
+        };
       })
     );
 
@@ -55,7 +59,11 @@ export class ProductSubscriptionsService {
     }
 
     const items = await this.getPlanItems(planId);
-    return { ...plan, items };
+    return {
+      ...plan,
+      frequency: plan.billingPeriod || 'MONTHLY',
+      items,
+    };
   }
 
   async getPlanItems(planId: string) {
@@ -260,7 +268,11 @@ export class ProductSubscriptionsService {
     const plansWithItems = await Promise.all(
       plans.map(async (plan) => {
         const items = await this.getPlanItems(plan.id);
-        return { ...plan, items };
+        return {
+          ...plan,
+          frequency: plan.billingPeriod || 'MONTHLY',
+          items,
+        };
       })
     );
 
