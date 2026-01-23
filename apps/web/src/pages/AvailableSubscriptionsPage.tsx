@@ -683,9 +683,9 @@ export function AvailableSubscriptionsPage() {
   }
 
   return (
-    <div className="space-y-12 pb-12">
+    <div className="space-y-8 pb-12">
       {/* ==================== HERO ==================== */}
-      <section className="text-center max-w-3xl mx-auto">
+      <section className="text-center max-w-3xl mx-auto px-4">
         <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary-100 text-primary-700 rounded-full mb-6">
           <Sparkles className="w-4 h-4" />
           <span className="text-sm font-medium">Assinatura de Produtos</span>
@@ -693,24 +693,33 @@ export function AvailableSubscriptionsPage() {
 
         <h1 className="text-3xl md:text-4xl font-bold text-gray-900 leading-tight">
           Receba seus favoritos no
-          <span className="text-primary-600"> piloto automatico</span>
+          <span className="text-primary-600"> piloto automático</span>
         </h1>
 
         <p className="text-lg text-gray-600 mt-4 max-w-2xl mx-auto">
-          Economize tempo e garanta reposicao mensal — sem ficar sem produto.
+          Economize tempo e garanta reposição mensal — sem ficar sem produto.
         </p>
 
         {/* Trust Badges */}
-        <div className="flex flex-wrap items-center justify-center gap-3 mt-8">
+        <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
           <TrustBadge icon={Shield} text="Sem fidelidade" />
           <TrustBadge icon={Pause} text="Pausar quando quiser" />
           <TrustBadge icon={RefreshCw} text="Troca de dia em 1 clique" />
         </div>
+
+        {/* CTA Button - scroll to plans */}
+        <button
+          onClick={() => document.getElementById('plans')?.scrollIntoView({ behavior: 'smooth' })}
+          className="mt-6 px-8 py-3 bg-primary-600 text-white rounded-xl font-semibold hover:bg-primary-700 transition-colors inline-flex items-center gap-2 shadow-lg shadow-primary-600/20"
+        >
+          Ver planos
+          <ChevronRight className="w-5 h-5" />
+        </button>
       </section>
 
       {/* ==================== HOW IT WORKS ==================== */}
-      <section className="max-w-4xl mx-auto">
-        <h2 className="text-xl font-bold text-gray-900 text-center mb-8">Como funciona</h2>
+      <section className="max-w-4xl mx-auto px-4">
+        <h2 className="text-xl font-bold text-gray-900 text-center mb-6">Como funciona</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <HowItWorksStep
             number={1}
@@ -817,7 +826,7 @@ export function AvailableSubscriptionsPage() {
       )}
 
       {/* ==================== AVAILABLE PLANS ==================== */}
-      <section>
+      <section id="plans" className="max-w-6xl mx-auto px-6">
         <h2 className="text-xl font-bold text-gray-900 mb-6 text-center">Planos Disponiveis</h2>
 
         {plans.length === 0 ? (
@@ -827,7 +836,7 @@ export function AvailableSubscriptionsPage() {
             <p className="text-gray-500">Em breve teremos planos de assinatura disponiveis</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+          <div className={`grid gap-6 ${plans.length === 1 ? 'max-w-md mx-auto' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
             {plans.map(plan => {
               const originalPrice = calculateOriginalPrice(plan);
               const finalPrice = parseFloat(plan.price);
@@ -958,8 +967,10 @@ export function AvailableSubscriptionsPage() {
                           <Star className="w-5 h-5" />
                           Assinar agora
                         </button>
-                        <p className="text-xs text-gray-500 text-center mt-2">
-                          Voce confirma os detalhes no proximo passo
+                        {/* Friction reduction */}
+                        <p className="text-xs text-gray-500 text-center mt-3 flex items-center justify-center gap-1">
+                          <Shield className="w-3 h-3" />
+                          Sem fidelidade · Pause ou cancele quando quiser
                         </p>
                       </>
                     )}
