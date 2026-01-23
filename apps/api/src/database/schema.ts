@@ -3782,6 +3782,35 @@ export const quotaLedger = pgTable('quota_ledger', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+/**
+ * Enum para status de unidade de agendamento WhatsApp
+ */
+export const appointmentUnitStatusEnum = pgEnum('appointment_unit_status', [
+  'PENDING',   // Aguardando envio
+  'SENT',      // Enviado com sucesso
+  'FAILED',    // Falhou no envio
+]);
+
+/**
+ * Unidades de agendamento WhatsApp
+ * Rastreia cada agendamento que deve consumir quota
+ * Status: PENDING -> SENT ou FAILED
+ */
+export const whatsappAppointmentUnits = pgTable('whatsapp_appointment_units', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  appointmentId: uuid('appointment_id').references(() => appointments.id).notNull(),
+  origin: text('origin').default('AUTOMATION').notNull(),           // AUTOMATION, MANUAL
+  status: appointmentUnitStatusEnum('status').default('PENDING').notNull(),
+  firstTemplateCode: text('first_template_code'),                   // Ex: appointment_reminder_24h
+  providerMessageId: text('provider_message_id'),                   // ID da mensagem no provedor
+  lastError: text('last_error'),                                    // Último erro (se FAILED)
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  uniqueSalonAppointment: unique().on(table.salonId, table.appointmentId),
+}));
+
 // Types para Add-ons e Quotas
 export type AddonCatalog = typeof addonCatalog.$inferSelect;
 export type NewAddonCatalog = typeof addonCatalog.$inferInsert;
@@ -3793,3 +3822,7 @@ export type SalonQuota = typeof salonQuotas.$inferSelect;
 export type NewSalonQuota = typeof salonQuotas.$inferInsert;
 export type QuotaLedgerEntry = typeof quotaLedger.$inferSelect;
 export type NewQuotaLedgerEntry = typeof quotaLedger.$inferInsert;
+
+// Types para WhatsApp Appointment Units
+export type WhatsappAppointmentUnit = typeof whatsappAppointmentUnits.$inferSelect;
+export type NewWhatsappAppointmentUnit = typeof whatsappAppointmentUnits.$inferInsert;
