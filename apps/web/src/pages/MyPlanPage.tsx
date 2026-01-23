@@ -69,28 +69,28 @@ const FAQ_ITEMS = [
   },
 ];
 
-// Feature list for plans display
+// Feature list for plans display (using backend codes: ESSENTIAL, PROFESSIONAL, MASTER)
 const ALL_FEATURES = [
-  { key: 'agenda', label: 'Agenda inteligente', requiredPlan: 'ESSENCIAL' },
-  { key: 'clients', label: 'Cadastro de clientes', requiredPlan: 'ESSENCIAL' },
-  { key: 'commands', label: 'Comandas digitais', requiredPlan: 'ESSENCIAL' },
+  { key: 'agenda', label: 'Agenda inteligente', requiredPlan: 'ESSENTIAL' },
+  { key: 'clients', label: 'Cadastro de clientes', requiredPlan: 'ESSENTIAL' },
+  { key: 'commands', label: 'Comandas digitais', requiredPlan: 'ESSENTIAL' },
   { key: 'reports', label: 'Relatorios', checkFn: (plan: SaaSPlan) => plan.hasReports },
-  { key: 'commissions', label: 'Comissoes automaticas', requiredPlan: 'PROFISSIONAL' },
-  { key: 'finance', label: 'Financeiro completo', requiredPlan: 'PROFISSIONAL' },
+  { key: 'commissions', label: 'Comissoes automaticas', requiredPlan: 'PROFESSIONAL' },
+  { key: 'finance', label: 'Financeiro completo', requiredPlan: 'PROFESSIONAL' },
   { key: 'whatsapp', label: 'WhatsApp automatico', checkFn: (plan: SaaSPlan) => plan.hasAutomation },
   { key: 'ai', label: 'Assistente IA (Alexis)', checkFn: (plan: SaaSPlan) => plan.hasAI },
 ];
 
 // Helper to build features list for a plan
 function buildPlanFeatures(plan: SaaSPlan): PlanFeature[] {
-  const planOrder = ['ESSENCIAL', 'PROFISSIONAL', 'MASTER'];
+  const planOrder = ['ESSENTIAL', 'PROFESSIONAL', 'MASTER'];
   const planIndex = planOrder.indexOf(plan.code);
 
   return ALL_FEATURES.map((feat) => {
     if (feat.checkFn) {
       return { name: feat.label, included: feat.checkFn(plan) };
     }
-    const requiredIndex = planOrder.indexOf(feat.requiredPlan || 'ESSENCIAL');
+    const requiredIndex = planOrder.indexOf(feat.requiredPlan || 'ESSENTIAL');
     return { name: feat.label, included: planIndex >= requiredIndex };
   });
 }
@@ -201,8 +201,8 @@ function PlanCard({
               : 'bg-gray-100 text-gray-600'
         }`}
       >
-        {plan.code === 'ESSENCIAL' && <Zap className="w-7 h-7" />}
-        {plan.code === 'PROFISSIONAL' && <Crown className="w-7 h-7" />}
+        {plan.code === 'ESSENTIAL' && <Zap className="w-7 h-7" />}
+        {plan.code === 'PROFESSIONAL' && <Crown className="w-7 h-7" />}
         {plan.code === 'MASTER' && <Sparkles className="w-7 h-7" />}
       </div>
 
@@ -369,8 +369,8 @@ export function MyPlanPage() {
     return plans.map((plan) => ({
       ...plan,
       features: buildPlanFeatures(plan),
-      highlighted: plan.code === 'PROFISSIONAL',
-      badge: plan.code === 'PROFISSIONAL' ? 'Mais Popular' : plan.code === 'MASTER' ? 'Completo' : undefined,
+      highlighted: plan.code === 'PROFESSIONAL',
+      badge: plan.code === 'PROFESSIONAL' ? 'Mais Popular' : plan.code === 'MASTER' ? 'Completo' : undefined,
     }));
   }, [plans]);
 
