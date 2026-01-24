@@ -299,34 +299,80 @@ async function seed() {
     console.log('✅ 4 recompensas criadas\n');
 
     // ========================================
-    // 9. CRIAR PLANO PROFESSIONAL
+    // 9. CRIAR PLANOS SaaS (ESSENTIAL, PROFESSIONAL, MASTER)
     // ========================================
-    console.log('📋 Criando plano Professional...');
+    console.log('📋 Criando planos SaaS...');
 
-    const planId = 'eeeeeee1-eeee-eeee-eeee-eeeeeeeeeeee';
+    const saasPlans = [
+      {
+        id: 'eeeeeee0-eeee-eeee-eeee-eeeeeeeeeeee',
+        code: 'ESSENTIAL',
+        name: 'Essencial',
+        description: 'Para salões que estão começando',
+        priceMonthly: '79.90',
+        priceYearly: '799.00',
+        currency: 'BRL',
+        maxUsers: 3,
+        maxClients: 300,
+        maxSalons: 1,
+        features: ['Agendamentos ilimitados', 'Gestão de clientes', 'Relatórios básicos'],
+        hasFiscal: false,
+        hasAutomation: false,
+        hasReports: true,
+        hasAI: false,
+        trialDays: 14,
+        isActive: true,
+        sortOrder: 1,
+      },
+      {
+        id: 'eeeeeee1-eeee-eeee-eeee-eeeeeeeeeeee',
+        code: 'PROFESSIONAL',
+        name: 'Profissional',
+        description: 'Para salões em crescimento',
+        priceMonthly: '149.90',
+        priceYearly: '1499.00',
+        currency: 'BRL',
+        maxUsers: 10,
+        maxClients: 1000,
+        maxSalons: 1,
+        features: ['Agendamentos ilimitados', 'Gestão de estoque', 'Relatórios avançados', 'Programa de fidelidade', 'WhatsApp integrado'],
+        hasFiscal: true,
+        hasAutomation: true,
+        hasReports: true,
+        hasAI: false,
+        trialDays: 14,
+        isActive: true,
+        sortOrder: 2,
+      },
+      {
+        id: 'eeeeeee2-eeee-eeee-eeee-eeeeeeeeeeee',
+        code: 'MASTER',
+        name: 'Master',
+        description: 'Para salões que querem o máximo',
+        priceMonthly: '299.90',
+        priceYearly: '2999.00',
+        currency: 'BRL',
+        maxUsers: 50,
+        maxClients: 5000,
+        maxSalons: 3,
+        features: ['Tudo do Profissional', 'IA Alexis inclusa', 'Multi-unidades', 'API de integração', 'Suporte prioritário'],
+        hasFiscal: true,
+        hasAutomation: true,
+        hasReports: true,
+        hasAI: true,
+        trialDays: 14,
+        isActive: true,
+        sortOrder: 3,
+      },
+    ];
 
-    await db.insert(plans).values({
-      id: planId,
-      code: 'PROFESSIONAL',
-      name: 'Professional',
-      description: 'Plano completo para salões profissionais',
-      priceMonthly: '199.90',
-      priceYearly: '1999.00',
-      currency: 'BRL',
-      maxUsers: 10,
-      maxClients: 1000,
-      maxSalons: 1,
-      features: ['Agendamentos ilimitados', 'Gestão de estoque', 'Relatórios avançados', 'Programa de fidelidade', 'WhatsApp integrado'],
-      hasFiscal: true,
-      hasAutomation: true,
-      hasReports: true,
-      hasAI: true,
-      trialDays: 14,
-      isActive: true,
-      sortOrder: 2,
-    }).onConflictDoNothing();
+    const planId = 'eeeeeee1-eeee-eeee-eeee-eeeeeeeeeeee'; // PROFESSIONAL for salon subscription
 
-    console.log('✅ Plano Professional criado\n');
+    for (const plan of saasPlans) {
+      await db.insert(plans).values(plan).onConflictDoNothing();
+    }
+
+    console.log('✅ 3 planos SaaS criados (ESSENTIAL, PROFESSIONAL, MASTER)\n');
 
     // ========================================
     // 10. CRIAR ASSINATURA ATIVA DO SALÃO
