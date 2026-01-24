@@ -60,7 +60,13 @@ export class IntentClassifierService {
       return 'CANCEL';
     }
 
-    // Informações de Produtos
+    // ========== PRICE_INFO tem precedência sobre PRODUCT_INFO (ALFA.3) ==========
+    // Se a mensagem contém keywords de preço, é PRICE_INFO mesmo que mencione produto
+    if (this.matchesAny(lower, INTENT_KEYWORDS.PRICE_INFO)) {
+      return 'PRICE_INFO';
+    }
+
+    // Informações de Produtos (só se não for sobre preço)
     if (this.matchesAny(lower, INTENT_KEYWORDS.PRODUCT_INFO)) {
       return 'PRODUCT_INFO';
     }
@@ -68,11 +74,6 @@ export class IntentClassifierService {
     // Informações de Serviços
     if (this.matchesAny(lower, INTENT_KEYWORDS.SERVICE_INFO)) {
       return 'SERVICE_INFO';
-    }
-
-    // Informações de Preços
-    if (this.matchesAny(lower, INTENT_KEYWORDS.PRICE_INFO)) {
-      return 'PRICE_INFO';
     }
 
     // Horário de funcionamento
