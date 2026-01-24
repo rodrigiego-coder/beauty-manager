@@ -17,6 +17,7 @@ import { IntentClassifierService } from './intent-classifier.service';
 import { AlexisSchedulerService } from './scheduler.service';
 import { DataCollectorService } from './data-collector.service';
 import { AlexisCatalogService } from './alexis-catalog.service';
+import { ProductInfoService } from './product-info.service';
 import { COMMAND_RESPONSES } from './constants/forbidden-terms';
 
 /**
@@ -46,6 +47,7 @@ export class AlexisService {
     private readonly scheduler: AlexisSchedulerService,
     private readonly dataCollector: DataCollectorService,
     private readonly catalog: AlexisCatalogService,
+    private readonly productInfo: ProductInfoService,
   ) {}
 
   /**
@@ -138,6 +140,37 @@ export class AlexisService {
         intent: 'HUMAN_ACTIVE',
         blocked: false,
         shouldSend: false,
+        statusChanged: false,
+      };
+    }
+
+    // ========== CHARLIE: DETECÇÃO DETERMINÍSTICA DE PRODUTO ==========
+    // Tenta responder perguntas de produto ANTES da classificação Gemini
+    const productInfoResponse = await this.productInfo.tryAnswerProductInfo(salonId, message);
+    if (productInfoResponse) {
+      this.logger.log(`ProductInfo respondeu deterministicamente para: "${message}"`);
+
+      // Salva mensagens
+      await this.saveMessage(conversation.id, 'client', message, 'PRODUCT_INFO', false, false);
+      await this.saveMessage(conversation.id, 'ai', productInfoResponse, 'PRODUCT_INFO', false, false);
+
+      await this.logInteraction(
+        salonId,
+        conversation.id,
+        clientPhone,
+        message,
+        productInfoResponse,
+        'PRODUCT_INFO',
+        false,
+        undefined,
+        Date.now() - startTime,
+      );
+
+      return {
+        response: productInfoResponse,
+        intent: 'PRODUCT_INFO',
+        blocked: false,
+        shouldSend: true,
         statusChanged: false,
       };
     }
