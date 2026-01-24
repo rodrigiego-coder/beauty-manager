@@ -7,9 +7,10 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
-import { eq } from 'drizzle-orm';
+import { eq, ilike } from 'drizzle-orm';
 import { db } from '../../database/connection';
 import * as schema from '../../database/schema';
+import { ConfigService } from '@nestjs/config';
 import { AlexisService } from '../alexis/alexis.service';
 import { WhatsAppService } from './whatsapp.service';
 
@@ -25,6 +26,7 @@ export class ZapiWebhookController {
   constructor(
     private readonly alexisService: AlexisService,
     private readonly whatsappService: WhatsAppService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -37,6 +39,14 @@ export class ZapiWebhookController {
     this.logger.log(`Webhook recebido: ${JSON.stringify(payload)}`);
 
     try {
+      // ========== IGNORA MENSAGENS DE GRUPOS ==========
+      // Z-API sinaliza grupos com isGroup=true ou phone terminando em "-group"
+      const phoneRaw = payload.phone || payload.from || '';
+      if (payload.isGroup === true || phoneRaw.endsWith('-group') || phoneRaw.includes('@g.us')) {
+        this.logger.debug(`Mensagem de grupo ignorada: ${phoneRaw}`);
+        return { received: true };
+      }
+
       // Z-API envia diferentes tipos de eventos
       // Focamos em mensagens de texto recebidas
       if (!payload.text?.message) {
@@ -134,20 +144,40 @@ export class ZapiWebhookController {
 
   /**
    * Busca o salonId baseado no telefone
-   * Por enquanto retorna o salão demo, mas pode ser expandido
+   * 1) Tenta usar slug da env var ZAPI_DEFAULT_SALON_SLUG
+   * 2) Fallback: primeiro salão com name ILIKE '%demo%'
    */
   private async getSalonIdForPhone(_phone: string): Promise<string | null> {
-    // TODO: Implementar lógica de mapeamento
-    // Por exemplo: buscar automation_settings onde o número do WhatsApp bate
+    // Tentativa 1: Slug configurado em env var
+    const configuredSlug = this.configService.get<string>('ZAPI_DEFAULT_SALON_SLUG');
+    if (configuredSlug) {
+      const [salonBySlug] = await db
+        .select()
+        .from(schema.salons)
+        .where(eq(schema.salons.slug, configuredSlug))
+        .limit(1);
 
-    // Por enquanto, retorna o salão demo
-    const [salon] = await db
+      if (salonBySlug) {
+        this.logger.debug(`Salão encontrado por slug (${configuredSlug}): ${salonBySlug.id}`);
+        return salonBySlug.id;
+      }
+      this.logger.warn(`Slug configurado "${configuredSlug}" não encontrado, tentando fallback`);
+    }
+
+    // Tentativa 2 (fallback): Primeiro salão com nome contendo "demo"
+    const [demoSalon] = await db
       .select()
       .from(schema.salons)
-      .where(eq(schema.salons.slug, 'salao-camila-sanches'))
+      .where(ilike(schema.salons.name, '%demo%'))
       .limit(1);
 
-    return salon?.id || null;
+    if (demoSalon) {
+      this.logger.debug(`Salão demo encontrado: ${demoSalon.id} (${demoSalon.name})`);
+      return demoSalon.id;
+    }
+
+    this.logger.warn('Nenhum salão encontrado (slug nem demo)');
+    return null;
   }
 
   /**
