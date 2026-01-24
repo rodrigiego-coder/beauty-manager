@@ -16,6 +16,7 @@ import { ContentFilterService } from './content-filter.service';
 import { IntentClassifierService } from './intent-classifier.service';
 import { AlexisSchedulerService } from './scheduler.service';
 import { DataCollectorService } from './data-collector.service';
+import { AlexisCatalogService } from './alexis-catalog.service';
 import { COMMAND_RESPONSES } from './constants/forbidden-terms';
 
 /**
@@ -44,6 +45,7 @@ export class AlexisService {
     private readonly intentClassifier: IntentClassifierService,
     private readonly scheduler: AlexisSchedulerService,
     private readonly dataCollector: DataCollectorService,
+    private readonly catalog: AlexisCatalogService,
   ) {}
 
   /**
@@ -226,6 +228,10 @@ export class AlexisService {
       // Tratamento especial para agendamento
       if (intent === 'SCHEDULE') {
         aiResponse = await this.handleSchedulingIntent(salonId, clientPhone, message, context);
+      }
+      // Tratamento especial para produtos (ALFA.2)
+      else if (intent === 'PRODUCT_INFO' || intent === 'PRICE_INFO') {
+        aiResponse = await this.handleProductIntent(salonId, message);
       } else {
         aiResponse = await this.gemini.generateResponse(
           context.salon?.name || 'Salão',
@@ -365,6 +371,25 @@ export class AlexisService {
     const slotList = this.scheduler.formatAvailableSlots(slots, 6);
 
     return `Ótimo! Para ${mentionedService.name}, temos esses horários amanhã:\n\n${slotList}\n\nQual fica melhor pra você? 😊`;
+  }
+
+  /**
+   * =====================================================
+   * PRODUTOS VIA WHATSAPP (ALFA.2)
+   * =====================================================
+   */
+
+  private async handleProductIntent(salonId: string, message: string): Promise<string> {
+    // CAN_RESERVE_PRODUCTS seria uma flag de configuração do salão
+    // Por ora, assumimos false (não pode reservar automaticamente)
+    const canReserve = false;
+
+    try {
+      return await this.catalog.handleProductIntent(salonId, message, canReserve);
+    } catch (error: any) {
+      this.logger.error('Erro ao buscar produto:', error?.message || error);
+      return 'Desculpe, não consegui verificar os produtos no momento. Quer que eu chame a recepção pra te ajudar? 😊';
+    }
   }
 
   /**

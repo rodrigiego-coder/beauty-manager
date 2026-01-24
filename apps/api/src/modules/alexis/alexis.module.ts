@@ -6,6 +6,7 @@ import { ContentFilterService } from './content-filter.service';
 import { IntentClassifierService } from './intent-classifier.service';
 import { AlexisSchedulerService } from './scheduler.service';
 import { DataCollectorService } from './data-collector.service';
+import { AlexisCatalogService } from './alexis-catalog.service';
 
 /**
  * =====================================================
@@ -24,7 +25,8 @@ import { DataCollectorService } from './data-collector.service';
     IntentClassifierService,
     AlexisSchedulerService,
     DataCollectorService,
+    AlexisCatalogService,
   ],
-  exports: [AlexisService],
+  exports: [AlexisService, AlexisCatalogService],
 })
 export class AlexisModule {}
