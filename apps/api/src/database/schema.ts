@@ -3114,6 +3114,20 @@ export const aiBriefings = pgTable('ai_briefings', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// Contatos da Alexis (DELTA - humanizacao)
+export const alexisContacts = pgTable('alexis_contacts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  phone: varchar('phone', { length: 20 }).notNull(),
+  name: varchar('name', { length: 255 }),
+  lastSeenAt: timestamp('last_seen_at').defaultNow().notNull(),
+  lastGreetedAt: timestamp('last_greeted_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  salonPhoneUnique: unique().on(table.salonId, table.phone),
+}));
+
 // Types para AI tables
 export type AiSettings = typeof aiSettings.$inferSelect;
 export type NewAiSettings = typeof aiSettings.$inferInsert;
@@ -3127,6 +3141,8 @@ export type AiBlockedTermsLog = typeof aiBlockedTermsLog.$inferSelect;
 export type NewAiBlockedTermsLog = typeof aiBlockedTermsLog.$inferInsert;
 export type AiBriefing = typeof aiBriefings.$inferSelect;
 export type NewAiBriefing = typeof aiBriefings.$inferInsert;
+export type AlexisContact = typeof alexisContacts.$inferSelect;
+export type NewAlexisContact = typeof alexisContacts.$inferInsert;
 
 // ============================================
 // APPOINTMENT NOTIFICATIONS (Notificações WhatsApp)
