@@ -24,6 +24,7 @@ export interface ProductMatch {
   description: string | null;
   salePrice: string;
   stockRetail: number;
+  stockInternal: number; // ALFA.3: added for total stock calculation
   isSystemDefault: boolean;
   alexisEnabled: boolean;
   alexisMeta: {
@@ -97,20 +98,44 @@ export function matchScore(searchNorm: string, productNameNorm: string): number 
 }
 
 /**
+ * Calcula estoque total (retail + internal)
+ * ALFA.3: usa stock_retail + stock_internal do schema real
+ */
+export function calculateTotalStock(product: ProductMatch): number {
+  const retail = product.stockRetail ?? 0;
+  const internal = product.stockInternal ?? 0;
+  return retail + internal;
+}
+
+/**
+ * Formata preço para exibição
+ * ALFA.3: sale_price é numeric. Se null/0, retorna "sob consulta"
+ */
+export function formatPrice(salePrice: string | null): string {
+  if (!salePrice) return 'sob consulta com a recepcao';
+  const price = parseFloat(salePrice);
+  if (isNaN(price) || price <= 0) return 'sob consulta com a recepcao';
+  return `R$ ${price.toFixed(2).replace('.', ',')}`;
+}
+
+/**
  * Formata copy de disponibilidade baseado no estoque
+ * ALFA.3: usa totalStock (retail + internal) e trata price=0/null
  */
 export function formatAvailabilityCopy(
   product: ProductMatch,
   canReserve: boolean,
 ): AvailabilityCopy {
-  const inStock = product.stockRetail > 0;
+  const totalStock = calculateTotalStock(product);
+  const inStock = totalStock > 0;
   const summary = product.alexisMeta?.summary || product.description || '';
+  const priceText = formatPrice(product.salePrice);
 
   if (inStock) {
     return {
       message: `*${product.name}* ${summary ? `- ${summary}` : ''}
 
-Temos disponivel no salao! O valor e R$ ${product.salePrice}.
+Temos disponivel no salao! O valor e ${priceText}.
 
 Quer que eu chame a recepcao pra separar pra voce?`,
       inStock: true,
@@ -119,9 +144,11 @@ Quer que eu chame a recepcao pra separar pra voce?`,
     };
   }
 
-  // Sem estoque
+  // Sem estoque - ainda mostra info do produto (ALFA.3)
   return {
     message: `*${product.name}* ${summary ? `- ${summary}` : ''}
+
+O valor e ${priceText}.
 
 No momento estamos sem estoque desse produto.
 
@@ -183,7 +210,7 @@ export class AlexisCatalogService {
 
   /**
    * Resolve produto por nome ou alias
-   * Retorna o produto encontrado ou lista de candidatos
+   * ALFA.3: usa substring matching para aliases (maior alias contido na msg)
    */
   async resolveProduct(salonId: string, searchTerm: string): Promise<ResolveResult> {
     const searchNorm = normalizeText(searchTerm);
@@ -192,8 +219,8 @@ export class AlexisCatalogService {
       return { found: false, product: null, alternatives: [], blocked: false };
     }
 
-    // 1) Busca por alias exato (normalizado)
-    const aliasMatch = await this.findByAlias(salonId, searchNorm);
+    // 1) Busca por alias substring (maior alias contido na mensagem)
+    const aliasMatch = await this.findByAliasSubstring(salonId, searchNorm);
     if (aliasMatch) {
       const policyCheck = await this.checkPolicy(salonId, aliasMatch);
       if (!policyCheck.allowed) {
@@ -250,17 +277,21 @@ export class AlexisCatalogService {
   }
 
   /**
-   * Busca produto por alias normalizado
+   * Busca produto por alias usando substring matching
+   * ALFA.3: Encontra o alias mais longo contido na mensagem normalizada
    */
-  private async findByAlias(salonId: string, aliasNorm: string): Promise<ProductMatch | null> {
-    const result = await db
+  private async findByAliasSubstring(salonId: string, messageNorm: string): Promise<ProductMatch | null> {
+    // Busca todos os aliases do salão
+    const allAliases = await db
       .select({
+        aliasNorm: productAliases.aliasNorm,
         id: products.id,
         name: products.name,
         catalogCode: products.catalogCode,
         description: products.description,
         salePrice: products.salePrice,
         stockRetail: products.stockRetail,
+        stockInternal: products.stockInternal,
         isSystemDefault: products.isSystemDefault,
         alexisEnabled: products.alexisEnabled,
         alexisMeta: products.alexisMeta,
@@ -272,17 +303,30 @@ export class AlexisCatalogService {
       .where(
         and(
           eq(productAliases.salonId, salonId),
-          eq(productAliases.aliasNorm, aliasNorm),
           eq(products.active, true),
         ),
-      )
-      .limit(1);
+      );
 
-    return result[0] || null;
+    // Filtra aliases que estão contidos na mensagem
+    const matches = allAliases.filter(a => messageNorm.includes(a.aliasNorm));
+
+    if (matches.length === 0) {
+      return null;
+    }
+
+    // Escolhe o alias mais longo (mais específico)
+    const best = matches.reduce((prev, curr) =>
+      curr.aliasNorm.length > prev.aliasNorm.length ? curr : prev
+    );
+
+    // Remove aliasNorm do retorno (não faz parte de ProductMatch)
+    const { aliasNorm: _alias, ...product } = best;
+    return product;
   }
 
   /**
    * Busca produtos por nome (fuzzy match)
+   * ALFA.3: inclui stockInternal
    */
   private async findByName(salonId: string, searchNorm: string): Promise<ProductMatch[]> {
     // Busca produtos do salão que contenham o termo
@@ -294,6 +338,7 @@ export class AlexisCatalogService {
         description: products.description,
         salePrice: products.salePrice,
         stockRetail: products.stockRetail,
+        stockInternal: products.stockInternal,
         isSystemDefault: products.isSystemDefault,
         alexisEnabled: products.alexisEnabled,
         alexisMeta: products.alexisMeta,
@@ -370,6 +415,7 @@ export class AlexisCatalogService {
 
   /**
    * Busca produtos alternativos na mesma categoria
+   * ALFA.3: inclui stockInternal, usa total stock > 0
    */
   private async findAlternatives(
     salonId: string,
@@ -385,6 +431,7 @@ export class AlexisCatalogService {
         description: products.description,
         salePrice: products.salePrice,
         stockRetail: products.stockRetail,
+        stockInternal: products.stockInternal,
         isSystemDefault: products.isSystemDefault,
         alexisEnabled: products.alexisEnabled,
         alexisMeta: products.alexisMeta,
@@ -398,7 +445,7 @@ export class AlexisCatalogService {
           eq(products.active, true),
           eq(products.alexisEnabled, true),
           eq(products.category, category),
-          sql`${products.stockRetail} > 0`,
+          sql`(COALESCE(${products.stockRetail}, 0) + COALESCE(${products.stockInternal}, 0)) > 0`,
         ),
       )
       .limit(5);
@@ -416,30 +463,26 @@ export class AlexisCatalogService {
   }
 
   /**
-   * Handler principal para intent PRODUCT_INFO
-   * Retorna a copy formatada para o cliente
+   * Handler principal para intent PRODUCT_INFO / PRICE_INFO
+   * ALFA.3: usa mensagem completa para substring matching
    */
   async handleProductIntent(
     salonId: string,
     message: string,
     canReserve: boolean = false,
   ): Promise<string> {
-    // Extrai possíveis termos de produto da mensagem
-    const searchTerm = this.extractProductTerm(message);
+    // ALFA.3: Usa a mensagem completa para substring matching
+    // Isso permite encontrar "encanthus" em "me fala do encanthus"
+    const messageNorm = normalizeText(message);
 
-    if (!searchTerm) {
-      return this.getGenericProductResponse(salonId);
-    }
+    this.logger.debug(`Buscando produto na mensagem: "${messageNorm}" para salão ${salonId}`);
 
-    this.logger.debug(`Buscando produto: "${searchTerm}" para salão ${salonId}`);
+    // Tenta resolver usando a mensagem completa (substring match nos aliases)
+    const result = await this.resolveProduct(salonId, message);
 
-    const result = await this.resolveProduct(salonId, searchTerm);
-
-    // Nenhum produto encontrado
+    // Nenhum produto encontrado - oferece lista de produtos disponíveis
     if (!result.found && result.alternatives.length === 0) {
-      return `Nao encontrei um produto com esse nome no nosso catalogo.
-
-Quer que eu liste os produtos disponiveis ou chame a recepcao pra te ajudar?`;
+      return this.getGenericProductResponse(salonId);
     }
 
     // Múltiplas correspondências
@@ -452,7 +495,7 @@ Quer que eu liste os produtos disponiveis ou chame a recepcao pra te ajudar?`;
       return formatBlockedCopy(result.product.name, result.alternatives);
     }
 
-    // Produto encontrado e permitido
+    // Produto encontrado e permitido (mesmo sem estoque - ALFA.3)
     if (result.product) {
       const availability = formatAvailabilityCopy(result.product, canReserve);
       return availability.message;
@@ -465,47 +508,11 @@ Quer que eu chame a recepcao pra te ajudar?`;
   }
 
   /**
-   * Extrai o termo de busca de produto da mensagem
-   */
-  private extractProductTerm(message: string): string | null {
-    const lower = message.toLowerCase();
-
-    // Padrões comuns: "tem X?", "vocês tem X", "quero X", "preço do X"
-    const patterns = [
-      /tem\s+(.+?)\s*\??$/i,
-      /voces?\s+tem\s+(.+?)\s*\??$/i,
-      /quero\s+(?:o|a|um|uma)?\s*(.+?)$/i,
-      /preco\s+(?:do|da|de)?\s*(.+?)$/i,
-      /valor\s+(?:do|da|de)?\s*(.+?)$/i,
-      /quanto\s+(?:custa|e|fica)\s+(?:o|a)?\s*(.+?)$/i,
-      /estoque\s+(?:do|da|de)?\s*(.+?)$/i,
-      /disponivel\s+(?:o|a)?\s*(.+?)$/i,
-    ];
-
-    for (const pattern of patterns) {
-      const match = lower.match(pattern);
-      if (match && match[1]) {
-        return match[1].trim();
-      }
-    }
-
-    // Se nenhum padrão, tenta extrair substantivos após keywords de produto
-    const productKeywords = ['produto', 'shampoo', 'condicionador', 'mascara', 'creme', 'oleo', 'hidratante'];
-    for (const keyword of productKeywords) {
-      if (lower.includes(keyword)) {
-        // Retorna a mensagem completa para busca fuzzy
-        return message.replace(/[?!.,]/g, '').trim();
-      }
-    }
-
-    return null;
-  }
-
-  /**
    * Resposta genérica quando não há produto específico mencionado
+   * ALFA.3: usa total stock (retail + internal)
    */
   private async getGenericProductResponse(salonId: string): Promise<string> {
-    // Lista alguns produtos disponíveis
+    // Lista alguns produtos disponíveis com estoque
     const featuredProducts = await db
       .select({
         name: products.name,
@@ -518,7 +525,7 @@ Quer que eu chame a recepcao pra te ajudar?`;
           eq(products.salonId, salonId),
           eq(products.active, true),
           eq(products.alexisEnabled, true),
-          sql`${products.stockRetail} > 0`,
+          sql`(COALESCE(${products.stockRetail}, 0) + COALESCE(${products.stockInternal}, 0)) > 0`,
         ),
       )
       .limit(6);
@@ -530,7 +537,7 @@ Quer que eu chame a recepcao pra te ajudar?`;
     }
 
     const list = featuredProducts
-      .map(p => `- *${p.name}* - R$ ${p.salePrice}`)
+      .map(p => `- *${p.name}* - ${formatPrice(p.salePrice)}`)
       .join('\n');
 
     return `Temos varios produtos disponiveis! Alguns deles:
