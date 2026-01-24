@@ -7,6 +7,7 @@ import { IntentClassifierService } from './intent-classifier.service';
 import { AlexisSchedulerService } from './scheduler.service';
 import { DataCollectorService } from './data-collector.service';
 import { AlexisCatalogService } from './alexis-catalog.service';
+import { ResponseComposerService } from './response-composer.service';
 
 /**
  * =====================================================
@@ -26,6 +27,7 @@ import { AlexisCatalogService } from './alexis-catalog.service';
     AlexisSchedulerService,
     DataCollectorService,
     AlexisCatalogService,
+    ResponseComposerService,
   ],
   exports: [AlexisService, AlexisCatalogService],
 })

@@ -17,6 +17,7 @@ import { IntentClassifierService } from './intent-classifier.service';
 import { AlexisSchedulerService } from './scheduler.service';
 import { DataCollectorService } from './data-collector.service';
 import { AlexisCatalogService } from './alexis-catalog.service';
+import { ResponseComposerService } from './response-composer.service';
 import { COMMAND_RESPONSES } from './constants/forbidden-terms';
 
 /**
@@ -46,6 +47,7 @@ export class AlexisService {
     private readonly scheduler: AlexisSchedulerService,
     private readonly dataCollector: DataCollectorService,
     private readonly catalog: AlexisCatalogService,
+    private readonly composer: ResponseComposerService,
   ) {}
 
   /**
@@ -257,7 +259,16 @@ export class AlexisService {
       });
     }
 
-    const finalResponse = outputFilter.filtered;
+    const filteredResponse = outputFilter.filtered;
+
+    // DELTA: Compoe resposta humanizada
+    const finalResponse = await this.composer.compose({
+      salonId,
+      phone: clientPhone,
+      clientName,
+      intent,
+      baseText: filteredResponse,
+    });
 
     // Salva mensagens
     await this.saveMessage(conversation.id, 'client', message, intent, false, false);
