@@ -12,6 +12,7 @@ import {
   date,
   json,
   unique,
+  index,
 } from 'drizzle-orm/pg-core';
 
 /**
@@ -1081,6 +1082,19 @@ export const products = pgTable('products', {
   benefits: json('benefits').$type<string[]>().default([]), // Benefícios
   brand: varchar('brand', { length: 100 }), // Marca
   category: varchar('category', { length: 50 }), // Categoria do produto
+  // Catálogo padrão do sistema (Alexis)
+  catalogCode: varchar('catalog_code', { length: 100 }), // Código estável para produtos padrão (ex: 'REVELARIUM_EKO_VITALI')
+  isSystemDefault: boolean('is_system_default').default(false).notNull(), // true = produto padrão do sistema
+  alexisEnabled: boolean('alexis_enabled').default(true).notNull(), // Controle por salão: IA pode recomendar?
+  alexisMeta: json('alexis_meta').$type<{
+    summary?: string;
+    indications?: string[];
+    actives?: string[];
+    benefits?: string[];
+    howToUse?: string;
+    precautions?: string;
+    upsellHooks?: string[];
+  }>(), // Metadados estruturados para Alexis
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -3826,3 +3840,40 @@ export type NewQuotaLedgerEntry = typeof quotaLedger.$inferInsert;
 // Types para WhatsApp Appointment Units
 export type WhatsappAppointmentUnit = typeof whatsappAppointmentUnits.$inferSelect;
 export type NewWhatsappAppointmentUnit = typeof whatsappAppointmentUnits.$inferInsert;
+
+// ==================== ALEXIS PRODUCT CATALOG ====================
+
+/**
+ * Aliases de produtos para busca (multi-tenant)
+ * Permite que "blindagem", "protetor térmico" encontrem o produto correto
+ */
+export const productAliases = pgTable('product_aliases', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  productId: integer('product_id').references(() => products.id).notNull(),
+  alias: varchar('alias', { length: 255 }).notNull(),
+  aliasNorm: varchar('alias_norm', { length: 255 }).notNull(), // lowercase, sem acentos
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  uniqueSalonAliasNorm: unique().on(table.salonId, table.aliasNorm),
+  productIdx: index('product_aliases_product_idx').on(table.productId),
+  aliasNormIdx: index('product_aliases_alias_norm_idx').on(table.aliasNorm),
+}));
+
+/**
+ * Políticas globais de produtos (suporte/admin)
+ * Permite desabilitar recomendação de produtos por catalog_code sem tocar em cada salão
+ */
+export const globalProductPolicies = pgTable('global_product_policies', {
+  catalogCode: varchar('catalog_code', { length: 100 }).primaryKey(),
+  isEnabled: boolean('is_enabled').default(true).notNull(),
+  reason: text('reason'),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  updatedBy: varchar('updated_by', { length: 255 }),
+});
+
+// Types para Product Aliases e Policies
+export type ProductAlias = typeof productAliases.$inferSelect;
+export type NewProductAlias = typeof productAliases.$inferInsert;
+export type GlobalProductPolicy = typeof globalProductPolicies.$inferSelect;
+export type NewGlobalProductPolicy = typeof globalProductPolicies.$inferInsert;

@@ -22,6 +22,7 @@ import {
   clientPackageUsages,
   addonCatalog,
   creditPackages,
+  productAliases,
 } from './database/schema';
 
 /**
@@ -680,109 +681,376 @@ async function seed() {
     console.log('✅ 12 serviços padrão criados\n');
 
     // ========================================
-    // 13. CRIAR PRODUTOS DEMO (ESTOQUE)
+    // 13. CRIAR PRODUTOS REVELARIUM (CATÁLOGO ALEXIS)
     // ========================================
-    console.log('📦 Criando produtos demo...');
+    console.log('📦 Criando produtos Revelarium (catálogo Alexis)...');
 
-    const productsData = [
+    const revelariamProducts = [
       {
-        salonId: salonId,
-        name: 'Shampoo Profissional 1L',
-        description: 'Shampoo para uso profissional em salão',
-        costPrice: '45.00',
-        salePrice: '89.90',
-        stockRetail: 15,
-        stockInternal: 8,
-        minStockRetail: 5,
-        minStockInternal: 3,
-        unit: 'UN' as const,
-        isRetail: true,
-        isBackbar: true,
-        brand: 'L\'Oréal',
-        category: 'Cabelo',
-        active: true,
-      },
-      {
-        salonId: salonId,
-        name: 'Condicionador Profissional 1L',
-        description: 'Condicionador para uso profissional',
-        costPrice: '48.00',
-        salePrice: '95.00',
-        stockRetail: 12,
-        stockInternal: 6,
-        minStockRetail: 5,
-        minStockInternal: 3,
-        unit: 'UN' as const,
-        isRetail: true,
-        isBackbar: true,
-        brand: 'L\'Oréal',
-        category: 'Cabelo',
-        active: true,
-      },
-      {
-        salonId: salonId,
-        name: 'Máscara de Hidratação 500g',
-        description: 'Máscara para tratamento intensivo',
-        costPrice: '60.00',
-        salePrice: '120.00',
-        stockRetail: 10,
-        stockInternal: 4,
-        minStockRetail: 3,
-        minStockInternal: 2,
-        unit: 'UN' as const,
-        isRetail: true,
-        isBackbar: true,
-        brand: 'Kerastase',
+        catalogCode: 'REV-EKO-VITALI',
+        name: 'Eko Vitali',
+        description: 'Linha de tratamento capilar com ativos naturais e biotecnológicos para nutrição profunda',
+        costPrice: '85.00',
+        salePrice: '169.90',
+        brand: 'Revelarium',
         category: 'Tratamento',
-        active: true,
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Tratamento nutritivo com ativos naturais para cabelos ressecados e sem vida',
+          indications: ['cabelos ressecados', 'fios opacos', 'falta de vitalidade', 'cabelos naturais'],
+          actives: ['óleo de argan', 'manteiga de karité', 'proteína de quinoa', 'pantenol'],
+          benefits: ['nutrição profunda', 'brilho intenso', 'maciez', 'proteção térmica'],
+          howToUse: 'Aplicar nos cabelos úmidos, massagear e deixar agir 5-10 minutos. Enxaguar.',
+          precautions: 'Uso externo. Evitar contato com os olhos.',
+          upsellHooks: ['Combine com Óleos Lendários para resultado potencializado'],
+        },
+        aliases: ['eko vitali', 'eco vitali', 'ekovitali', 'eko vital'],
       },
       {
-        salonId: salonId,
-        name: 'Esmalte Vermelho Clássico',
-        description: 'Esmalte de longa duração',
-        costPrice: '8.00',
-        salePrice: '18.00',
-        stockRetail: 25,
-        stockInternal: 10,
-        minStockRetail: 10,
-        minStockInternal: 5,
-        unit: 'UN' as const,
-        isRetail: true,
-        isBackbar: true,
-        brand: 'Risqué',
-        category: 'Unhas',
-        active: true,
+        catalogCode: 'REV-NEO-DETOX',
+        name: 'Neo Complex Lumina - Shampoo Detox',
+        description: 'Shampoo detox com tecnologia micelar para limpeza profunda sem agredir os fios',
+        costPrice: '55.00',
+        salePrice: '119.90',
+        brand: 'Revelarium',
+        category: 'Limpeza',
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Shampoo detox com tecnologia micelar que remove resíduos sem ressecar',
+          indications: ['cabelos oleosos', 'couro cabeludo com resíduos', 'pré-química', 'cabelos pesados'],
+          actives: ['micelas de coco', 'extrato de menta', 'ácido salicílico', 'zinco PCA'],
+          benefits: ['limpeza profunda', 'controle de oleosidade', 'frescor duradouro', 'prepara para tratamentos'],
+          howToUse: 'Aplicar no couro cabeludo úmido, massagear bem e enxaguar. Repetir se necessário.',
+          precautions: 'Evitar uso diário em cabelos secos. Uso externo.',
+          upsellHooks: ['Use antes da Máscara Redutora Neo Complex para resultado completo'],
+        },
+        aliases: ['neo complex', 'shampoo detox', 'neo lumina', 'detox revelarium'],
       },
       {
-        salonId: salonId,
-        name: 'Óleo Finalizador 100ml',
-        description: 'Óleo para finalização e brilho',
-        costPrice: '35.00',
-        salePrice: '75.00',
-        stockRetail: 18,
-        stockInternal: 5,
-        minStockRetail: 5,
-        minStockInternal: 2,
-        unit: 'UN' as const,
-        isRetail: true,
-        isBackbar: false,
-        brand: 'Moroccanoil',
+        catalogCode: 'REV-NEO-MASCARA',
+        name: 'Neo Complex Lumina - Máscara Redutora',
+        description: 'Máscara redutora de volume com ação anti-frizz e alinhamento dos fios',
+        costPrice: '95.00',
+        salePrice: '189.90',
+        brand: 'Revelarium',
+        category: 'Tratamento',
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Máscara que reduz volume e frizz, alinhando os fios sem química agressiva',
+          indications: ['cabelos volumosos', 'frizz intenso', 'fios rebeldes', 'cabelos grossos'],
+          actives: ['queratina hidrolisada', 'óleo de pracaxi', 'silicone vegetal', 'aminoácidos'],
+          benefits: ['redução de volume', 'controle de frizz', 'alinhamento', 'brilho espelhado'],
+          howToUse: 'Aplicar mecha a mecha após o shampoo detox. Deixar 15-20 min. Enxaguar e finalizar.',
+          precautions: 'Não aplicar na raiz. Fazer teste de mecha em cabelos com química.',
+          upsellHooks: ['Resultado dura até 4 semanas com manutenção do Elixir Multibenefícios'],
+        },
+        aliases: ['mascara redutora', 'neo complex mascara', 'redutora neo', 'anti volume'],
+      },
+      {
+        catalogCode: 'REV-ULTRA-RECON',
+        name: 'Ultra Reconstrução',
+        description: 'Tratamento reconstrutivo intenso para cabelos extremamente danificados',
+        costPrice: '110.00',
+        salePrice: '219.90',
+        brand: 'Revelarium',
+        category: 'Reconstrução',
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Reconstrução profunda que repõe massa capilar e fortalece fios quebradiços',
+          indications: ['cabelos quebradiços', 'pontas duplas', 'danos químicos', 'cabelos elásticos'],
+          actives: ['queratina líquida', 'colágeno marinho', 'cisteína', 'creatina'],
+          benefits: ['reposição de massa', 'fortalecimento', 'redução de quebra', 'elasticidade saudável'],
+          howToUse: 'Aplicar em cabelos lavados. Deixar 20-30 min com touca térmica. Enxaguar bem.',
+          precautions: 'Não usar em cabelos saudáveis (pode causar rigidez). Máximo 1x por semana.',
+          upsellHooks: ['Manutenção semanal com Kera Balance prolonga os resultados'],
+        },
+        aliases: ['ultra reconstrucao', 'reconstrucao revelarium', 'tratamento reconstrutor', 'ultra reconstrutivo'],
+      },
+      {
+        catalogCode: 'REV-KERA-BAL',
+        name: 'Kera Balance',
+        description: 'Tratamento equilibrante com queratina dosada para manutenção capilar',
+        costPrice: '75.00',
+        salePrice: '149.90',
+        brand: 'Revelarium',
+        category: 'Manutenção',
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Queratina balanceada para manutenção sem sobrecarregar os fios',
+          indications: ['manutenção pós-reconstrução', 'cabelos com química', 'prevenção de danos', 'uso frequente de secador'],
+          actives: ['queratina vegetal', 'ceramidas', 'vitamina E', 'filtro UV'],
+          benefits: ['equilíbrio proteico', 'proteção diária', 'maciez', 'prevenção de danos'],
+          howToUse: 'Aplicar após shampoo, deixar 5 min e enxaguar. Pode usar 2-3x por semana.',
+          precautions: 'Ideal para manutenção, não substitui reconstrução profunda.',
+          upsellHooks: ['Use como manutenção entre sessões de Ultra Reconstrução'],
+        },
+        aliases: ['kera balance', 'kerabalance', 'queratina balance', 'manutencao queratina'],
+      },
+      {
+        catalogCode: 'REV-TRIACTIVE',
+        name: 'Triactive+',
+        description: 'Tratamento tripla ação: hidratação, nutrição e reconstrução em um único produto',
+        costPrice: '98.00',
+        salePrice: '199.90',
+        brand: 'Revelarium',
+        category: 'Tratamento',
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Fórmula 3 em 1 que hidrata, nutre e reconstrói simultaneamente',
+          indications: ['cabelos mistos', 'necessidades múltiplas', 'praticidade', 'cabelos coloridos'],
+          actives: ['ácido hialurônico', 'óleo de macadâmia', 'queratina hidrolisada', 'pantenol'],
+          benefits: ['hidratação', 'nutrição', 'reconstrução leve', 'versatilidade'],
+          howToUse: 'Aplicar em cabelos úmidos, massagear e deixar 10-15 min. Enxaguar.',
+          precautions: 'Para cabelos muito danificados, preferir tratamentos específicos.',
+          upsellHooks: ['Perfeito para manutenção entre tratamentos específicos'],
+        },
+        aliases: ['triactive', 'tri active', 'triactive plus', 'tratamento 3 em 1'],
+      },
+      {
+        catalogCode: 'REV-MEGA-NUTRI',
+        name: 'Mega Nutri',
+        description: 'Linha de nutrição intensiva com blend de óleos nobres',
+        costPrice: '88.00',
+        salePrice: '179.90',
+        brand: 'Revelarium',
+        category: 'Nutrição',
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Nutrição poderosa com mix de óleos para cabelos extremamente secos',
+          indications: ['cabelos muito secos', 'fios porosos', 'cabelos crespos/cacheados', 'ressecamento químico'],
+          actives: ['óleo de argan', 'óleo de coco', 'óleo de abacate', 'manteiga de murumuru'],
+          benefits: ['nutrição intensa', 'selamento de cutículas', 'brilho', 'toque sedoso'],
+          howToUse: 'Aplicar generosamente, envolver com touca e deixar 20-30 min. Enxaguar bem.',
+          precautions: 'Evitar raiz em cabelos finos. Pode pesar se usado em excesso.',
+          upsellHooks: ['Potencialize com Óleos Lendários na finalização'],
+        },
+        aliases: ['mega nutri', 'meganutri', 'nutricao intensa', 'mega nutricao'],
+      },
+      {
+        catalogCode: 'REV-OLEOS-LEND',
+        name: 'Óleos Lendários',
+        description: 'Blend de óleos raros para finalização e tratamento sem enxágue',
+        costPrice: '65.00',
+        salePrice: '139.90',
+        brand: 'Revelarium',
         category: 'Finalização',
-        active: true,
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Óleo finalizador premium com blend de óleos raros para brilho e proteção',
+          indications: ['finalização', 'frizz leve', 'pontas ressecadas', 'proteção térmica'],
+          actives: ['óleo de argan', 'óleo de marula', 'óleo de pracaxi', 'vitamina E'],
+          benefits: ['brilho intenso', 'controle de frizz', 'proteção térmica', 'perfume duradouro'],
+          howToUse: 'Aplicar 2-3 gotas nas pontas e comprimentos. Pode usar com cabelo seco ou úmido.',
+          precautions: 'Usar com moderação. Excesso pode deixar oleoso.',
+          upsellHooks: ['Combine com qualquer tratamento Revelarium para finalização perfeita'],
+        },
+        aliases: ['oleos lendarios', 'oleo lendario', 'oleo finalizador revelarium', 'blend oleos'],
+      },
+      {
+        catalogCode: 'REV-BLONDE-MATIZ',
+        name: 'Blonde Matiz',
+        description: 'Linha matizadora para cabelos loiros, com pigmentos violeta',
+        costPrice: '70.00',
+        salePrice: '149.90',
+        brand: 'Revelarium',
+        category: 'Coloração',
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Matizador que neutraliza tons amarelados e mantém o loiro platinado',
+          indications: ['cabelos loiros', 'mechas', 'cabelos brancos', 'descoloridos'],
+          actives: ['pigmento violeta', 'proteína do trigo', 'pantenol', 'filtro UV'],
+          benefits: ['neutraliza amarelado', 'brilho prateado', 'hidratação', 'proteção da cor'],
+          howToUse: 'Aplicar em cabelos úmidos, deixar 3-5 min (mais tempo = mais intenso). Enxaguar.',
+          precautions: 'Usar luvas. Tempo excessivo pode manchar. Fazer teste de mecha.',
+          upsellHooks: ['Manutenção semanal mantém o loiro sempre perfeito'],
+        },
+        aliases: ['blonde matiz', 'matizador loiro', 'shampoo roxo', 'desamarelador'],
+      },
+      {
+        catalogCode: 'REV-ULTRA-BLACK',
+        name: 'Ultra Black',
+        description: 'Linha intensificadora para cabelos pretos e escuros',
+        costPrice: '68.00',
+        salePrice: '139.90',
+        brand: 'Revelarium',
+        category: 'Coloração',
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Intensifica e realça o brilho de cabelos pretos e castanhos escuros',
+          indications: ['cabelos pretos', 'castanho escuro', 'cabelos opacos', 'manutenção de cor'],
+          actives: ['pigmentos pretos', 'óleo de açaí', 'queratina', 'silicone vegetal'],
+          benefits: ['cor intensa', 'brilho espelhado', 'maciez', 'realce dos reflexos'],
+          howToUse: 'Aplicar em cabelos úmidos, massagear e deixar 5-10 min. Enxaguar.',
+          precautions: 'Pode manchar toalhas claras. Usar com cuidado próximo ao rosto.',
+          upsellHooks: ['Use semanalmente para manter o preto sempre vibrante'],
+        },
+        aliases: ['ultra black', 'ultrablack', 'realce preto', 'intensificador preto'],
+      },
+      {
+        catalogCode: 'REV-ELIXIR-MULTI',
+        name: 'Elixir Multibenefícios',
+        description: 'Leave-in multifuncional com 10 benefícios em um único produto',
+        costPrice: '58.00',
+        salePrice: '119.90',
+        brand: 'Revelarium',
+        category: 'Finalização',
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Leave-in 10 em 1: protege, hidrata, desembaraça e muito mais',
+          indications: ['todos os tipos de cabelo', 'uso diário', 'proteção térmica', 'desembaraço'],
+          actives: ['queratina', 'pantenol', 'filtro UV', 'silicone leve', 'óleo de argan'],
+          benefits: ['proteção térmica', 'desembaraço', 'anti-frizz', 'brilho', 'hidratação leve', 'controle de volume', 'selamento de pontas', 'facilita escovação', 'perfume', 'não pesa'],
+          howToUse: 'Borrifar em cabelos úmidos ou secos. Não enxaguar.',
+          precautions: 'Uso externo. Evitar contato com os olhos.',
+          upsellHooks: ['Produto coringa para uso diário entre tratamentos'],
+        },
+        aliases: ['elixir', 'multibeneficio', 'leave in revelarium', '10 em 1'],
+      },
+      {
+        catalogCode: 'REV-ENCANTHUS',
+        name: 'Encanthus',
+        description: 'Linha premium de perfumação capilar com fixação duradoura',
+        costPrice: '72.00',
+        salePrice: '159.90',
+        brand: 'Revelarium',
+        category: 'Finalização',
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Perfume capilar premium com fragrância sofisticada e longa duração',
+          indications: ['todos os tipos de cabelo', 'ocasiões especiais', 'perfumação diária', 'neutralizar odores'],
+          actives: ['fragrância exclusiva', 'filtro UV', 'silicone volátil', 'vitamina E'],
+          benefits: ['perfume duradouro', 'brilho sutil', 'proteção leve', 'sensação de limpeza'],
+          howToUse: 'Borrifar a 20cm de distância nos cabelos secos. Reaplicar conforme desejado.',
+          precautions: 'Não substitui tratamentos. Uso externo.',
+          upsellHooks: ['Finalize qualquer tratamento com perfumação irresistível'],
+        },
+        aliases: ['encanthus', 'perfume capilar', 'perfume cabelo revelarium', 'fragancia capilar'],
+      },
+      {
+        catalogCode: 'REV-BLINDAGEM',
+        name: 'Blindagem dos Fios',
+        description: 'Tratamento selador que cria película protetora nos fios',
+        costPrice: '105.00',
+        salePrice: '209.90',
+        brand: 'Revelarium',
+        category: 'Tratamento',
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Blindagem profissional que sela e protege os fios de agressões externas',
+          indications: ['cabelos com química', 'exposição ao sol/mar/piscina', 'uso intenso de ferramentas térmicas', 'fios porosos'],
+          actives: ['queratina de alta penetração', 'ceramidas', 'aminoácidos', 'polímero selador'],
+          benefits: ['selamento de cutículas', 'proteção térmica extrema', 'impermeabilização', 'brilho vítreo'],
+          howToUse: 'Aplicar mecha a mecha após shampoo. Selar com prancha. Não enxaguar.',
+          precautions: 'Procedimento profissional. Requer técnica de aplicação.',
+          upsellHooks: ['Proteção que dura até 8 lavagens - ideal antes de viagens'],
+        },
+        aliases: ['blindagem', 'blindagem fios', 'selagem capilar', 'blindagem revelarium'],
+      },
+      {
+        catalogCode: 'REV-ATIV-CACHOS',
+        name: 'Ativador de Cachos',
+        description: 'Finalizador que define, modela e ativa cachos naturais',
+        costPrice: '52.00',
+        salePrice: '109.90',
+        brand: 'Revelarium',
+        category: 'Finalização',
+        isSystemDefault: true,
+        alexisEnabled: true,
+        alexisMeta: {
+          summary: 'Ativador que define cachos sem crocância, com toque macio',
+          indications: ['cabelos cacheados', 'cabelos ondulados', 'transição capilar', 'definição de cachos'],
+          actives: ['extrato de linhaça', 'óleo de coco', 'pantenol', 'polímero natural'],
+          benefits: ['definição', 'anti-frizz', 'toque macio', 'volume controlado', 'hidratação'],
+          howToUse: 'Aplicar em cabelos úmidos, amassar os cachos de baixo para cima. Deixar secar naturalmente ou difusor.',
+          precautions: 'Não pentear após aplicação para não desfazer os cachos.',
+          upsellHooks: ['Combine com Mega Nutri para day after perfeito'],
+        },
+        aliases: ['ativador cachos', 'ativador de cachos', 'creme para cachos', 'definidor cachos'],
       },
     ];
 
-    for (const product of productsData) {
+    // Upsert produtos por catalogCode (idempotente)
+    const insertedProducts: { catalogCode: string; id: number }[] = [];
+    for (const prod of revelariamProducts) {
+      const { aliases, ...productData } = prod;
       const existing = await db.select({ id: products.id })
         .from(products)
-        .where(and(eq(products.salonId, salonId), eq(products.name, product.name)))
+        .where(and(eq(products.salonId, salonId), eq(products.catalogCode, prod.catalogCode)))
         .limit(1);
+
+      let productId: number;
       if (existing.length === 0) {
-        await db.insert(products).values(product);
+        const [inserted] = await db.insert(products).values({
+          salonId,
+          ...productData,
+          stockRetail: 20,
+          stockInternal: 10,
+          minStockRetail: 5,
+          minStockInternal: 3,
+          unit: 'UN' as const,
+          isRetail: true,
+          isBackbar: true,
+          active: true,
+        }).returning({ id: products.id });
+        productId = inserted.id;
+      } else {
+        productId = existing[0].id;
+        // Update alexisMeta e flags se já existe
+        await db.update(products)
+          .set({ alexisMeta: productData.alexisMeta, alexisEnabled: true, isSystemDefault: true })
+          .where(eq(products.id, productId));
+      }
+      insertedProducts.push({ catalogCode: prod.catalogCode, id: productId });
+    }
+
+    console.log(`✅ ${revelariamProducts.length} produtos Revelarium criados/atualizados\n`);
+
+    // ========================================
+    // 13.B CRIAR ALIASES DE PRODUTOS (ALEXIS)
+    // ========================================
+    console.log('🔤 Criando aliases de produtos...');
+
+    let aliasCount = 0;
+    for (const prod of revelariamProducts) {
+      const productEntry = insertedProducts.find(p => p.catalogCode === prod.catalogCode);
+      if (!productEntry || !prod.aliases) continue;
+
+      for (const alias of prod.aliases) {
+        const aliasNorm = alias.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+        const existingAlias = await db.select({ id: productAliases.id })
+          .from(productAliases)
+          .where(and(
+            eq(productAliases.salonId, salonId),
+            eq(productAliases.aliasNorm, aliasNorm)
+          ))
+          .limit(1);
+
+        if (existingAlias.length === 0) {
+          await db.insert(productAliases).values({
+            salonId,
+            productId: productEntry.id,
+            alias,
+            aliasNorm,
+          });
+          aliasCount++;
+        }
       }
     }
 
-    console.log('✅ 5 produtos criados\n');
+    console.log(`✅ ${aliasCount} aliases de produtos criados\n`);
 
     // ========================================
     // 14. CRIAR COMANDAS DE EXEMPLO (ÚLTIMOS 30 DIAS)
