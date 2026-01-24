@@ -129,12 +129,13 @@ Dados completos: ${JSON.stringify(data)}`;
 
   /**
    * Resposta de fallback quando a IA não está disponível
+   * CHARLIE: Atualizado para mencionar produtos/ativos/modo de uso (sem emojis)
    */
   private getFallbackResponse(): string {
     const fallbacks = [
-      'Olá! Posso ajudar com informações sobre nossos serviços, agendamentos ou preços. Como posso ajudar? 😊',
-      'Estou aqui para ajudar! Você pode perguntar sobre serviços, preços ou agendar um horário. 💇‍♀️',
-      'Desculpe, estou com uma instabilidade no momento. Por favor, tente novamente em alguns segundos! 😊',
+      'Ola! Posso ajudar com informacoes sobre nossos servicos, agendamentos, precos ou produtos. Pode perguntar sobre ativos, beneficios ou modo de uso tambem.',
+      'Estou aqui para ajudar! Voce pode perguntar sobre servicos, precos, agendamentos ou tirar duvidas sobre produtos e como usa-los.',
+      'Desculpe, estou com uma instabilidade no momento. Por favor, tente novamente em alguns segundos!',
     ];
 
     return fallbacks[Math.floor(Math.random() * fallbacks.length)];

@@ -17,6 +17,7 @@ import { IntentClassifierService } from './intent-classifier.service';
 import { AlexisSchedulerService } from './scheduler.service';
 import { DataCollectorService } from './data-collector.service';
 import { AlexisCatalogService } from './alexis-catalog.service';
+import { ProductInfoService } from './product-info.service';
 import { ResponseComposerService } from './response-composer.service';
 import { COMMAND_RESPONSES } from './constants/forbidden-terms';
 
@@ -47,6 +48,7 @@ export class AlexisService {
     private readonly scheduler: AlexisSchedulerService,
     private readonly dataCollector: DataCollectorService,
     private readonly catalog: AlexisCatalogService,
+    private readonly productInfo: ProductInfoService,
     private readonly composer: ResponseComposerService,
   ) {}
 
@@ -67,7 +69,7 @@ export class AlexisService {
     const startTime = Date.now();
 
     // Busca ou cria conversa
-    let conversation = await this.getOrCreateConversation(salonId, clientPhone, clientName);
+    const conversation = await this.getOrCreateConversation(salonId, clientPhone, clientName);
 
     // ========== VERIFICA SE É COMANDO DO ATENDENTE ==========
     if (senderType === 'agent') {
@@ -140,6 +142,37 @@ export class AlexisService {
         intent: 'HUMAN_ACTIVE',
         blocked: false,
         shouldSend: false,
+        statusChanged: false,
+      };
+    }
+
+    // ========== CHARLIE: DETECÇÃO DETERMINÍSTICA DE PRODUTO ==========
+    // Tenta responder perguntas de produto ANTES da classificação Gemini
+    const productInfoResponse = await this.productInfo.tryAnswerProductInfo(salonId, message);
+    if (productInfoResponse) {
+      this.logger.log(`ProductInfo respondeu deterministicamente para: "${message}"`);
+
+      // Salva mensagens
+      await this.saveMessage(conversation.id, 'client', message, 'PRODUCT_INFO', false, false);
+      await this.saveMessage(conversation.id, 'ai', productInfoResponse, 'PRODUCT_INFO', false, false);
+
+      await this.logInteraction(
+        salonId,
+        conversation.id,
+        clientPhone,
+        message,
+        productInfoResponse,
+        'PRODUCT_INFO',
+        false,
+        undefined,
+        Date.now() - startTime,
+      );
+
+      return {
+        response: productInfoResponse,
+        intent: 'PRODUCT_INFO',
+        blocked: false,
+        shouldSend: true,
         statusChanged: false,
       };
     }
@@ -235,11 +268,7 @@ export class AlexisService {
       else if (intent === 'PRODUCT_INFO' || intent === 'PRICE_INFO') {
         aiResponse = await this.handleProductIntent(salonId, message);
       } else {
-        aiResponse = await this.gemini.generateResponse(
-          context.salon?.name || 'Salão',
-          message,
-          context,
-        );
+        aiResponse = await this.gemini.generateResponse(context.salon?.name || 'Salão', message, context);
       }
     } catch (error: any) {
       this.logger.error('Erro na geração de resposta:', error?.message || error);
@@ -356,9 +385,7 @@ export class AlexisService {
     }
 
     // Verifica se o cliente mencionou algum serviço
-    const mentionedService = services.find((s: any) =>
-      message.toLowerCase().includes(s.name.toLowerCase()),
-    );
+    const mentionedService = services.find((s: any) => message.toLowerCase().includes(s.name.toLowerCase()));
 
     if (!mentionedService) {
       const serviceList = services
@@ -416,32 +443,20 @@ export class AlexisService {
   ): Promise<{ handled: boolean; response: string }> {
     // Formata variações do telefone para busca
     const phoneClean = clientPhone.replace(/\D/g, '');
-    const phoneVariants = [
-      phoneClean,
-      phoneClean.replace(/^55/, ''),
-      `55${phoneClean.replace(/^55/, '')}`,
-    ];
+    const phoneVariants = [phoneClean, phoneClean.replace(/^55/, ''), `55${phoneClean.replace(/^55/, '')}`];
 
     // Busca agendamento pendente de confirmação para este telefone
     const pendingAppointments = await db
       .select()
       .from(appointments)
-      .where(
-        and(
-          eq(appointments.salonId, salonId),
-          eq(appointments.status, 'PENDING_CONFIRMATION'),
-        ),
-      )
+      .where(and(eq(appointments.salonId, salonId), eq(appointments.status, 'PENDING_CONFIRMATION')))
       .orderBy(desc(appointments.createdAt))
       .limit(20);
 
     // Encontra agendamento que corresponde ao telefone
-    const appointment = pendingAppointments.find(apt => {
+    const appointment = pendingAppointments.find((apt) => {
       const aptPhone = apt.clientPhone?.replace(/\D/g, '') || '';
-      return phoneVariants.some(p =>
-        aptPhone.includes(p) || p.includes(aptPhone) ||
-        aptPhone === p || p === aptPhone,
-      );
+      return phoneVariants.some((p) => aptPhone.includes(p) || p.includes(aptPhone) || aptPhone === p || p === aptPhone);
     });
 
     if (!appointment) {
@@ -495,55 +510,52 @@ export class AlexisService {
 
 Aguardamos você! 💜`,
       };
-    } else {
-      // ========== CANCELA AGENDAMENTO ==========
-      await db
-        .update(appointments)
-        .set({
-          status: 'CANCELLED',
-          cancellationReason: 'Cancelado pelo cliente via WhatsApp',
-          updatedAt: new Date(),
-        })
-        .where(eq(appointments.id, appointment.id));
+    }
 
-      // Registra resposta na notificação
-      await db
-        .update(appointmentNotifications)
-        .set({
-          clientResponse: 'CANCELLED',
-          clientRespondedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(appointmentNotifications.appointmentId, appointment.id),
-            eq(appointmentNotifications.notificationType, 'APPOINTMENT_CONFIRMATION'),
-          ),
-        );
+    // ========== CANCELA AGENDAMENTO ==========
+    await db
+      .update(appointments)
+      .set({
+        status: 'CANCELLED',
+        cancellationReason: 'Cancelado pelo cliente via WhatsApp',
+        updatedAt: new Date(),
+      })
+      .where(eq(appointments.id, appointment.id));
 
-      // Cancela lembretes futuros
-      await db
-        .update(appointmentNotifications)
-        .set({
-          status: 'CANCELLED',
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(appointmentNotifications.appointmentId, appointment.id),
-            eq(appointmentNotifications.status, 'SCHEDULED'),
-          ),
-        );
+    // Registra resposta na notificação
+    await db
+      .update(appointmentNotifications)
+      .set({
+        clientResponse: 'CANCELLED',
+        clientRespondedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(appointmentNotifications.appointmentId, appointment.id),
+          eq(appointmentNotifications.notificationType, 'APPOINTMENT_CONFIRMATION'),
+        ),
+      );
 
-      this.logger.log(`Agendamento ${appointment.id} CANCELADO via WhatsApp por ${clientPhone}`);
+    // Cancela lembretes futuros
+    await db
+      .update(appointmentNotifications)
+      .set({
+        status: 'CANCELLED',
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(appointmentNotifications.appointmentId, appointment.id), eq(appointmentNotifications.status, 'SCHEDULED')),
+      );
 
-      return {
-        handled: true,
-        response: `Agendamento *cancelado* com sucesso. 😔
+    this.logger.log(`Agendamento ${appointment.id} CANCELADO via WhatsApp por ${clientPhone}`);
+
+    return {
+      handled: true,
+      response: `Agendamento *cancelado* com sucesso. 😔
 
 Quando quiser, agende novamente! Estamos à disposição. 💜`,
-      };
-    }
+    };
   }
 
   /**
@@ -552,11 +564,7 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
    * =====================================================
    */
 
-  private async getOrCreateConversation(
-    salonId: string,
-    clientPhone: string,
-    clientName?: string,
-  ) {
+  private async getOrCreateConversation(salonId: string, clientPhone: string, clientName?: string) {
     // Busca conversa ativa
     const [existing] = await db
       .select()
@@ -571,9 +579,7 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
       .orderBy(desc(aiConversations.createdAt))
       .limit(1);
 
-    if (existing) {
-      return existing;
-    }
+    if (existing) return existing;
 
     // Cria nova conversa
     const [newConversation] = await db
@@ -650,11 +656,7 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
    */
 
   async getSettings(salonId: string) {
-    const [settings] = await db
-      .select()
-      .from(aiSettings)
-      .where(eq(aiSettings.salonId, salonId))
-      .limit(1);
+    const [settings] = await db.select().from(aiSettings).where(eq(aiSettings.salonId, salonId)).limit(1);
 
     if (!settings) {
       // Cria configurações padrão
@@ -666,11 +668,7 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
   }
 
   async updateSettings(salonId: string, updates: Partial<typeof aiSettings.$inferInsert>) {
-    const [existing] = await db
-      .select()
-      .from(aiSettings)
-      .where(eq(aiSettings.salonId, salonId))
-      .limit(1);
+    const [existing] = await db.select().from(aiSettings).where(eq(aiSettings.salonId, salonId)).limit(1);
 
     if (!existing) {
       return db.insert(aiSettings).values({ salonId, ...updates }).returning();
@@ -694,20 +692,11 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
       ? and(eq(aiConversations.salonId, salonId), eq(aiConversations.status, status))
       : eq(aiConversations.salonId, salonId);
 
-    return db
-      .select()
-      .from(aiConversations)
-      .where(whereCondition)
-      .orderBy(desc(aiConversations.lastMessageAt))
-      .limit(50);
+    return db.select().from(aiConversations).where(whereCondition).orderBy(desc(aiConversations.lastMessageAt)).limit(50);
   }
 
   async getMessages(conversationId: string) {
-    return db
-      .select()
-      .from(aiMessages)
-      .where(eq(aiMessages.conversationId, conversationId))
-      .orderBy(aiMessages.createdAt);
+    return db.select().from(aiMessages).where(eq(aiMessages.conversationId, conversationId)).orderBy(aiMessages.createdAt);
   }
 
   /**
@@ -716,12 +705,7 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
    * =====================================================
    */
 
-  async generateBriefing(
-    salonId: string,
-    userId: string,
-    userRole: string,
-    userName: string,
-  ): Promise<string> {
+  async generateBriefing(salonId: string, userId: string, userRole: string, userName: string): Promise<string> {
     const data = await this.dataCollector.collectDashboardData(salonId, userId, userRole);
     const briefing = await this.gemini.generateBriefing(userName, userRole, data);
 
@@ -744,21 +728,11 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
    */
 
   async getInteractionLogs(salonId: string, limit = 100) {
-    return db
-      .select()
-      .from(aiInteractionLogs)
-      .where(eq(aiInteractionLogs.salonId, salonId))
-      .orderBy(desc(aiInteractionLogs.createdAt))
-      .limit(limit);
+    return db.select().from(aiInteractionLogs).where(eq(aiInteractionLogs.salonId, salonId)).orderBy(desc(aiInteractionLogs.createdAt)).limit(limit);
   }
 
   async getBlockedTermsLogs(salonId: string, limit = 100) {
-    return db
-      .select()
-      .from(aiBlockedTermsLog)
-      .where(eq(aiBlockedTermsLog.salonId, salonId))
-      .orderBy(desc(aiBlockedTermsLog.createdAt))
-      .limit(limit);
+    return db.select().from(aiBlockedTermsLog).where(eq(aiBlockedTermsLog.salonId, salonId)).orderBy(desc(aiBlockedTermsLog.createdAt)).limit(limit);
   }
 
   /**
@@ -774,21 +748,10 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
    * =====================================================
    */
 
-  /**
-   * Lista sessões de conversa do salão
-   */
   async getSessions(salonId: string) {
-    return db
-      .select()
-      .from(aiConversations)
-      .where(eq(aiConversations.salonId, salonId))
-      .orderBy(desc(aiConversations.updatedAt))
-      .limit(100);
+    return db.select().from(aiConversations).where(eq(aiConversations.salonId, salonId)).orderBy(desc(aiConversations.updatedAt)).limit(100);
   }
 
-  /**
-   * Obtém mensagens de uma sessão
-   */
   async getSessionMessages(salonId: string, sessionId: string) {
     // Verifica se a sessão pertence ao salão
     const session = await db
@@ -797,20 +760,11 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
       .where(and(eq(aiConversations.id, sessionId), eq(aiConversations.salonId, salonId)))
       .limit(1);
 
-    if (!session.length) {
-      return [];
-    }
+    if (!session.length) return [];
 
-    return db
-      .select()
-      .from(aiMessages)
-      .where(eq(aiMessages.conversationId, sessionId))
-      .orderBy(aiMessages.createdAt);
+    return db.select().from(aiMessages).where(eq(aiMessages.conversationId, sessionId)).orderBy(aiMessages.createdAt);
   }
 
-  /**
-   * Encerra uma sessão de conversa
-   */
   async endSession(salonId: string, sessionId: string) {
     await db
       .update(aiConversations)
@@ -826,13 +780,7 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
    * =====================================================
    */
 
-  /**
-   * Estatísticas de compliance ANVISA
-   */
   async getComplianceStats(salonId: string) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     // Total de mensagens bloqueadas
     const blocked = await db
       .select({ count: sql<number>`count(*)::int` })
@@ -861,15 +809,9 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
     };
   }
 
-  /**
-   * Métricas de uso da Alexis
-   */
   async getMetrics(salonId: string) {
     // Total de conversas
-    const conversations = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(aiConversations)
-      .where(eq(aiConversations.salonId, salonId));
+    const conversations = await db.select({ count: sql<number>`count(*)::int` }).from(aiConversations).where(eq(aiConversations.salonId, salonId));
 
     // Conversas ativas
     const activeConversations = await db
@@ -900,9 +842,6 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
    * =====================================================
    */
 
-  /**
-   * Atendente assume controle da conversa
-   */
   async humanTakeover(salonId: string, sessionId: string, userId: string) {
     await db
       .update(aiConversations)
@@ -916,9 +855,6 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
     return { success: true, message: 'Atendimento assumido' };
   }
 
-  /**
-   * Alexis retoma controle da conversa
-   */
   async aiResume(salonId: string, sessionId: string) {
     await db
       .update(aiConversations)
@@ -932,9 +868,6 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
     return { success: true, message: 'Alexis retomou o atendimento' };
   }
 
-  /**
-   * Envia mensagem como humano
-   */
   async sendHumanMessage(salonId: string, sessionId: string, message: string, _userId: string) {
     // Verifica se a sessão pertence ao salão
     const session = await db
@@ -956,10 +889,7 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
     });
 
     // Atualiza timestamp da conversa
-    await db
-      .update(aiConversations)
-      .set({ updatedAt: new Date() })
-      .where(eq(aiConversations.id, sessionId));
+    await db.update(aiConversations).set({ updatedAt: new Date() }).where(eq(aiConversations.id, sessionId));
 
     return { success: true, message: 'Mensagem enviada' };
   }
@@ -969,10 +899,7 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
    */
   async deleteDashboardChatHistory(userId: string) {
     // Busca conversas do dashboard deste usuário
-    const conversations = await db
-      .select()
-      .from(aiConversations)
-      .where(eq(aiConversations.clientPhone, `dashboard-${userId}`));
+    const conversations = await db.select().from(aiConversations).where(eq(aiConversations.clientPhone, `dashboard-${userId}`));
 
     // Deleta mensagens das conversas
     for (const conv of conversations) {

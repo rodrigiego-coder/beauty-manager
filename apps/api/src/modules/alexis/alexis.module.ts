@@ -8,15 +8,15 @@ import { AlexisSchedulerService } from './scheduler.service';
 import { DataCollectorService } from './data-collector.service';
 import { AlexisCatalogService } from './alexis-catalog.service';
 import { ResponseComposerService } from './response-composer.service';
+import { ProductInfoService } from './product-info.service';
 
 /**
- * =====================================================
+ * ==========================================
  * ALEXIS MODULE
  * IA Assistente para WhatsApp & Dashboard
  * Compliance: ANVISA + LGPD
- * =====================================================
+ * ==========================================
  */
-
 @Module({
   controllers: [AlexisController],
   providers: [
@@ -28,7 +28,8 @@ import { ResponseComposerService } from './response-composer.service';
     DataCollectorService,
     AlexisCatalogService,
     ResponseComposerService,
+    ProductInfoService,
   ],
-  exports: [AlexisService, AlexisCatalogService],
+  exports: [AlexisService, AlexisCatalogService, ProductInfoService],
 })
 export class AlexisModule {}
