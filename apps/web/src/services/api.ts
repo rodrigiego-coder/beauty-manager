@@ -124,19 +124,19 @@ api.interceptors.response.use(
         try {
           const response = await api(originalRequest);
           // Sucesso - notifica fim do retry
-          notifyRetryEnd();
+          notifyRetryEnd(true);
           return response;
         } catch (retryError) {
           // Se ainda for 503, o interceptor será chamado novamente
           // Se for outro erro, propaga normalmente
           if (!isApiStarting(retryError as AxiosError)) {
-            notifyRetryEnd();
+            notifyRetryEnd(false);
           }
           throw retryError;
         }
       } else {
         // Excedeu tentativas - notifica e falha
-        notifyRetryEnd();
+        notifyRetryEnd(false);
         const customError = new Error(
           'O sistema está em manutenção. Por favor, aguarde alguns instantes e tente novamente.'
         );
