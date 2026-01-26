@@ -1,4 +1,5 @@
-import axios from 'axios';
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { notifyRetryStart, notifyRetryEnd } from '../utils/apiRetryEvents';
 
 // Base URL: em produção usa relativo /api (same-origin), em dev usa localhost:3000
 const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
@@ -12,6 +13,54 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// ============================================
+// CONFIGURAÇÃO DE RETRY PARA 503 "STARTING"
+// ============================================
+const RETRY_MAX_ATTEMPTS = 6;
+const RETRY_DEFAULT_DELAY = 5000; // 5 segundos (default do Retry-After)
+
+interface RetryConfig extends InternalAxiosRequestConfig {
+  _retryCount?: number;
+  _retry?: boolean;
+}
+
+/**
+ * Verifica se o erro 503 indica que a API está reiniciando
+ */
+function isApiStarting(error: AxiosError): boolean {
+  if (error.response?.status !== 503) return false;
+
+  try {
+    const data = error.response.data as { status?: string; service?: string };
+    return data?.status === 'starting';
+  } catch {
+    // Se não conseguir ler o body, assume que é um 503 genérico
+    // e tenta retry se tiver header Retry-After
+    return !!error.response.headers?.['retry-after'];
+  }
+}
+
+/**
+ * Extrai o tempo de retry do header Retry-After ou usa default
+ */
+function getRetryDelay(error: AxiosError): number {
+  const retryAfter = error.response?.headers?.['retry-after'];
+  if (retryAfter) {
+    const seconds = parseInt(retryAfter, 10);
+    if (!isNaN(seconds) && seconds > 0) {
+      return seconds * 1000;
+    }
+  }
+  return RETRY_DEFAULT_DELAY;
+}
+
+/**
+ * Aguarda o tempo especificado
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // ============================================
 // INTERCEPTOR DE REQUEST - ADICIONA TOKEN AUTOMATICAMENTE
@@ -47,14 +96,61 @@ const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue = [];
 };
 
-// Interceptor de resposta - trata erro 401
+// Interceptor de resposta - trata erros 503 (retry) e 401 (refresh token)
 api.interceptors.response.use(
   (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
+  async (error: AxiosError) => {
+    const originalRequest = error.config as RetryConfig;
+
+    // ============================================
+    // RETRY AUTOMÁTICO PARA 503 "STARTING"
+    // ============================================
+    if (isApiStarting(error) && originalRequest) {
+      const retryCount = originalRequest._retryCount || 0;
+
+      if (retryCount < RETRY_MAX_ATTEMPTS) {
+        const delayMs = getRetryDelay(error);
+        const nextAttempt = retryCount + 1;
+
+        // Notifica UI sobre retry
+        notifyRetryStart(nextAttempt, RETRY_MAX_ATTEMPTS, delayMs / 1000);
+
+        // Aguarda antes de tentar novamente
+        await sleep(delayMs);
+
+        // Marca tentativa e refaz requisição
+        originalRequest._retryCount = nextAttempt;
+
+        try {
+          const response = await api(originalRequest);
+          // Sucesso - notifica fim do retry
+          notifyRetryEnd();
+          return response;
+        } catch (retryError) {
+          // Se ainda for 503, o interceptor será chamado novamente
+          // Se for outro erro, propaga normalmente
+          if (!isApiStarting(retryError as AxiosError)) {
+            notifyRetryEnd();
+          }
+          throw retryError;
+        }
+      } else {
+        // Excedeu tentativas - notifica e falha
+        notifyRetryEnd();
+        const customError = new Error(
+          'O sistema está em manutenção. Por favor, aguarde alguns instantes e tente novamente.'
+        );
+        (customError as any).originalError = error;
+        return Promise.reject(customError);
+      }
+    }
+
+    // ============================================
+    // REFRESH TOKEN PARA 401
+    // ============================================
 
     // Se o erro for 401 e não for uma tentativa de refresh
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && !originalRequest?._retry) {
       // Se já está renovando, adiciona na fila
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
