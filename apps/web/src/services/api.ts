@@ -1,11 +1,24 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { notifyRetryStart, notifyRetryEnd } from '../utils/apiRetryEvents';
+import {
+  getValidAccessToken,
+  refreshAccessToken,
+  clearTokens,
+  isRefreshingToken,
+} from '../lib/auth/tokenManager';
 
 // Base URL: em produção usa relativo /api (same-origin), em dev usa localhost:3000
 const isDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
 const baseURL = isDev
   ? (import.meta.env.VITE_API_URL || 'http://localhost:3000/api')
   : '/api';
+
+// Debug log condicional
+function debugLog(message: string, ...args: unknown[]): void {
+  if (typeof window !== 'undefined' && localStorage.getItem('BM_AUTH_DEBUG') === '1') {
+    console.log(`[Api] ${message}`, ...args);
+  }
+}
 
 const api = axios.create({
   baseURL,
@@ -63,14 +76,33 @@ function sleep(ms: number): Promise<void> {
 }
 
 // ============================================
-// INTERCEPTOR DE REQUEST - ADICIONA TOKEN AUTOMATICAMENTE
+// INTERCEPTOR DE REQUEST - TOKEN COM REFRESH PREVENTIVO (ALFA)
 // ============================================
 api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('beauty_manager_access_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+  async (config) => {
+    // Pula refresh preventivo para endpoints públicos
+    const isPublicEndpoint = config.url?.includes('/auth/') ||
+                             config.url?.includes('/triage/public/') ||
+                             config.url?.includes('/public/');
+
+    if (isPublicEndpoint) {
+      debugLog(`Public endpoint, skipping token: ${config.url}`);
+      return config;
     }
+
+    try {
+      // getValidAccessToken faz refresh preventivo se TTL < 60s
+      const token = await getValidAccessToken({ minTtlSec: 60 });
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+        debugLog(`Token set for: ${config.url}`);
+      }
+    } catch (error) {
+      // Se refresh preventivo falhar, continua sem token
+      // O interceptor de 401 vai tratar
+      debugLog(`Preemptive refresh failed for: ${config.url}`, error);
+    }
+
     return config;
   },
   (error) => {
@@ -79,13 +111,13 @@ api.interceptors.request.use(
 );
 
 // ============================================
-// INTERCEPTOR PARA RENOVAR TOKEN AUTOMATICAMENTE
+// FILA DE REQUESTS AGUARDANDO REFRESH (ALFA)
 // ============================================
 
-let isRefreshing = false;
 let failedQueue: { resolve: (token: string) => void; reject: (error: unknown) => void }[] = [];
 
 const processQueue = (error: unknown, token: string | null = null) => {
+  debugLog(`Processing queue: ${failedQueue.length} requests, error: ${!!error}`);
   failedQueue.forEach((prom) => {
     if (error) {
       prom.reject(error);
@@ -146,13 +178,16 @@ api.interceptors.response.use(
     }
 
     // ============================================
-    // REFRESH TOKEN PARA 401
+    // REFRESH TOKEN PARA 401 (ALFA - usa TokenManager)
     // ============================================
 
     // Se o erro for 401 e não for uma tentativa de refresh
     if (error.response?.status === 401 && !originalRequest?._retry) {
-      // Se já está renovando, adiciona na fila
-      if (isRefreshing) {
+      debugLog(`401 received for: ${originalRequest?.url}`);
+
+      // Se já está renovando via TokenManager, adiciona na fila
+      if (isRefreshingToken()) {
+        debugLog('Refresh in progress, queuing request');
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
@@ -163,48 +198,31 @@ api.interceptors.response.use(
           .catch((err) => Promise.reject(err));
       }
 
+      // Marca para evitar loop infinito
       originalRequest._retry = true;
-      isRefreshing = true;
-
-      const refreshToken = localStorage.getItem('beauty_manager_refresh_token');
-
-      if (!refreshToken) {
-        // Sem refresh token - redireciona para login
-        isRefreshing = false;
-        localStorage.clear();
-        window.location.href = '/login';
-        return Promise.reject(error);
-      }
 
       try {
-        // Tenta renovar o token (usa mesmo baseURL)
-        const { data } = await axios.post(
-          `${baseURL}/auth/refresh`,
-          { refreshToken },
-          { headers: { 'Content-Type': 'application/json' } }
-        );
+        debugLog('Starting token refresh via TokenManager');
 
-        // Salva novos tokens
-        localStorage.setItem('beauty_manager_access_token', data.accessToken);
-        localStorage.setItem('beauty_manager_refresh_token', data.refreshToken);
+        // Usa TokenManager (single-flight)
+        const newToken = await refreshAccessToken();
 
-        // Atualiza header padrão
-        api.defaults.headers.common['Authorization'] = `Bearer ${data.accessToken}`;
+        debugLog('Token refresh successful, retrying request');
 
         // Processa fila de requisições que falharam
-        processQueue(null, data.accessToken);
+        processQueue(null, newToken);
 
-        // Refaz a requisição original
-        originalRequest.headers['Authorization'] = `Bearer ${data.accessToken}`;
+        // Refaz a requisição original com novo token
+        originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
         return api(originalRequest);
       } catch (refreshError) {
+        debugLog('Token refresh failed', refreshError);
+
         // Refresh falhou - faz logout
         processQueue(refreshError, null);
-        localStorage.clear();
+        clearTokens();
         window.location.href = '/login';
         return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
       }
     }
 
