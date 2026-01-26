@@ -1,4 +1,12 @@
 import api from './api';
+import {
+  getAccessToken,
+  getRefreshToken,
+  setTokens,
+  clearTokens,
+  refreshAccessToken,
+  isAuthenticated as tokenIsAuthenticated,
+} from '../lib/auth/tokenManager';
 
 export interface AuthUser {
   id: string;
@@ -16,34 +24,30 @@ export interface LoginResponse {
   message: string;
 }
 
-const ACCESS_TOKEN_KEY = 'beauty_manager_access_token';
-const REFRESH_TOKEN_KEY = 'beauty_manager_refresh_token';
 const USER_KEY = 'beauty_manager_user';
 
 export const authService = {
   /**
    * Realiza login do usuario via API
+   * ALFA: usa tokenManager para salvar tokens
    */
   async login(email: string, password: string): Promise<LoginResponse> {
     const { data } = await api.post<LoginResponse>('/auth/login', { email, password });
 
-    // Salva no localStorage
-    localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
-    localStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
+    // Salva tokens via tokenManager (centralizado)
+    setTokens(data.accessToken, data.refreshToken);
     localStorage.setItem(USER_KEY, JSON.stringify(data.user));
-
-    // Configura o header de autorizacao para futuras requisicoes
-    api.defaults.headers.common['Authorization'] = `Bearer ${data.accessToken}`;
 
     return data;
   },
 
   /**
    * Realiza logout do usuario - invalida o token no backend
+   * ALFA: usa tokenManager para limpar tokens
    */
   async logout(): Promise<void> {
-    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-    
+    const refreshToken = getRefreshToken();
+
     // Tenta invalidar o token no backend
     if (refreshToken) {
       try {
@@ -54,29 +58,19 @@ export const authService = {
       }
     }
 
-    // Limpa dados locais
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    delete api.defaults.headers.common['Authorization'];
+    // Limpa dados locais via tokenManager (centralizado)
+    clearTokens();
   },
 
   /**
    * Renova o access token usando o refresh token
+   * ALFA: delega para tokenManager (single-flight)
    */
   async refreshToken(): Promise<string | null> {
-    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-    
-    if (!refreshToken) return null;
+    if (!getRefreshToken()) return null;
 
     try {
-      const { data } = await api.post<LoginResponse>('/auth/refresh', { refreshToken });
-      
-      localStorage.setItem(ACCESS_TOKEN_KEY, data.accessToken);
-      localStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
-      api.defaults.headers.common['Authorization'] = `Bearer ${data.accessToken}`;
-      
-      return data.accessToken;
+      return await refreshAccessToken();
     } catch {
       // Token expirado ou inválido - faz logout
       this.logoutLocal();
@@ -86,31 +80,22 @@ export const authService = {
 
   /**
    * Logout apenas local (sem chamar API)
+   * ALFA: usa tokenManager
    */
   logoutLocal(): void {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    delete api.defaults.headers.common['Authorization'];
+    clearTokens();
   },
 
   /**
    * Retorna o usuario armazenado no localStorage
+   * ALFA: não precisa mais setar header (request interceptor faz)
    */
   getStoredUser(): AuthUser | null {
     const userStr = localStorage.getItem(USER_KEY);
     if (!userStr) return null;
 
     try {
-      const user = JSON.parse(userStr) as AuthUser;
-
-      // Restaura o token no header
-      const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-      if (token) {
-        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      }
-
-      return user;
+      return JSON.parse(userStr) as AuthUser;
     } catch {
       return null;
     }
@@ -118,22 +103,25 @@ export const authService = {
 
   /**
    * Retorna o access token armazenado
+   * ALFA: delega para tokenManager
    */
   getAccessToken(): string | null {
-    return localStorage.getItem(ACCESS_TOKEN_KEY);
+    return getAccessToken();
   },
 
   /**
    * Retorna o refresh token armazenado
+   * ALFA: delega para tokenManager
    */
   getRefreshToken(): string | null {
-    return localStorage.getItem(REFRESH_TOKEN_KEY);
+    return getRefreshToken();
   },
 
   /**
    * Verifica se o usuario esta autenticado
+   * ALFA: usa tokenManager para check de token
    */
   isAuthenticated(): boolean {
-    return !!this.getAccessToken() && !!this.getStoredUser();
+    return tokenIsAuthenticated() && !!this.getStoredUser();
   },
 };
