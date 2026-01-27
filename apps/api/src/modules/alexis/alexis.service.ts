@@ -480,8 +480,16 @@ export class AlexisService {
 
     const result = handleSchedulingTurn(state, text, skillCtx);
 
-    // Compoe resposta — sempre skipGreeting em FSM (conversa em andamento)
-    const finalResponse = result.replyText;
+    // ========== INTERRUPTION: info question durante scheduling ==========
+    // Se interruptionQuery=true, responder a pergunta via pipeline normal e anexar resume prompt
+    let finalResponse = result.replyText;
+    if (result.interruptionQuery) {
+      const infoAnswer = await this.resolveInfoInterruption(salonId, text, context);
+      const resumePrompt = result.replyText; // "Voltando ao seu agendamento: ..."
+      finalResponse = resumePrompt
+        ? `${infoAnswer}\n\n${resumePrompt}`
+        : infoAnswer;
+    }
 
     // ========== DEDUP GATE (FSM path — principal fonte de race condition) ==========
     const canSend = await this.stateStore.tryRegisterReply(conversationId, finalResponse);
@@ -519,6 +527,31 @@ export class AlexisService {
       shouldSend: true,
       statusChanged: false,
     };
+  }
+
+  /**
+   * =====================================================
+   * INFO INTERRUPTION — Responde pergunta de info durante scheduling
+   * Usa ProductInfo determinístico ou Gemini como fallback
+   * =====================================================
+   */
+  private async resolveInfoInterruption(
+    salonId: string,
+    text: string,
+    context: any,
+  ): Promise<string> {
+    try {
+      // Tenta ProductInfo determinístico primeiro
+      const productAnswer = await this.productInfo.tryAnswerProductInfo(salonId, text);
+      if (productAnswer) return productAnswer;
+
+      // Fallback: Gemini para perguntas genéricas (horário de funcionamento, etc.)
+      return await this.gemini.generateResponse(
+        context.salon?.name || 'Salão', text, context,
+      );
+    } catch {
+      return 'No momento não consegui buscar essa informação, mas posso tentar depois 😊';
+    }
   }
 
   /**
