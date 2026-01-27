@@ -18,6 +18,7 @@ export interface SchedulingSlots {
   serviceLabel?: string;
   dateISO?: string;
   time?: string;
+  lastDeclinedPeriod?: string;
 }
 
 export interface ConversationState {
@@ -27,6 +28,7 @@ export interface ConversationState {
   userAlreadyGreeted: boolean;
   lastGreetingAt: string | null;
   confusionCount: number;
+  declineCount: number;
   ttlExpiresAt: string | null;
   handoverSummary?: string;
   handoverAt?: string;
@@ -41,6 +43,9 @@ export const STATE_TTL_MINUTES = 60;
 /** Máximo de tentativas confusas antes de handover */
 export const MAX_CONFUSION = 3;
 
+/** Máximo de recusas de horário antes de handover */
+export const MAX_DECLINES = 3;
+
 export function defaultState(): ConversationState {
   return {
     activeSkill: 'NONE',
@@ -49,6 +54,7 @@ export function defaultState(): ConversationState {
     userAlreadyGreeted: false,
     lastGreetingAt: null,
     confusionCount: 0,
+    declineCount: 0,
     ttlExpiresAt: null,
   };
 }

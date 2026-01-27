@@ -6,13 +6,16 @@
  * =====================================================
  */
 
-import { ConversationState, bumpTTL, MAX_CONFUSION } from './conversation-state';
+import { ConversationState, bumpTTL, MAX_CONFUSION, MAX_DECLINES } from './conversation-state';
 import { fuzzyMatchService, normalizeText } from './schedule-continuation';
 
 export interface SkillResult {
   nextState: Partial<ConversationState>;
   replyText: string;
   handover?: boolean;
+  /** Se true, a mensagem é uma pergunta de info (preço/produto/horário de funcionamento)
+   *  que deve ser respondida pelo pipeline normal ANTES de enviar o replyText (resume prompt). */
+  interruptionQuery?: boolean;
 }
 
 export interface SkillContext {
@@ -42,9 +45,12 @@ export function handleSchedulingTurn(
   context: SkillContext,
 ): SkillResult {
   // Interruption handler: pergunta sobre profissional/cabeleireiro
-  // Responde a dúvida e retoma o step atual sem perder slots
   const staffInterrupt = handleStaffInterruption(state, text);
   if (staffInterrupt) return staffInterrupt;
+
+  // Interruption handler: pergunta de info (preço/produto/horário de funcionamento)
+  const infoInterrupt = handleInfoInterruption(state, text);
+  if (infoInterrupt) return infoInterrupt;
 
   switch (state.step) {
     case 'AWAITING_SERVICE':
@@ -100,6 +106,37 @@ function getStepResumePrompt(state: ConversationState): string | null {
     default:
       return null;
   }
+}
+
+// ========== INFO INTERRUPTION ==========
+
+/** Detecta perguntas de info (preço/produto/horário) durante step ativo */
+export function isInfoQuestion(text: string): boolean {
+  const normalized = normalizeText(text);
+  // Preço
+  if (/\b(quanto\s+(custa|e|fica|sai)|qual\s+(o\s+)?preco|preco\s+d|valor\s+d)/.test(normalized)) return true;
+  // Produto
+  if (/\b(tem\s+(esse|algum|o)\s+produto|quero\s+comprar|vende(m)?\s)/.test(normalized)) return true;
+  // Horário de funcionamento
+  if (/\b(horario\s+de\s+funcionamento|que\s+hora(s)?\s+(abre|fecha|funciona)|ate\s+que\s+hora)/.test(normalized)) return true;
+  return false;
+}
+
+/** Se for pergunta de info durante scheduling, sinaliza para pipeline responder + resume */
+function handleInfoInterruption(
+  state: ConversationState,
+  text: string,
+): SkillResult | null {
+  if (!isInfoQuestion(text)) return null;
+
+  const resumePrompt = getStepResumePrompt(state);
+  return {
+    nextState: { ttlExpiresAt: bumpTTL() },
+    replyText: resumePrompt
+      ? `Voltando ao seu agendamento: ${resumePrompt}`
+      : '',
+    interruptionQuery: true,
+  };
 }
 
 // ========== STEP HANDLERS ==========
@@ -349,14 +386,50 @@ function handleAwaitingConfirm(
   }
 
   if (isDecline) {
+    const newDeclineCount = (state.declineCount || 0) + 1;
+
+    // 3 recusas => handover humano
+    if (newDeclineCount >= MAX_DECLINES) {
+      const periodHint = state.slots.lastDeclinedPeriod
+        ? `Prefere período: ${state.slots.lastDeclinedPeriod}.`
+        : '';
+      return {
+        nextState: {
+          activeSkill: 'NONE',
+          step: 'NONE',
+          slots: {},
+          confusionCount: 0,
+          declineCount: 0,
+          handoverSummary: `Cliente recusou horário ${newDeclineCount}x para ${state.slots.serviceLabel}. ${periodHint}`.trim(),
+          handoverAt: new Date().toISOString(),
+        },
+        replyText:
+          'Vou chamar a equipe para encontrar o melhor horário pra você, tudo bem? 😊',
+        handover: true,
+      };
+    }
+
+    // Detecta período da hora recusada para sugerir alternativas no mesmo período
+    const declinedHour = parseInt(state.slots.time || '0', 10);
+    const declinedPeriod: string =
+      declinedHour < 12 ? 'manhã' : declinedHour < 18 ? 'tarde' : 'noite';
+    const periodKey = declinedPeriod === 'manhã' ? 'MANHA' : declinedPeriod === 'tarde' ? 'TARDE' : 'NOITE';
+    const alts = PERIOD_SUGGESTIONS[periodKey as keyof typeof PERIOD_SUGGESTIONS];
+
+    // Retomada: volta para AWAITING_DATETIME mantendo service slots
     return {
       nextState: {
-        activeSkill: 'NONE',
-        step: 'NONE',
-        slots: {},
-        confusionCount: 0,
+        step: 'AWAITING_DATETIME',
+        slots: {
+          serviceId: state.slots.serviceId,
+          serviceLabel: state.slots.serviceLabel,
+          lastDeclinedPeriod: declinedPeriod,
+        },
+        declineCount: newDeclineCount,
+        ttlExpiresAt: bumpTTL(),
       },
-      replyText: 'Sem problemas! Quando quiser agendar, é só me avisar 😊',
+      replyText:
+        `Entendi! Para *${state.slots.serviceLabel}*, posso tentar outros horários no período da ${declinedPeriod}: *${alts}*. Ou prefere outro período/dia? 😊`,
     };
   }
 
