@@ -35,7 +35,9 @@ import {
   SkillContext,
 } from './scheduling-skill';
 import { matchLexicon } from './lexicon/lexicon-resolver';
-import { applyRepairTemplate, composeRepairResponse } from './lexicon/repair-templates';
+import { getLexiconEnabled } from './lexicon/lexicon-feature-flag';
+import { buildLexiconTelemetry, LexiconTelemetryEvent } from './lexicon/lexicon-telemetry';
+import { resolveServicePrice, formatServicePriceResponse } from './lexicon/service-price-resolver';
 
 /**
  * =====================================================
@@ -193,10 +195,12 @@ export class AlexisService {
     }
 
     // ========== LEXICON: dialeto de salão → preço de serviço (antes de ProductInfo) ==========
-    const lexiconServicePrice = await this.tryLexiconServicePrice(
-      conversation.id, salonId, clientPhone, mergedText, startTime,
-    );
-    if (lexiconServicePrice) return lexiconServicePrice;
+    if (getLexiconEnabled()) {
+      const lexiconServicePrice = await this.tryLexiconServicePrice(
+        conversation.id, salonId, clientPhone, mergedText, startTime,
+      );
+      if (lexiconServicePrice) return lexiconServicePrice;
+    }
 
     // ========== CHARLIE: DETECÇÃO DETERMINÍSTICA DE PRODUTO ==========
     const productInfoResponse = await this.productInfo.tryAnswerProductInfo(salonId, mergedText);
@@ -557,25 +561,25 @@ export class AlexisService {
       if (!isPriceQ) return null;
 
       const lexMatch = matchLexicon(text);
+
+      // Telemetria: registra decisão do lexicon
+      const telemetry = buildLexiconTelemetry(lexMatch, true);
+      this.logLexiconTelemetry(telemetry);
+
       if (!lexMatch || !lexMatch.entry.suggestedServiceKey) return null;
       if (lexMatch.entry.entityType !== 'SERVICE' && lexMatch.entry.entityType !== 'TECHNIQUE') return null;
 
-      // Busca serviço no catálogo
+      // Busca serviço no catálogo via ServicePriceResolver
       const context = await this.dataCollector.collectContext(salonId, clientPhone);
       const services = context.services || [];
-      const svc = (services as any[]).find(
-        (s: any) => s.name && s.name.toLowerCase().includes(lexMatch.entry.canonical.toLowerCase()),
+      const priceResult = resolveServicePrice(lexMatch.entry.canonical, services as any);
+
+      // Resposta premium: com preço se existir, consultiva se não
+      const response = formatServicePriceResponse(
+        lexMatch.matchedTrigger,
+        lexMatch.entry.canonical,
+        priceResult,
       );
-
-      const repair = applyRepairTemplate({
-        entry: lexMatch.entry,
-        matchedTrigger: lexMatch.matchedTrigger,
-        serviceName: svc?.name || lexMatch.entry.canonical,
-        hasPrice: !!svc?.price,
-        price: svc?.price,
-      });
-
-      const response = composeRepairResponse(repair);
 
       await this.saveMessage(conversationId, 'client', text, 'PRICE_INFO', false, false);
       await this.saveMessage(conversationId, 'ai', response, 'PRICE_INFO', false, false);
@@ -597,6 +601,17 @@ export class AlexisService {
       this.logger.debug(`Lexicon price fallback: ${error?.message?.slice(0, 80)}`);
       return null;
     }
+  }
+
+  /**
+   * Registra telemetria do lexicon (1 evento por turno, sem texto do usuário).
+   */
+  private logLexiconTelemetry(event: LexiconTelemetryEvent): void {
+    this.logger.debug(
+      `Lexicon: enabled=${event.lexiconEnabled} entry=${event.entryId || '-'} ` +
+      `trigger="${event.matchedTrigger || '-'}" conf=${event.confidence ?? '-'} ` +
+      `decision=${event.decision} reason=${event.reason}`,
+    );
   }
 
   /**
