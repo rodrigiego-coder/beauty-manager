@@ -8,6 +8,8 @@
 
 import { ConversationState, bumpTTL, MAX_CONFUSION, MAX_DECLINES } from './conversation-state';
 import { fuzzyMatchService, normalizeText } from './schedule-continuation';
+import { matchLexicon } from './lexicon/lexicon-resolver';
+import { applyRepairTemplate, composeRepairResponse } from './lexicon/repair-templates';
 
 export interface SkillResult {
   nextState: Partial<ConversationState>;
@@ -146,6 +148,7 @@ function handleAwaitingService(
   text: string,
   context: SkillContext,
 ): SkillResult {
+  // 1. Fuzzy match direto no catálogo do salão
   const matched = fuzzyMatchService(text, context.services);
 
   if (matched) {
@@ -160,6 +163,64 @@ function handleAwaitingService(
         ttlExpiresAt: bumpTTL(),
       },
       replyText: `Ótima escolha! *${matched.name}* 😊 Para qual dia e horário você prefere?`,
+    };
+  }
+
+  // 2. Lexicon fallback: resolve dialeto → serviço canônico → fuzzy match
+  const lexMatch = matchLexicon(text);
+  if (lexMatch && lexMatch.entry.suggestedServiceKey) {
+    // Tenta encontrar o serviço canônico no catálogo
+    const canonicalMatch = fuzzyMatchService(lexMatch.entry.canonical, context.services);
+
+    if (canonicalMatch) {
+      // Ambíguo → pergunta de confirmação sem preencher slot
+      if (lexMatch.needsConfirmation) {
+        const repair = applyRepairTemplate({
+          entry: lexMatch.entry,
+          matchedTrigger: lexMatch.matchedTrigger,
+          serviceName: canonicalMatch.name,
+        });
+        return {
+          nextState: { ttlExpiresAt: bumpTTL() },
+          replyText: composeRepairResponse(repair),
+        };
+      }
+
+      // Match confiante → preenche slot com o serviço do catálogo
+      return {
+        nextState: {
+          step: 'AWAITING_DATETIME',
+          slots: {
+            serviceId: (canonicalMatch as any).id,
+            serviceLabel: canonicalMatch.name,
+          },
+          confusionCount: 0,
+          ttlExpiresAt: bumpTTL(),
+        },
+        replyText: `Aqui no salão, *${lexMatch.matchedTrigger}* é o nosso *${canonicalMatch.name}* 😊 Para qual dia e horário você prefere?`,
+      };
+    }
+
+    // Lexicon match mas serviço não existe no catálogo → responde com repair genérico
+    if (lexMatch.needsConfirmation) {
+      const repair = applyRepairTemplate({
+        entry: lexMatch.entry,
+        matchedTrigger: lexMatch.matchedTrigger,
+      });
+      return {
+        nextState: { ttlExpiresAt: bumpTTL() },
+        replyText: composeRepairResponse(repair),
+      };
+    }
+
+    // Serviço não no catálogo mas reconhecido → indica ao cliente
+    const repair = applyRepairTemplate({
+      entry: lexMatch.entry,
+      matchedTrigger: lexMatch.matchedTrigger,
+    });
+    return {
+      nextState: { ttlExpiresAt: bumpTTL() },
+      replyText: `${composeRepairResponse(repair)}\n\nVou verificar a disponibilidade com a equipe.`,
     };
   }
 

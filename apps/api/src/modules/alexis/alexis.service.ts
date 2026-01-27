@@ -34,6 +34,8 @@ import {
   startScheduling,
   SkillContext,
 } from './scheduling-skill';
+import { matchLexicon } from './lexicon/lexicon-resolver';
+import { applyRepairTemplate, composeRepairResponse } from './lexicon/repair-templates';
 
 /**
  * =====================================================
@@ -189,6 +191,12 @@ export class AlexisService {
         conversation.id, salonId, clientPhone, clientName, mergedText, state, startTime,
       );
     }
+
+    // ========== LEXICON: dialeto de salão → preço de serviço (antes de ProductInfo) ==========
+    const lexiconServicePrice = await this.tryLexiconServicePrice(
+      conversation.id, salonId, clientPhone, mergedText, startTime,
+    );
+    if (lexiconServicePrice) return lexiconServicePrice;
 
     // ========== CHARLIE: DETECÇÃO DETERMINÍSTICA DE PRODUTO ==========
     const productInfoResponse = await this.productInfo.tryAnswerProductInfo(salonId, mergedText);
@@ -527,6 +535,68 @@ export class AlexisService {
       shouldSend: true,
       statusChanged: false,
     };
+  }
+
+  /**
+   * =====================================================
+   * LEXICON SERVICE PRICE — Detecta dialeto de salão em perguntas de preço
+   * Ex: "quanto custa a progressiva?" → preço de Alisamento (serviço)
+   * =====================================================
+   */
+  private async tryLexiconServicePrice(
+    conversationId: string,
+    salonId: string,
+    clientPhone: string,
+    text: string,
+    startTime: number,
+  ): Promise<ProcessMessageResult | null> {
+    try {
+      // Só ativa se parece pergunta de preço
+      const normalized = text.toLowerCase();
+      const isPriceQ = /\b(quanto\s+custa|qual\s+(o\s+)?pre[cç]o|valor\s+d|pre[cç]o\s+d)/.test(normalized);
+      if (!isPriceQ) return null;
+
+      const lexMatch = matchLexicon(text);
+      if (!lexMatch || !lexMatch.entry.suggestedServiceKey) return null;
+      if (lexMatch.entry.entityType !== 'SERVICE' && lexMatch.entry.entityType !== 'TECHNIQUE') return null;
+
+      // Busca serviço no catálogo
+      const context = await this.dataCollector.collectContext(salonId, clientPhone);
+      const services = context.services || [];
+      const svc = (services as any[]).find(
+        (s: any) => s.name && s.name.toLowerCase().includes(lexMatch.entry.canonical.toLowerCase()),
+      );
+
+      const repair = applyRepairTemplate({
+        entry: lexMatch.entry,
+        matchedTrigger: lexMatch.matchedTrigger,
+        serviceName: svc?.name || lexMatch.entry.canonical,
+        hasPrice: !!svc?.price,
+        price: svc?.price,
+      });
+
+      const response = composeRepairResponse(repair);
+
+      await this.saveMessage(conversationId, 'client', text, 'PRICE_INFO', false, false);
+      await this.saveMessage(conversationId, 'ai', response, 'PRICE_INFO', false, false);
+
+      await this.logInteraction(
+        salonId, conversationId, clientPhone,
+        text, response, 'PRICE_INFO',
+        false, undefined, Date.now() - startTime,
+      );
+
+      return {
+        response,
+        intent: 'PRICE_INFO',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    } catch (error: any) {
+      this.logger.debug(`Lexicon price fallback: ${error?.message?.slice(0, 80)}`);
+      return null;
+    }
   }
 
   /**
