@@ -10,6 +10,13 @@ import { ConversationState, bumpTTL, MAX_CONFUSION, MAX_DECLINES } from './conve
 import { fuzzyMatchService, normalizeText } from './schedule-continuation';
 import { matchLexicon } from './lexicon/lexicon-resolver';
 import { applyRepairTemplate, composeRepairResponse } from './lexicon/repair-templates';
+import {
+  resolveAptProfessionals,
+  formatProfessionalList,
+  fuzzyMatchProfessional,
+  ProfessionalInfo,
+  ProfessionalServiceAssignment,
+} from './professional-resolver';
 
 export interface SkillResult {
   nextState: Partial<ConversationState>;
@@ -22,6 +29,8 @@ export interface SkillResult {
 
 export interface SkillContext {
   services: Array<{ id: string; name: string; price?: number }>;
+  professionals?: ProfessionalInfo[];
+  professionalAssignments?: ProfessionalServiceAssignment[];
 }
 
 // ========== ENTRY POINTS ==========
@@ -57,6 +66,8 @@ export function handleSchedulingTurn(
   switch (state.step) {
     case 'AWAITING_SERVICE':
       return handleAwaitingService(state, text, context);
+    case 'AWAITING_PROFESSIONAL':
+      return handleAwaitingProfessional(state, text, context);
     case 'AWAITING_DATETIME':
       return handleAwaitingDatetime(state, text);
     case 'AWAITING_CONFIRM':
@@ -101,6 +112,8 @@ function getStepResumePrompt(state: ConversationState): string | null {
   switch (state.step) {
     case 'AWAITING_SERVICE':
       return 'Qual serviço você gostaria de agendar?';
+    case 'AWAITING_PROFESSIONAL':
+      return `Tem preferência de profissional para o *${state.slots.serviceLabel}*?`;
     case 'AWAITING_DATETIME':
       return `Para qual dia e horário você prefere o *${state.slots.serviceLabel}*?`;
     case 'AWAITING_CONFIRM':
@@ -143,6 +156,64 @@ function handleInfoInterruption(
 
 // ========== STEP HANDLERS ==========
 
+/**
+ * Transiciona serviço encontrado → próximo step (PROFESSIONAL se possível, senão DATETIME).
+ */
+function transitionAfterService(
+  serviceId: string,
+  serviceLabel: string,
+  context: SkillContext,
+  prefix: string,
+): SkillResult {
+  // Tenta resolver profissionais aptos
+  const pros = context.professionals || [];
+  const assignments = context.professionalAssignments || [];
+  const apt = resolveAptProfessionals(serviceId, pros, assignments);
+
+  // Se há mais de 1 profissional apto → pergunta
+  if (apt.length > 1) {
+    const list = formatProfessionalList(apt);
+    return {
+      nextState: {
+        step: 'AWAITING_PROFESSIONAL',
+        slots: { serviceId, serviceLabel },
+        confusionCount: 0,
+        ttlExpiresAt: bumpTTL(),
+      },
+      replyText: `${prefix}\n\nTem preferência de profissional?\n\n${list}\n\nDigite o nome ou número, ou "qualquer" 😊`,
+    };
+  }
+
+  // Se exatamente 1 → auto-seleciona
+  if (apt.length === 1) {
+    return {
+      nextState: {
+        step: 'AWAITING_DATETIME',
+        slots: {
+          serviceId,
+          serviceLabel,
+          professionalId: apt[0].id,
+          professionalLabel: apt[0].name,
+        },
+        confusionCount: 0,
+        ttlExpiresAt: bumpTTL(),
+      },
+      replyText: `${prefix} Com *${apt[0].name}* 😊 Para qual dia e horário você prefere?`,
+    };
+  }
+
+  // Nenhum ou sem dados → DATETIME direto
+  return {
+    nextState: {
+      step: 'AWAITING_DATETIME',
+      slots: { serviceId, serviceLabel },
+      confusionCount: 0,
+      ttlExpiresAt: bumpTTL(),
+    },
+    replyText: `${prefix} Para qual dia e horário você prefere?`,
+  };
+}
+
 function handleAwaitingService(
   state: ConversationState,
   text: string,
@@ -152,18 +223,12 @@ function handleAwaitingService(
   const matched = fuzzyMatchService(text, context.services);
 
   if (matched) {
-    return {
-      nextState: {
-        step: 'AWAITING_DATETIME',
-        slots: {
-          serviceId: (matched as any).id,
-          serviceLabel: matched.name,
-        },
-        confusionCount: 0,
-        ttlExpiresAt: bumpTTL(),
-      },
-      replyText: `Ótima escolha! *${matched.name}* 😊 Para qual dia e horário você prefere?`,
-    };
+    return transitionAfterService(
+      (matched as any).id,
+      matched.name,
+      context,
+      `Ótima escolha! *${matched.name}* 😊`,
+    );
   }
 
   // 2. Lexicon fallback: resolve dialeto → serviço canônico → fuzzy match
@@ -187,18 +252,12 @@ function handleAwaitingService(
       }
 
       // Match confiante → preenche slot com o serviço do catálogo
-      return {
-        nextState: {
-          step: 'AWAITING_DATETIME',
-          slots: {
-            serviceId: (canonicalMatch as any).id,
-            serviceLabel: canonicalMatch.name,
-          },
-          confusionCount: 0,
-          ttlExpiresAt: bumpTTL(),
-        },
-        replyText: `Aqui no salão, *${lexMatch.matchedTrigger}* é o nosso *${canonicalMatch.name}* 😊 Para qual dia e horário você prefere?`,
-      };
+      return transitionAfterService(
+        (canonicalMatch as any).id,
+        canonicalMatch.name,
+        context,
+        `Aqui no salão, *${lexMatch.matchedTrigger}* é o nosso *${canonicalMatch.name}* 😊`,
+      );
     }
 
     // Lexicon match mas serviço não existe no catálogo → responde com repair genérico
@@ -249,6 +308,79 @@ function handleAwaitingService(
     },
     replyText:
       'Não encontrei esse serviço. Pode repetir o nome? Por exemplo: corte, mechas, alisamento… 😊',
+  };
+}
+
+// ========== AWAITING PROFESSIONAL ==========
+
+function handleAwaitingProfessional(
+  state: ConversationState,
+  text: string,
+  context: SkillContext,
+): SkillResult {
+  const normalized = normalizeText(text);
+
+  // "qualquer", "tanto faz", "sem preferência" → skip professional
+  if (/\b(qualquer|tanto\s+faz|sem\s+prefer|nao\s+tenho|nenhum|qualquer\s+um)\b/.test(normalized)) {
+    return {
+      nextState: {
+        step: 'AWAITING_DATETIME',
+        slots: {
+          serviceId: state.slots.serviceId,
+          serviceLabel: state.slots.serviceLabel,
+        },
+        ttlExpiresAt: bumpTTL(),
+      },
+      replyText: `Sem problema! Para qual dia e horário você prefere o *${state.slots.serviceLabel}*? 😊`,
+    };
+  }
+
+  // Tenta match do profissional
+  const pros = context.professionals || [];
+  const assignments = context.professionalAssignments || [];
+  const apt = resolveAptProfessionals(state.slots.serviceId || '', pros, assignments);
+
+  const match = fuzzyMatchProfessional(text, apt);
+  if (match) {
+    return {
+      nextState: {
+        step: 'AWAITING_DATETIME',
+        slots: {
+          ...state.slots,
+          professionalId: match.id,
+          professionalLabel: match.name,
+        },
+        ttlExpiresAt: bumpTTL(),
+      },
+      replyText: `Perfeito, com *${match.name}*! 😊 Para qual dia e horário você prefere?`,
+    };
+  }
+
+  // Não encontrou → pede novamente
+  const newConfusion = (state.confusionCount || 0) + 1;
+  if (newConfusion >= MAX_CONFUSION) {
+    return {
+      nextState: {
+        step: 'AWAITING_DATETIME',
+        slots: {
+          serviceId: state.slots.serviceId,
+          serviceLabel: state.slots.serviceLabel,
+        },
+        ttlExpiresAt: bumpTTL(),
+      },
+      replyText: `Vou agendar com quem estiver disponível 😊 Para qual dia e horário você prefere o *${state.slots.serviceLabel}*?`,
+    };
+  }
+
+  const list = formatProfessionalList(apt);
+  return {
+    nextState: {
+      confusionCount: newConfusion,
+      ttlExpiresAt: bumpTTL(),
+    },
+    replyText: list
+      ? `Não encontrei esse profissional. As opções são:\n\n${list}\n\nDigite o nome/número ou "qualquer" 😊`
+      : 'Não encontrei esse profissional. Pode repetir? Ou digite "qualquer" para quem estiver disponível 😊',
   };
 }
 
@@ -431,7 +563,8 @@ function handleAwaitingConfirm(
   );
 
   if (isConfirm) {
-    const summary = `Serviço: ${state.slots.serviceLabel}, Data: ${state.slots.dateISO}, Hora: ${state.slots.time}`;
+    const proLabel = state.slots.professionalLabel ? `, Profissional: ${state.slots.professionalLabel}` : '';
+    const summary = `Serviço: ${state.slots.serviceLabel}${proLabel}, Data: ${state.slots.dateISO}, Hora: ${state.slots.time}`;
     return {
       nextState: {
         activeSkill: 'NONE',

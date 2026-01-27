@@ -10,12 +10,15 @@ export type ActiveSkill = 'NONE' | 'SCHEDULING';
 export type ScheduleStep =
   | 'NONE'
   | 'AWAITING_SERVICE'
+  | 'AWAITING_PROFESSIONAL'
   | 'AWAITING_DATETIME'
   | 'AWAITING_CONFIRM';
 
 export interface SchedulingSlots {
   serviceId?: string;
   serviceLabel?: string;
+  professionalId?: string;
+  professionalLabel?: string;
   dateISO?: string;
   time?: string;
   lastDeclinedPeriod?: string;

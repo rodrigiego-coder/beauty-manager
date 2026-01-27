@@ -9,6 +9,8 @@ import {
   aiBriefings,
   appointments,
   appointmentNotifications,
+  users,
+  professionalServices,
 } from '../../database/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { GeminiService } from './gemini.service';
@@ -488,7 +490,7 @@ export class AlexisService {
     startTime: number,
   ): Promise<ProcessMessageResult> {
     const context = await this.dataCollector.collectContext(salonId, clientPhone);
-    const skillCtx: SkillContext = { services: (context.services || []) as any };
+    const skillCtx = await this.buildSkillContext(salonId, context);
 
     const result = handleSchedulingTurn(state, text, skillCtx);
 
@@ -539,6 +541,35 @@ export class AlexisService {
       shouldSend: true,
       statusChanged: false,
     };
+  }
+
+  /**
+   * Constrói SkillContext com profissionais + assignments para o salonId.
+   */
+  private async buildSkillContext(salonId: string, context: any): Promise<SkillContext> {
+    const base: SkillContext = { services: (context.services || []) as any };
+    try {
+      const pros = await db
+        .select({ id: users.id, name: users.name, active: users.active })
+        .from(users)
+        .where(and(eq(users.salonId, salonId), eq(users.active, true)));
+      base.professionals = pros;
+
+      const assignments = await db
+        .select({
+          professionalId: professionalServices.professionalId,
+          serviceId: professionalServices.serviceId,
+          enabled: professionalServices.enabled,
+        })
+        .from(professionalServices)
+        .where(eq(professionalServices.enabled, true));
+      // Filter only for professionals in this salon
+      const proIds = new Set(pros.map((p) => p.id));
+      base.professionalAssignments = assignments.filter((a) => proIds.has(a.professionalId));
+    } catch (error: any) {
+      this.logger.debug(`buildSkillContext professionals fallback: ${error?.message?.slice(0, 80)}`);
+    }
+    return base;
   }
 
   /**
@@ -657,7 +688,7 @@ export class AlexisService {
     const services = context.services || [];
 
     // Se o texto já contém um serviço, pular AWAITING_SERVICE e ir direto
-    const skillCtx: SkillContext = { services: services as any };
+    const skillCtx = await this.buildSkillContext(salonId, context);
     const result = startScheduling();
 
     // Tenta já resolver serviço na mesma mensagem (ex.: "quero agendar alisamento")
