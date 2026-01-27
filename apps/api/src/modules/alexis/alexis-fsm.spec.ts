@@ -12,8 +12,10 @@ import {
   parseDatetime,
   detectPeriod,
   isAvailabilityQuestion,
+  isStaffQuestion,
   PERIOD_SUGGESTIONS,
 } from './scheduling-skill';
+import { replySig } from './conversation-state.store';
 import {
   composeResponse,
   shouldGreet,
@@ -434,5 +436,148 @@ describe('PERIOD_SUGGESTIONS', () => {
 
   it('NOITE includes 18h', () => {
     expect(PERIOD_SUGGESTIONS.NOITE).toContain('18h');
+  });
+});
+
+// =====================================================
+// 7. REPLY DEDUP GATE — replySig (pure)
+// =====================================================
+describe('replySig', () => {
+  it('produces consistent hash for same text', () => {
+    const sig1 = replySig('Boa tarde!');
+    const sig2 = replySig('Boa tarde!');
+    expect(sig1).toBe(sig2);
+  });
+
+  it('produces different hash for different text', () => {
+    expect(replySig('Boa tarde!')).not.toBe(replySig('Bom dia!'));
+  });
+
+  it('normalizes whitespace before hashing', () => {
+    expect(replySig('Boa   tarde!')).toBe(replySig('Boa tarde!'));
+  });
+
+  it('normalizes leading/trailing spaces', () => {
+    expect(replySig('  Boa tarde!  ')).toBe(replySig('Boa tarde!'));
+  });
+
+  it('returns a 16-char hex string', () => {
+    const sig = replySig('qualquer texto');
+    expect(sig).toMatch(/^[0-9a-f]{16}$/);
+  });
+});
+
+// =====================================================
+// 8. STAFF QUESTION DETECTION
+// =====================================================
+describe('isStaffQuestion', () => {
+  it('"quem é o cabeleireiro?" => true', () => {
+    expect(isStaffQuestion('quem é o cabeleireiro?')).toBe(true);
+  });
+
+  it('"quem vai me atender?" => true', () => {
+    expect(isStaffQuestion('quem vai me atender?')).toBe(true);
+  });
+
+  it('"qual profissional?" => true', () => {
+    expect(isStaffQuestion('qual profissional?')).toBe(true);
+  });
+
+  it('"quem faz o corte?" => true', () => {
+    expect(isStaffQuestion('quem faz o corte?')).toBe(true);
+  });
+
+  it('"amanhã 10h" => false', () => {
+    expect(isStaffQuestion('amanhã 10h')).toBe(false);
+  });
+
+  it('"sim" => false', () => {
+    expect(isStaffQuestion('sim')).toBe(false);
+  });
+});
+
+// =====================================================
+// 9. INTERRUPTION HANDLER (staff question during scheduling)
+// =====================================================
+describe('staff interruption during scheduling', () => {
+  const services = [
+    { id: '1', name: 'Alisamento', price: 250 },
+  ];
+
+  it('AWAITING_CONFIRM: "quem é o cabeleireiro?" answers + resumes confirm', () => {
+    const state: ConversationState = {
+      ...defaultState(),
+      activeSkill: 'SCHEDULING',
+      step: 'AWAITING_CONFIRM',
+      slots: { serviceId: '1', serviceLabel: 'Alisamento', dateISO: '2026-01-28', time: '10:00' },
+      ttlExpiresAt: bumpTTL(),
+    };
+    const result = handleSchedulingTurn(state, 'quem é o cabeleireiro?', { services });
+
+    // Should answer the question
+    expect(result.replyText).toContain('equipe do salão');
+    // Should resume the confirm step
+    expect(result.replyText).toContain('Alisamento');
+    expect(result.replyText).toContain('sim/não');
+    // Should NOT reset FSM
+    expect(result.nextState.activeSkill).toBeUndefined();
+    expect(result.nextState.step).toBeUndefined();
+  });
+
+  it('AWAITING_DATETIME: "quem vai me atender" answers + resumes datetime', () => {
+    const state: ConversationState = {
+      ...defaultState(),
+      activeSkill: 'SCHEDULING',
+      step: 'AWAITING_DATETIME',
+      slots: { serviceId: '1', serviceLabel: 'Alisamento' },
+      ttlExpiresAt: bumpTTL(),
+    };
+    const result = handleSchedulingTurn(state, 'quem vai me atender?', { services });
+
+    expect(result.replyText).toContain('equipe do salão');
+    expect(result.replyText).toContain('Alisamento');
+    expect(result.nextState.step).toBeUndefined();
+  });
+
+  it('AWAITING_SERVICE: "qual profissional" answers + resumes service', () => {
+    const state: ConversationState = {
+      ...defaultState(),
+      activeSkill: 'SCHEDULING',
+      step: 'AWAITING_SERVICE',
+      ttlExpiresAt: bumpTTL(),
+    };
+    const result = handleSchedulingTurn(state, 'qual profissional?', { services });
+
+    expect(result.replyText).toContain('equipe do salão');
+    expect(result.replyText).toContain('serviço');
+    expect(result.nextState.step).toBeUndefined();
+  });
+});
+
+// =====================================================
+// 10. SOFTENED COPY (P0.1.2)
+// =====================================================
+describe('softened availability copy', () => {
+  const services = [
+    { id: '1', name: 'Alisamento', price: 250 },
+  ];
+  const stateAwaitingDatetime: ConversationState = {
+    ...defaultState(),
+    activeSkill: 'SCHEDULING',
+    step: 'AWAITING_DATETIME',
+    slots: { serviceId: '1', serviceLabel: 'Alisamento' },
+    ttlExpiresAt: bumpTTL(),
+  };
+
+  it('period suggestion uses "posso tentar" instead of "temos"', () => {
+    const result = handleSchedulingTurn(stateAwaitingDatetime, 'de manhã', { services });
+    expect(result.replyText).toContain('posso tentar');
+    expect(result.replyText).not.toMatch(/\btemos\b/);
+  });
+
+  it('availability response uses "posso tentar" instead of "temos"', () => {
+    const result = handleSchedulingTurn(stateAwaitingDatetime, 'qual horário tem livre?', { services });
+    expect(result.replyText).toContain('posso tentar');
+    expect(result.replyText).not.toMatch(/\btemos\b/);
   });
 });
