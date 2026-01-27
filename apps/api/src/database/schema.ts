@@ -13,6 +13,7 @@ import {
   json,
   unique,
   index,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 
 /**
@@ -594,6 +595,33 @@ export const services = pgTable('services', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+/**
+ * Matriz Profissional × Serviço (especialidades / P0.3)
+ * Join N:N entre users (profissionais) e services.
+ * PK composta evita necessidade de uuid generator.
+ */
+export const professionalServices = pgTable(
+  'professional_services',
+  {
+    professionalId: uuid('professional_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    serviceId: integer('service_id')
+      .references(() => services.id, { onDelete: 'cascade' })
+      .notNull(),
+    enabled: boolean('enabled').default(true).notNull(),
+    priority: integer('priority').default(0).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.professionalId, table.serviceId] }),
+  ],
+);
+
+export type ProfessionalService = typeof professionalServices.$inferSelect;
+export type NewProfessionalService = typeof professionalServices.$inferInsert;
 
 /**
  * Tabela de disponibilidade dos profissionais (horários de trabalho)
