@@ -100,11 +100,15 @@ export function composeResponse(params: {
 }): string {
   const parts: string[] = [];
 
-  // Saudacao com nome se disponivel
-  if (params.clientName) {
-    parts.push(`${params.greeting}, ${params.clientName}!`);
-  } else {
+  // Saudacao com primeiro nome se disponivel (P0.4: sem vírgula solta)
+  const firstName = params.clientName?.split(' ')[0] || null;
+  if (params.greeting && firstName) {
+    parts.push(`${params.greeting}, ${firstName}!`);
+  } else if (params.greeting) {
     parts.push(`${params.greeting}!`);
+  } else if (firstName) {
+    // skipGreeting=true mas temos nome — não prefixar vírgula
+    parts.push(`${firstName},`);
   }
 
   // Apresentacao (apenas no primeiro contato da janela)
