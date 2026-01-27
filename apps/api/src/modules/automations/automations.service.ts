@@ -1,5 +1,6 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { IS_JEST } from '../../common/is-jest';
 import { eq } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.module';
 import {
@@ -27,7 +28,7 @@ export class AutomationsService {
    * - Verifica contas a vencer
    * - Identifica clientes inativos (churn risk)
    */
-  @Cron('0 8 * * *') // Todo dia às 08:00
+  @Cron('0 8 * * *', { disabled: IS_JEST }) // Todo dia às 08:00
   async runDailyAutomations() {
     this.logger.log('Iniciando automacoes diarias...');
 

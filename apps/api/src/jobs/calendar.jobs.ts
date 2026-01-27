@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { IS_JEST } from '../common/is-jest';
 import { eq, and, lt } from 'drizzle-orm';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
@@ -16,7 +17,7 @@ export class CalendarSyncJob {
    * Sincronização incremental a cada 15 minutos
    * Sincroniza todas as integrações ativas
    */
-  @Cron(CronExpression.EVERY_30_MINUTES)
+  @Cron(CronExpression.EVERY_30_MINUTES, { disabled: IS_JEST })
   async incrementalSync(): Promise<void> {
     this.logger.log('Starting incremental calendar sync...');
 
@@ -69,7 +70,7 @@ export class CalendarSyncJob {
    * Sincronização completa diária às 3h da manhã
    * Resincroniza tudo para garantir consistência
    */
-  @Cron('0 3 * * *') // 3:00 AM
+  @Cron('0 3 * * *', { disabled: IS_JEST }) // 3:00 AM
   async fullSync(): Promise<void> {
     this.logger.log('Starting full calendar sync...');
 
@@ -107,7 +108,7 @@ export class CalendarSyncJob {
   /**
    * Limpeza de logs antigos - semanal (domingo 4h)
    */
-  @Cron('0 4 * * 0') // Sunday 4:00 AM
+  @Cron('0 4 * * 0', { disabled: IS_JEST }) // Sunday 4:00 AM
   async cleanupOldLogs(): Promise<void> {
     this.logger.log('Starting sync logs cleanup...');
 
@@ -140,7 +141,7 @@ export class CalendarSyncJob {
   /**
    * Verifica tokens expirando e notifica/renova
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron(CronExpression.EVERY_HOUR, { disabled: IS_JEST })
   async checkExpiringTokens(): Promise<void> {
     try {
       const oneHourFromNow = new Date();

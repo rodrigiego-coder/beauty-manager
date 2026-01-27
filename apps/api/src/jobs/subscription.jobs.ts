@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { IS_JEST } from '../common/is-jest';
 import { eq, lt, and, gte, sql } from 'drizzle-orm';
 import { db } from '../database/connection';
 import {
@@ -16,7 +17,7 @@ export class SubscriptionJobs {
   /**
    * Check trial expirations - runs daily at 6 AM
    */
-  @Cron(CronExpression.EVERY_DAY_AT_6AM)
+  @Cron(CronExpression.EVERY_DAY_AT_6AM, { disabled: IS_JEST })
   async checkTrialExpiration(): Promise<void> {
     this.logger.log('Checking trial expirations...');
 
@@ -61,7 +62,7 @@ export class SubscriptionJobs {
   /**
    * Check overdue invoices - runs daily at 7 AM
    */
-  @Cron(CronExpression.EVERY_DAY_AT_7AM)
+  @Cron(CronExpression.EVERY_DAY_AT_7AM, { disabled: IS_JEST })
   async checkOverdueInvoices(): Promise<void> {
     this.logger.log('Checking overdue invoices...');
 
@@ -111,7 +112,7 @@ export class SubscriptionJobs {
    * Suspend overdue subscriptions - runs daily at 8 AM
    * Suspends subscriptions that are PAST_DUE for more than 7 days
    */
-  @Cron(CronExpression.EVERY_DAY_AT_8AM)
+  @Cron(CronExpression.EVERY_DAY_AT_8AM, { disabled: IS_JEST })
   async suspendOverdueSubscriptions(): Promise<void> {
     this.logger.log('Checking for subscriptions to suspend...');
 
@@ -156,7 +157,7 @@ export class SubscriptionJobs {
   /**
    * Generate monthly invoices - runs on the 1st of each month at 1 AM
    */
-  @Cron('0 1 1 * *')
+  @Cron('0 1 1 * *', { disabled: IS_JEST })
   async generateMonthlyInvoices(): Promise<void> {
     this.logger.log('Generating monthly invoices...');
 
@@ -245,7 +246,7 @@ export class SubscriptionJobs {
   /**
    * Check for subscriptions ending soon (for yearly subscriptions) - runs weekly on Sunday at 10 AM
    */
-  @Cron('0 10 * * 0')
+  @Cron('0 10 * * 0', { disabled: IS_JEST })
   async checkYearlyRenewals(): Promise<void> {
     this.logger.log('Checking yearly subscription renewals...');
 
@@ -322,7 +323,7 @@ export class SubscriptionJobs {
   /**
    * Process canceled subscriptions at period end - runs daily at midnight
    */
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { disabled: IS_JEST })
   async processScheduledCancellations(): Promise<void> {
     this.logger.log('Processing scheduled cancellations...');
 

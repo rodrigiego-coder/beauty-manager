@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { IS_JEST } from '../../common/is-jest';
 import { MessageSchedulerService } from './message-scheduler.service';
 import { eq, and, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../../database/connection';
@@ -20,7 +21,7 @@ export class AutomationJobs {
    * NOTA: Este job processa a tabela scheduled_messages (sistema legado de templates)
    * Para notificações de agendamento, use ScheduledMessagesProcessor que processa appointment_notifications
    */
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_5_MINUTES, { disabled: IS_JEST })
   async processScheduledMessages() {
     this.logger.debug('[scheduled_messages] Processando mensagens do sistema legado...');
 
@@ -42,7 +43,7 @@ export class AutomationJobs {
   /**
    * Agenda mensagens de aniversário diariamente às 06:00
    */
-  @Cron('0 6 * * *')
+  @Cron('0 6 * * *', { disabled: IS_JEST })
   async scheduleBirthdayMessages() {
     this.logger.log('Agendando mensagens de aniversário...');
 
@@ -58,7 +59,7 @@ export class AutomationJobs {
   /**
    * Limpa logs antigos mensalmente (primeiro dia às 03:00)
    */
-  @Cron('0 3 1 * *')
+  @Cron('0 3 1 * *', { disabled: IS_JEST })
   async cleanupOldLogs() {
     this.logger.log('Limpando logs de mensagens antigos...');
 
@@ -96,7 +97,7 @@ export class AutomationJobs {
   /**
    * Verifica e reagenda mensagens falhas às 09:00
    */
-  @Cron('0 9 * * *')
+  @Cron('0 9 * * *', { disabled: IS_JEST })
   async retryFailedMessages() {
     this.logger.log('Verificando mensagens falhas para reenvio...');
 
@@ -158,7 +159,7 @@ export class AutomationJobs {
   /**
    * Gera relatório semanal de automação (Segunda às 08:00)
    */
-  @Cron('0 8 * * 1')
+  @Cron('0 8 * * 1', { disabled: IS_JEST })
   async generateWeeklyReport() {
     this.logger.log('Gerando relatório semanal de automação...');
 

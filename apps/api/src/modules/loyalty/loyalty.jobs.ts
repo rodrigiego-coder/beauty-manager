@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { IS_JEST } from '../../common/is-jest';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../../database/connection';
 import * as schema from '../../database/schema';
@@ -14,7 +15,7 @@ export class LoyaltyJobs {
   /**
    * Processa pontos expirados diariamente às 2AM
    */
-  @Cron(CronExpression.EVERY_DAY_AT_2AM)
+  @Cron(CronExpression.EVERY_DAY_AT_2AM, { disabled: IS_JEST })
   async processExpiredPoints() {
     this.logger.log('Iniciando processamento de pontos expirados...');
 
@@ -40,7 +41,7 @@ export class LoyaltyJobs {
   /**
    * Processa pontos de aniversário diariamente às 8AM
    */
-  @Cron(CronExpression.EVERY_DAY_AT_8AM)
+  @Cron(CronExpression.EVERY_DAY_AT_8AM, { disabled: IS_JEST })
   async processBirthdayPoints() {
     this.logger.log('Iniciando processamento de pontos de aniversário...');
 
@@ -66,7 +67,7 @@ export class LoyaltyJobs {
   /**
    * Processa vouchers expirados diariamente às 3AM
    */
-  @Cron(CronExpression.EVERY_DAY_AT_3AM)
+  @Cron(CronExpression.EVERY_DAY_AT_3AM, { disabled: IS_JEST })
   async processExpiredVouchers() {
     this.logger.log('Iniciando processamento de vouchers expirados...');
 
@@ -87,7 +88,7 @@ export class LoyaltyJobs {
   /**
    * Gera relatório semanal (toda segunda às 7AM)
    */
-  @Cron('0 7 * * 1')
+  @Cron('0 7 * * 1', { disabled: IS_JEST })
   async generateWeeklyReport() {
     this.logger.log('Gerando relatório semanal de fidelidade...');
 

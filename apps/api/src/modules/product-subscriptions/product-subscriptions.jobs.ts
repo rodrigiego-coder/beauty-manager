@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { IS_JEST } from '../../common/is-jest';
 import { ProductSubscriptionsService } from './product-subscriptions.service';
 
 @Injectable()
@@ -10,7 +11,7 @@ export class ProductSubscriptionsJobs {
    * Job diario as 06:00 - Processa entregas do dia
    * Cria registros de entrega para assinaturas com nextDeliveryDate = hoje
    */
-  @Cron(CronExpression.EVERY_DAY_AT_6AM)
+  @Cron(CronExpression.EVERY_DAY_AT_6AM, { disabled: IS_JEST })
   async processDailyDeliveries() {
     console.log('[ProductSubscriptions] Processando entregas do dia...');
     try {
@@ -25,7 +26,7 @@ export class ProductSubscriptionsJobs {
    * Job diario as 08:00 - Envia lembretes de entrega
    * Notifica clientes sobre entregas do dia
    */
-  @Cron(CronExpression.EVERY_DAY_AT_8AM)
+  @Cron(CronExpression.EVERY_DAY_AT_8AM, { disabled: IS_JEST })
   async sendDeliveryReminders() {
     console.log('[ProductSubscriptions] Enviando lembretes de entrega...');
     // TODO: Implementar envio de notificacoes via WhatsApp/SMS
@@ -36,7 +37,7 @@ export class ProductSubscriptionsJobs {
   /**
    * Job diario a meia-noite - Verifica assinaturas expiradas
    */
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { disabled: IS_JEST })
   async checkExpiredSubscriptions() {
     console.log('[ProductSubscriptions] Verificando assinaturas expiradas...');
     // TODO: Implementar verificacao de assinaturas que precisam renovacao

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { IS_JEST } from '../../common/is-jest';
 import { ScheduledMessagesService } from './scheduled-messages.service';
 import { WhatsAppService } from '../automation/whatsapp.service';
 import { AuditService } from '../audit/audit.service';
@@ -27,7 +28,7 @@ export class ScheduledMessagesProcessor {
    * Processa mensagens pendentes a cada minuto
    * CONCORRÊNCIA SEGURA: Usa SKIP LOCKED para evitar processamento duplicado
    */
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_MINUTE, { disabled: IS_JEST })
   async processScheduledMessages(): Promise<void> {
     // Lock local para evitar overlap no mesmo processo
     if (this.isProcessing) {
