@@ -21,6 +21,7 @@ import { AlexisCatalogService } from './alexis-catalog.service';
 import { ProductInfoService } from './product-info.service';
 import { ResponseComposerService } from './response-composer.service';
 import { COMMAND_RESPONSES } from './constants/forbidden-terms';
+import { isSchedulePrompt, fuzzyMatchService } from './schedule-continuation';
 
 /**
  * =====================================================
@@ -177,6 +178,16 @@ export class AlexisService {
         statusChanged: false,
       };
     }
+
+    // ========== CONTINUAÇÃO TRANSACIONAL: SCHEDULE (aguardando serviço) ==========
+    const scheduleContinuation = await this.checkScheduleContinuation(
+      conversation.id,
+      salonId,
+      clientPhone,
+      message,
+      startTime,
+    );
+    if (scheduleContinuation) return scheduleContinuation;
 
     // Classifica intenção
     const intent = this.intentClassifier.classify(message);
@@ -370,6 +381,92 @@ export class AlexisService {
 
   /**
    * =====================================================
+   * CONTINUAÇÃO TRANSACIONAL DE AGENDAMENTO
+   * Se a última mensagem do assistant foi um prompt de serviço,
+   * interpreta a resposta do usuário como seleção de serviço.
+   * =====================================================
+   */
+  private async checkScheduleContinuation(
+    conversationId: string,
+    salonId: string,
+    clientPhone: string,
+    message: string,
+    startTime: number,
+  ): Promise<ProcessMessageResult | null> {
+    try {
+      // Busca última mensagem do assistant
+      const [lastAi] = await db
+        .select({ content: aiMessages.content })
+        .from(aiMessages)
+        .where(
+          and(
+            eq(aiMessages.conversationId, conversationId),
+            eq(aiMessages.role, 'ai'),
+          ),
+        )
+        .orderBy(desc(aiMessages.createdAt))
+        .limit(1);
+
+      if (!lastAi || !isSchedulePrompt(lastAi.content)) return null;
+
+      this.logger.log(`Schedule continuation detectado para: "${message}"`);
+
+      // Carrega serviços
+      const context = await this.dataCollector.collectContext(salonId, clientPhone);
+      const services = context.services || [];
+      if (services.length === 0) return null;
+
+      const matched = fuzzyMatchService(message, services);
+
+      if (matched) {
+        // Serviço encontrado — prossegue com agendamento (busca horários)
+        const aiResponse = await this.handleSchedulingIntent(salonId, clientPhone, message, context);
+
+        await this.saveMessage(conversationId, 'client', message, 'SCHEDULE', false, false);
+        await this.saveMessage(conversationId, 'ai', aiResponse, 'SCHEDULE', false, false);
+
+        await this.logInteraction(
+          salonId, conversationId, clientPhone,
+          message, aiResponse, 'SCHEDULE',
+          false, undefined, Date.now() - startTime,
+        );
+
+        return {
+          response: aiResponse,
+          intent: 'SCHEDULE',
+          blocked: false,
+          shouldSend: true,
+          statusChanged: false,
+        };
+      }
+
+      // Não conseguiu mapear — pede esclarecimento sem re-listar tudo
+      const clarification = 'Não encontrei esse serviço. Pode repetir o nome? Por exemplo: corte, mechas, alisamento… 😊';
+
+      await this.saveMessage(conversationId, 'client', message, 'SCHEDULE', false, false);
+      await this.saveMessage(conversationId, 'ai', clarification, 'SCHEDULE', false, false);
+
+      await this.logInteraction(
+        salonId, conversationId, clientPhone,
+        message, clarification, 'SCHEDULE',
+        false, undefined, Date.now() - startTime,
+      );
+
+      return {
+        response: clarification,
+        intent: 'SCHEDULE',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    } catch (error: any) {
+      this.logger.warn('Erro no schedule continuation guard:', error?.message);
+      return null; // Fallback para fluxo normal
+    }
+  }
+
+  /**
+   * =====================================================
    * AGENDAMENTO VIA WHATSAPP
    * =====================================================
    */
@@ -386,8 +483,8 @@ export class AlexisService {
       return 'No momento não consigo verificar os serviços disponíveis. Por favor, entre em contato com o salão diretamente! 😊';
     }
 
-    // Verifica se o cliente mencionou algum serviço
-    const mentionedService = services.find((s: any) => message.toLowerCase().includes(s.name.toLowerCase()));
+    // Verifica se o cliente mencionou algum serviço (fuzzy match com normalização)
+    const mentionedService = fuzzyMatchService(message, services) as any;
 
     if (!mentionedService) {
       const serviceList = services
