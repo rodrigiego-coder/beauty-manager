@@ -12,6 +12,7 @@ import {
 } from '../../database/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { GeminiService } from './gemini.service';
+import { ConversationTurn, CONVERSATION_HISTORY_LIMIT } from './gemini.service';
 import { ContentFilterService } from './content-filter.service';
 import { IntentClassifierService } from './intent-classifier.service';
 import { AlexisSchedulerService } from './scheduler.service';
@@ -257,6 +258,7 @@ export class AlexisService {
 
     // ========== CAMADA 2: GERAÇÃO COM IA ==========
     const context = await this.dataCollector.collectContext(salonId, clientPhone);
+    const history = await this.getRecentHistory(conversation.id, CONVERSATION_HISTORY_LIMIT);
     let aiResponse: string;
 
     try {
@@ -268,7 +270,7 @@ export class AlexisService {
       else if (intent === 'PRODUCT_INFO' || intent === 'PRICE_INFO') {
         aiResponse = await this.handleProductIntent(salonId, message);
       } else {
-        aiResponse = await this.gemini.generateResponse(context.salon?.name || 'Salão', message, context);
+        aiResponse = await this.gemini.generateResponse(context.salon?.name || 'Salão', message, context, history);
       }
     } catch (error: any) {
       this.logger.error('Erro na geração de resposta:', error?.message || error);
@@ -563,6 +565,39 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
    * GESTÃO DE CONVERSAS
    * =====================================================
    */
+
+  /**
+   * Carrega os últimos N turnos da conversa (client + ai) em ordem cronológica.
+   * Reutiliza padrão Belle (ai-assistant.service.ts) adaptado para aiMessages.
+   */
+  private async getRecentHistory(
+    conversationId: string,
+    limit: number,
+  ): Promise<ConversationTurn[]> {
+    try {
+      const rows = await db
+        .select({ role: aiMessages.role, content: aiMessages.content })
+        .from(aiMessages)
+        .where(
+          and(
+            eq(aiMessages.conversationId, conversationId),
+            sql`${aiMessages.role} IN ('client', 'ai')`,
+            sql`${aiMessages.isCommand} = false`,
+          ),
+        )
+        .orderBy(desc(aiMessages.createdAt))
+        .limit(limit);
+
+      // Reverse para ordem cronológica (oldest first)
+      return rows.reverse().map((r) => ({
+        role: r.role as 'client' | 'ai',
+        content: r.content,
+      }));
+    } catch (error: any) {
+      this.logger.warn('Falha ao carregar histórico de conversa:', error?.message);
+      return [];
+    }
+  }
 
   private async getOrCreateConversation(salonId: string, clientPhone: string, clientName?: string) {
     // Busca conversa ativa

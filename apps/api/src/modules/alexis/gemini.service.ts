@@ -9,6 +9,18 @@ import { ALEXIS_SYSTEM_PROMPT } from './constants/forbidden-terms';
  * =====================================================
  */
 
+/** Turno de conversa para memória contextual */
+export interface ConversationTurn {
+  role: 'client' | 'ai';
+  content: string;
+}
+
+/** Limite de turnos carregados (configurável sem .env) */
+export const CONVERSATION_HISTORY_LIMIT = 8;
+
+/** Tamanho máximo por mensagem no histórico (chars) */
+export const MESSAGE_TRUNCATE_LENGTH = 600;
+
 @Injectable()
 export class GeminiService implements OnModuleInit {
   private readonly logger = new Logger(GeminiService.name);
@@ -46,11 +58,13 @@ export class GeminiService implements OnModuleInit {
    * @param salonName Nome do salão para personalização
    * @param userMessage Mensagem do usuário
    * @param context Contexto do salão (serviços, produtos, etc)
+   * @param history Turnos recentes da conversa (opcional)
    */
   async generateResponse(
     salonName: string,
     userMessage: string,
     context: Record<string, any>,
+    history: ConversationTurn[] = [],
   ): Promise<string> {
     if (!this.model) {
       return this.getFallbackResponse();
@@ -58,12 +72,13 @@ export class GeminiService implements OnModuleInit {
 
     try {
       const systemPrompt = ALEXIS_SYSTEM_PROMPT(salonName);
+      const historyBlock = this.formatHistory(history);
 
       const fullPrompt = `${systemPrompt}
 
 CONTEXTO DO SISTEMA (produtos, serviços e dados do salão):
 ${JSON.stringify(context, null, 2)}
-
+${historyBlock}
 MENSAGEM DO CLIENTE:
 ${userMessage}
 
@@ -71,7 +86,8 @@ Responda de forma educada, profissional e segura. Lembre-se:
 - NUNCA use termos proibidos pela ANVISA
 - NUNCA prometa resultados
 - SOMENTE indique produtos/serviços que estão listados no CONTEXTO acima
-- Mantenha a resposta curta e objetiva (máximo 3 parágrafos)`;
+- Mantenha a resposta curta e objetiva (máximo 3 parágrafos)
+- Considere o HISTÓRICO RECENTE acima para manter coerência na conversa`;
 
       const result = await this.model.generateContent(fullPrompt);
       const response = result.response;
@@ -80,6 +96,23 @@ Responda de forma educada, profissional e segura. Lembre-se:
       this.logger.error('Erro ao gerar resposta Gemini:', error?.message || error);
       return this.getFallbackResponse();
     }
+  }
+
+  /**
+   * Formata histórico de conversa para inclusão no prompt
+   */
+  formatHistory(history: ConversationTurn[]): string {
+    if (!history || history.length === 0) return '';
+
+    const lines = history.map((turn) => {
+      const label = turn.role === 'client' ? '[cliente]' : '[assistente]';
+      const truncated = turn.content.length > MESSAGE_TRUNCATE_LENGTH
+        ? turn.content.slice(0, MESSAGE_TRUNCATE_LENGTH) + '...'
+        : turn.content;
+      return `${label} ${truncated}`;
+    });
+
+    return `\nHISTÓRICO RECENTE (últimos ${history.length} turnos):\n${lines.join('\n')}\n`;
   }
 
   /**
