@@ -1,5 +1,5 @@
 import { Injectable, Inject, NotFoundException, ConflictException } from '@nestjs/common';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, inArray } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../../database/schema';
 import { CreateTeamMemberDto, UpdateTeamMemberDto } from './dto';
@@ -219,6 +219,80 @@ export class TeamService {
       pendingCommissions: parseFloat(pendingCommissionsResult[0]?.total || '0'),
       pendingCommissionsCount: pendingCommissionsResult[0]?.count || 0,
     };
+  }
+
+  /**
+   * Lista serviços atribuídos ao profissional (com dados do serviço)
+   */
+  async getAssignedServices(professionalId: string, salonId: string) {
+    // Valida que o profissional pertence ao salão
+    await this.findById(professionalId, salonId);
+
+    const rows = await this.db
+      .select({
+        serviceId: schema.professionalServices.serviceId,
+        enabled: schema.professionalServices.enabled,
+        priority: schema.professionalServices.priority,
+        serviceName: schema.services.name,
+        serviceCategory: schema.services.category,
+        servicePrice: schema.services.basePrice,
+      })
+      .from(schema.professionalServices)
+      .innerJoin(schema.services, eq(schema.professionalServices.serviceId, schema.services.id))
+      .where(
+        and(
+          eq(schema.professionalServices.professionalId, professionalId),
+          eq(schema.professionalServices.enabled, true),
+        ),
+      );
+
+    return rows;
+  }
+
+  /**
+   * Define serviços do profissional (replace all).
+   * Deleta os existentes e insere os novos.
+   */
+  async setAssignedServices(professionalId: string, salonId: string, serviceIds: number[]) {
+    // Valida profissional pertence ao salão
+    await this.findById(professionalId, salonId);
+
+    // Valida serviços pertencem ao salão
+    if (serviceIds.length > 0) {
+      const validServices = await this.db
+        .select({ id: schema.services.id })
+        .from(schema.services)
+        .where(
+          and(
+            eq(schema.services.salonId, salonId),
+            eq(schema.services.active, true),
+            inArray(schema.services.id, serviceIds),
+          ),
+        );
+      const validIds = new Set(validServices.map((s) => s.id));
+      const invalid = serviceIds.filter((id) => !validIds.has(id));
+      if (invalid.length > 0) {
+        throw new NotFoundException(`Serviços não encontrados: ${invalid.join(', ')}`);
+      }
+    }
+
+    // Delete all existing
+    await this.db
+      .delete(schema.professionalServices)
+      .where(eq(schema.professionalServices.professionalId, professionalId));
+
+    // Insert new
+    if (serviceIds.length > 0) {
+      await this.db.insert(schema.professionalServices).values(
+        serviceIds.map((serviceId) => ({
+          professionalId,
+          serviceId,
+          enabled: true,
+        })),
+      );
+    }
+
+    return { success: true, count: serviceIds.length };
   }
 
   /**

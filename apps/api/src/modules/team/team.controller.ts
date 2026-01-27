@@ -93,4 +93,26 @@ export class TeamController {
   async reactivate(@Param('id') id: string, @CurrentUser() user: any) {
     return this.teamService.reactivate(id, user.salonId);
   }
+
+  /**
+   * GET /team/:id/services - Lista serviços que o profissional realiza
+   */
+  @Get(':id/services')
+  @Roles('OWNER', 'MANAGER')
+  async getServices(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.teamService.getAssignedServices(id, user.salonId);
+  }
+
+  /**
+   * PUT /team/:id/services - Define serviços do profissional (replace all)
+   */
+  @Patch(':id/services')
+  @Roles('OWNER', 'MANAGER')
+  async setServices(
+    @Param('id') id: string,
+    @Body() body: { serviceIds: number[] },
+    @CurrentUser() user: any,
+  ) {
+    return this.teamService.setAssignedServices(id, user.salonId, body.serviceIds || []);
+  }
 }
