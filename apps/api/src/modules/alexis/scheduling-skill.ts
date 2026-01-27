@@ -107,62 +107,121 @@ function handleAwaitingService(
 
 // ========== DATETIME PARSING ==========
 
+export type DayPeriod = 'MANHA' | 'TARDE' | 'NOITE';
+
 export interface ParsedDatetime {
   dateISO: string;
   time: string;
   display: string;
 }
 
+export interface ParsedPeriod {
+  dateISO: string;
+  period: DayPeriod;
+}
+
 /**
- * Parse simples de data/hora a partir de mensagem do cliente.
+ * Parse de data/hora a partir de mensagem do cliente.
  * Reconhece: "10h", "10:30", "14h30", "amanhã 10h", "hoje 15h"
- * Retorna null se não encontrar horário, 'INVALID_HOUR' se hora > 23.
+ * Reconhece períodos: "de manhã", "à tarde", "noite", "amanhã de manhã"
+ * Retorna ParsedDatetime se hora exata, ParsedPeriod se período sem hora,
+ * 'INVALID_HOUR' se hora > 23, null se nada encontrado.
  */
 export function parseDatetime(
   text: string,
-): ParsedDatetime | 'INVALID_HOUR' | null {
+): ParsedDatetime | ParsedPeriod | 'INVALID_HOUR' | null {
   const normalized = normalizeText(text);
 
   // Extrai horário: "10h", "10:30", "14h30", "10 horas"
   const timeMatch = normalized.match(
     /(\d{1,2})(?::(\d{2})|h(\d{2})?|\s*horas?)/,
   );
-  if (!timeMatch) return null;
 
-  const hour = parseInt(timeMatch[1], 10);
-  const minutes = parseInt(timeMatch[2] || timeMatch[3] || '0', 10);
+  // Detecta período do dia
+  const periodMatch = detectPeriod(normalized);
 
-  if (hour > 23) return 'INVALID_HOUR';
-  if (minutes > 59) return null;
+  // Nenhuma informação útil
+  if (!timeMatch && !periodMatch) return null;
 
-  const timeStr = `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  // Resolve data base: "hoje" = hoje, default = amanhã
+  const date = resolveDate(normalized);
+  const dateISO = formatDateISO(date);
 
-  // Data: "hoje" = hoje, default = amanhã
-  const today = new Date();
-  let date: Date;
+  // Se temos hora exata, retorna ParsedDatetime
+  if (timeMatch) {
+    const hour = parseInt(timeMatch[1], 10);
+    const minutes = parseInt(timeMatch[2] || timeMatch[3] || '0', 10);
 
-  if (normalized.includes('hoje')) {
-    date = new Date(today);
-  } else {
-    date = new Date(today);
-    date.setDate(date.getDate() + 1);
+    if (hour > 23) return 'INVALID_HOUR';
+    if (minutes > 59) return null;
+
+    const timeStr = `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
+    const display = `${date.toLocaleDateString('pt-BR', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    })} às ${timeStr}`;
+
+    return { dateISO, time: timeStr, display };
   }
 
-  const dateISO = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  // Só período (sem hora exata) → ParsedPeriod
+  return { dateISO, period: periodMatch! };
+}
 
-  const display = `${date.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  })} às ${timeStr}`;
+/** Detecta período do dia em texto normalizado */
+export function detectPeriod(normalized: string): DayPeriod | null {
+  if (/\b(de\s+)?manha\b/.test(normalized)) return 'MANHA';
+  if (/\b(a\s+|de\s+)?tarde\b/.test(normalized)) return 'TARDE';
+  if (/\b(a\s+|de\s+)?noite\b/.test(normalized)) return 'NOITE';
+  return null;
+}
 
-  return { dateISO, time: timeStr, display };
+/** Resolve data base do texto: "hoje" → hoje, default → amanhã */
+function resolveDate(normalized: string): Date {
+  const today = new Date();
+  if (normalized.includes('hoje')) {
+    return new Date(today);
+  }
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow;
+}
+
+/** Formata Date para YYYY-MM-DD */
+function formatDateISO(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/** Mapa de sugestões de horário por período */
+export const PERIOD_SUGGESTIONS: Record<DayPeriod, string> = {
+  MANHA: '09h, 10h ou 11h',
+  TARDE: '14h, 15h ou 16h',
+  NOITE: '18h, 19h ou 20h',
+};
+
+/** Detecta perguntas de disponibilidade sem horário concreto */
+export function isAvailabilityQuestion(text: string): boolean {
+  const normalized = normalizeText(text);
+  return /\b(qual|que|quais)\s+(horario|hora|vaga|disponib)/.test(normalized)
+    || /\b(tem\s+(horario|hora|vaga|disponib))/.test(normalized)
+    || /\b(horario(s)?\s+(livre|disponiv|aberto))/.test(normalized);
 }
 
 function handleAwaitingDatetime(
   state: ConversationState,
   text: string,
 ): SkillResult {
+  // Detecta pergunta de disponibilidade ("qual horário tem livre?")
+  if (isAvailabilityQuestion(text)) {
+    return {
+      nextState: { ttlExpiresAt: bumpTTL() },
+      replyText:
+        `Para *${state.slots.serviceLabel}*, temos opções de manhã (${PERIOD_SUGGESTIONS.MANHA}), tarde (${PERIOD_SUGGESTIONS.TARDE}) ou noite (${PERIOD_SUGGESTIONS.NOITE}). Qual prefere? 😊`,
+    };
+  }
+
   const parsed = parseDatetime(text);
 
   if (parsed === null) {
@@ -181,6 +240,17 @@ function handleAwaitingDatetime(
     };
   }
 
+  // ParsedPeriod → sugere horários concretos dentro do período
+  if ('period' in parsed) {
+    const suggestions = PERIOD_SUGGESTIONS[parsed.period];
+    return {
+      nextState: { ttlExpiresAt: bumpTTL() },
+      replyText:
+        `Legal! Para *${state.slots.serviceLabel}*, no período da ${parsed.period === 'MANHA' ? 'manhã' : parsed.period === 'TARDE' ? 'tarde' : 'noite'} temos: *${suggestions}*. Qual horário prefere? 😊`,
+    };
+  }
+
+  // ParsedDatetime → hora exata, vai para confirmação
   return {
     nextState: {
       step: 'AWAITING_CONFIRM',
