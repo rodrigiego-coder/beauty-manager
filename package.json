@@ -16,6 +16,7 @@
     "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "test:src": "npm run test:src -w @beauty-manager/api",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
     "docker:logs": "docker-compose logs -f"
