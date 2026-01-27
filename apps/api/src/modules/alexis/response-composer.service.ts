@@ -21,6 +21,8 @@ export interface ComposeInput {
   clientName?: string;
   intent: string;
   baseText: string;
+  /** Se true, pula saudação/apresentação (conversa em andamento) */
+  skipGreeting?: boolean;
 }
 
 export interface ContactInfo {
@@ -144,7 +146,7 @@ export class ResponseComposerService {
    * - CTA suave para produtos
    */
   async compose(input: ComposeInput): Promise<string> {
-    const { salonId, phone, clientName, intent, baseText } = input;
+    const { salonId, phone, clientName, intent, baseText, skipGreeting } = input;
 
     // 1) Busca ou cria contato
     const contact = await this.upsertContact(salonId, phone, clientName);
@@ -153,7 +155,8 @@ export class ResponseComposerService {
     const salonName = await this.getSalonName(salonId);
 
     // 3) Determina se deve saudar/apresentar
-    const shouldGreetNow = shouldGreet(contact.lastGreetedAt);
+    //    Anti-reset: skipGreeting=true quando conversa já está em andamento
+    const shouldGreetNow = skipGreeting ? false : shouldGreet(contact.lastGreetedAt);
 
     // 4) Determina nome a usar (payload > salvo > null)
     const nameToUse = clientName || contact.name;
