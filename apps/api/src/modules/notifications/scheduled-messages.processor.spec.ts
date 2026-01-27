@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ScheduledMessagesProcessor } from './scheduled-messages.processor';
 import { ScheduledMessagesService } from './scheduled-messages.service';
 import { WhatsAppService } from '../automation/whatsapp.service';
@@ -38,7 +38,19 @@ describe('ScheduledMessagesProcessor', () => {
     status: 'PENDING',
   };
 
+  // Silence Nest Logger to avoid noise in test output
+  let logErrorSpy: jest.SpyInstance;
+  let logWarnSpy: jest.SpyInstance;
+  let logLogSpy: jest.SpyInstance;
+  let logDebugSpy: jest.SpyInstance;
+
   beforeEach(async () => {
+    // Silence Logger — prevents "[ScheduledMessagesProcessor] [Quota] ..." noise
+    logErrorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    logWarnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    logLogSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    logDebugSpy = jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+
     // Reset all mocks
     jest.clearAllMocks();
 
@@ -77,6 +89,13 @@ describe('ScheduledMessagesProcessor', () => {
     whatsappService = module.get(WhatsAppService);
     auditService = module.get(AuditService);
     addonsService = module.get(AddonsService);
+  });
+
+  afterEach(() => {
+    logErrorSpy.mockRestore();
+    logWarnSpy.mockRestore();
+    logLogSpy.mockRestore();
+    logDebugSpy.mockRestore();
   });
 
   describe('processScheduledMessages', () => {
@@ -286,6 +305,11 @@ describe('ScheduledMessagesProcessor', () => {
         NOTIFICATION_ID,
         'SENT',
         'msg-789',
+      );
+
+      // Assert - logger.error foi chamado (prova de degradação graciosa logada)
+      expect(logErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Erro ao verificar quota'),
       );
     });
   });
