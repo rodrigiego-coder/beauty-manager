@@ -338,6 +338,19 @@ export class AlexisService {
       });
     }
 
+    // ========== ANTI-DUPLICAÇÃO: impede reenvio idêntico < 5s ==========
+    if (await this.isDuplicateReply(conversation.id, finalResponse)) {
+      this.logger.debug(`Anti-duplicate: resposta idêntica suprimida para ${clientPhone}`);
+      await this.saveMessage(conversation.id, 'client', mergedText, intent, false, false);
+      return {
+        response: null,
+        intent,
+        blocked: false,
+        shouldSend: false,
+        statusChanged: false,
+      };
+    }
+
     // Salva mensagens
     await this.saveMessage(conversation.id, 'client', mergedText, intent, false, false);
     await this.saveMessage(
@@ -361,6 +374,36 @@ export class AlexisService {
       shouldSend: true,
       statusChanged: false,
     };
+  }
+
+  /**
+   * =====================================================
+   * ANTI-DUPLICAÇÃO — impede reenvio de resposta idêntica < 5s
+   * =====================================================
+   */
+  private static readonly DUPLICATE_WINDOW_MS = 5000;
+
+  private async isDuplicateReply(conversationId: string, responseText: string): Promise<boolean> {
+    try {
+      const [lastAi] = await db
+        .select({ content: aiMessages.content, createdAt: aiMessages.createdAt })
+        .from(aiMessages)
+        .where(
+          and(
+            eq(aiMessages.conversationId, conversationId),
+            eq(aiMessages.role, 'ai'),
+          ),
+        )
+        .orderBy(desc(aiMessages.createdAt))
+        .limit(1);
+
+      if (!lastAi) return false;
+
+      const elapsed = Date.now() - new Date(lastAi.createdAt).getTime();
+      return lastAi.content === responseText && elapsed < AlexisService.DUPLICATE_WINDOW_MS;
+    } catch {
+      return false;
+    }
   }
 
   /**
