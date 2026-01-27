@@ -19,6 +19,12 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 
+interface SalonService {
+  id: number;
+  name: string;
+  category: string;
+}
+
 interface TeamMember {
   id: string;
   name: string;
@@ -77,6 +83,10 @@ export function TeamPage() {
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Services for multi-select
+  const [salonServices, setSalonServices] = useState<SalonService[]>([]);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
+
   // Form state
   const [formData, setFormData] = useState({
     name: '',
@@ -94,12 +104,14 @@ export function TeamPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [membersRes, summaryRes] = await Promise.all([
+      const [membersRes, summaryRes, servicesRes] = await Promise.all([
         api.get(`/team?includeInactive=${showInactive}`),
         api.get('/team/summary'),
+        api.get('/services'),
       ]);
       setMembers(membersRes.data);
       setSummary(summaryRes.data);
+      setSalonServices(servicesRes.data || []);
     } catch (error) {
       console.error('Erro ao carregar equipe:', error);
       setMessage({ type: 'error', text: 'Erro ao carregar dados da equipe' });
@@ -162,7 +174,7 @@ export function TeamPage() {
     setShowCreateModal(true);
   };
 
-  const handleOpenEditModal = (member: TeamMember) => {
+  const handleOpenEditModal = async (member: TeamMember) => {
     setSelectedMember(member);
     setFormData({
       name: member.name,
@@ -172,6 +184,13 @@ export function TeamPage() {
       defaultCommission: parseFloat(member.commissionRate) * 100,
     });
     setFormErrors({});
+    // Load assigned services
+    try {
+      const res = await api.get(`/team/${member.id}/services`);
+      setSelectedServiceIds((res.data || []).map((s: any) => s.serviceId));
+    } catch {
+      setSelectedServiceIds([]);
+    }
     setShowEditModal(true);
   };
 
@@ -202,7 +221,10 @@ export function TeamPage() {
 
     setIsSaving(true);
     try {
-      await api.patch(`/team/${selectedMember.id}`, formData);
+      await Promise.all([
+        api.patch(`/team/${selectedMember.id}`, formData),
+        api.patch(`/team/${selectedMember.id}/services`, { serviceIds: selectedServiceIds }),
+      ]);
       setMessage({ type: 'success', text: 'Membro atualizado com sucesso!' });
       setShowEditModal(false);
       setSelectedMember(null);
@@ -698,6 +720,37 @@ export function TeamPage() {
                     {formErrors.defaultCommission && (
                       <p className="text-red-500 text-sm mt-1">{formErrors.defaultCommission}</p>
                     )}
+                  </div>
+                )}
+
+                {/* Especialidades (serviços que o profissional realiza) */}
+                {formData.role === 'STYLIST' && salonServices.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Servicos que realiza
+                    </label>
+                    <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-3 space-y-2">
+                      {salonServices.map((svc) => (
+                        <label key={svc.id} className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedServiceIds.includes(svc.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedServiceIds([...selectedServiceIds, svc.id]);
+                              } else {
+                                setSelectedServiceIds(selectedServiceIds.filter((id) => id !== svc.id));
+                              }
+                            }}
+                            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          />
+                          <span className="text-sm text-gray-700">{svc.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Deixe vazio para permitir todos os servicos
+                    </p>
                   </div>
                 )}
 
