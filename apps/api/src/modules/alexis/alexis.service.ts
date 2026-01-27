@@ -315,8 +315,8 @@ export class AlexisService {
         );
       }
     } catch (error: any) {
-      this.logger.error('Erro na geração de resposta:', error?.message || error);
-      aiResponse = 'Desculpe, estou com uma instabilidade no momento. Por favor, tente novamente! 😊';
+      this.logger.error('[P0.4-FALLBACK] Gemini falhou, usando fallback premium:', error?.message || error);
+      aiResponse = this.gemini.getFallbackResponse();
     }
 
     // ========== CAMADA 3: FILTRO DE SAÍDA ==========

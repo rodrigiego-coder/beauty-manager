@@ -161,14 +161,13 @@ Dados completos: ${JSON.stringify(data)}`;
   }
 
   /**
-   * Resposta de fallback quando a IA não está disponível
-   * CHARLIE: Atualizado para mencionar produtos/ativos/modo de uso (sem emojis)
+   * Resposta de fallback premium quando a IA não está disponível.
+   * P0.4: Nunca expor "instabilidade" ao cliente — sempre oferecer ajuda concreta.
    */
-  private getFallbackResponse(): string {
+  getFallbackResponse(): string {
     const fallbacks = [
-      'Ola! Posso ajudar com informacoes sobre nossos servicos, agendamentos, precos ou produtos. Pode perguntar sobre ativos, beneficios ou modo de uso tambem.',
-      'Estou aqui para ajudar! Voce pode perguntar sobre servicos, precos, agendamentos ou tirar duvidas sobre produtos e como usa-los.',
-      'Desculpe, estou com uma instabilidade no momento. Por favor, tente novamente em alguns segundos!',
+      'Oi! Posso ajudar com agendamento, valores ou tirar dúvidas sobre nossos serviços. O que você precisa?',
+      'Estou aqui para ajudar! Posso ver preços, agendar horários ou tirar dúvidas sobre serviços e produtos.',
     ];
 
     return fallbacks[Math.floor(Math.random() * fallbacks.length)];
