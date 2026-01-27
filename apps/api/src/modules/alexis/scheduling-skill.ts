@@ -41,6 +41,11 @@ export function handleSchedulingTurn(
   text: string,
   context: SkillContext,
 ): SkillResult {
+  // Interruption handler: pergunta sobre profissional/cabeleireiro
+  // Responde a dúvida e retoma o step atual sem perder slots
+  const staffInterrupt = handleStaffInterruption(state, text);
+  if (staffInterrupt) return staffInterrupt;
+
   switch (state.step) {
     case 'AWAITING_SERVICE':
       return handleAwaitingService(state, text, context);
@@ -50,6 +55,50 @@ export function handleSchedulingTurn(
       return handleAwaitingConfirm(state, text);
     default:
       return startScheduling();
+  }
+}
+
+// ========== INTERRUPTION HANDLERS ==========
+
+/** Detecta pergunta sobre profissional/cabeleireiro */
+export function isStaffQuestion(text: string): boolean {
+  const normalized = normalizeText(text);
+  return /\b(quem\s+(e|vai|sera|eh)\s+(o|a)?\s*(cabeleireir|cabelereir|profissional|atendente|estilista))/.test(normalized)
+    || /\b(quem\s+(vai\s+)?(me\s+)?atender)/.test(normalized)
+    || /\b(qual\s+(profissional|cabeleireir|cabelereir))/.test(normalized)
+    || /\b(quem\s+faz|quem\s+corta|quem\s+atende)/.test(normalized);
+}
+
+const STAFF_ANSWER =
+  'Hoje o atendimento é com a equipe do salão. Se você tem preferência por algum profissional específico, me diga o nome que eu tento encaixar 😊';
+
+/** Se for pergunta sobre staff, responde e retoma step atual */
+function handleStaffInterruption(
+  state: ConversationState,
+  text: string,
+): SkillResult | null {
+  if (!isStaffQuestion(text)) return null;
+
+  const resumePrompt = getStepResumePrompt(state);
+  return {
+    nextState: { ttlExpiresAt: bumpTTL() },
+    replyText: resumePrompt
+      ? `${STAFF_ANSWER}\n\n${resumePrompt}`
+      : STAFF_ANSWER,
+  };
+}
+
+/** Gera prompt de retomada do step atual */
+function getStepResumePrompt(state: ConversationState): string | null {
+  switch (state.step) {
+    case 'AWAITING_SERVICE':
+      return 'Qual serviço você gostaria de agendar?';
+    case 'AWAITING_DATETIME':
+      return `Para qual dia e horário você prefere o *${state.slots.serviceLabel}*?`;
+    case 'AWAITING_CONFIRM':
+      return `Posso confirmar *${state.slots.serviceLabel}* para *${state.slots.dateISO}* às *${state.slots.time}*? (sim/não)`;
+    default:
+      return null;
   }
 }
 
@@ -218,7 +267,7 @@ function handleAwaitingDatetime(
     return {
       nextState: { ttlExpiresAt: bumpTTL() },
       replyText:
-        `Para *${state.slots.serviceLabel}*, temos opções de manhã (${PERIOD_SUGGESTIONS.MANHA}), tarde (${PERIOD_SUGGESTIONS.TARDE}) ou noite (${PERIOD_SUGGESTIONS.NOITE}). Qual prefere? 😊`,
+        `Para *${state.slots.serviceLabel}*, posso tentar encaixar de manhã (${PERIOD_SUGGESTIONS.MANHA}), tarde (${PERIOD_SUGGESTIONS.TARDE}) ou noite (${PERIOD_SUGGESTIONS.NOITE}). Qual prefere? 😊`,
     };
   }
 
@@ -243,10 +292,11 @@ function handleAwaitingDatetime(
   // ParsedPeriod → sugere horários concretos dentro do período
   if ('period' in parsed) {
     const suggestions = PERIOD_SUGGESTIONS[parsed.period];
+    const periodLabel = parsed.period === 'MANHA' ? 'manhã' : parsed.period === 'TARDE' ? 'tarde' : 'noite';
     return {
       nextState: { ttlExpiresAt: bumpTTL() },
       replyText:
-        `Legal! Para *${state.slots.serviceLabel}*, no período da ${parsed.period === 'MANHA' ? 'manhã' : parsed.period === 'TARDE' ? 'tarde' : 'noite'} temos: *${suggestions}*. Qual horário prefere? 😊`,
+        `Legal! Para *${state.slots.serviceLabel}*, no período da ${periodLabel} posso tentar: *${suggestions}*. Qual horário prefere pra eu checar na agenda? 😊`,
     };
   }
 
