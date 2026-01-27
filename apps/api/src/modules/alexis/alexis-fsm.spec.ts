@@ -22,6 +22,7 @@ import {
   composeResponse,
   shouldGreet,
 } from './response-composer.service';
+import { GeminiService } from './gemini.service';
 
 // =====================================================
 // 1. DEBOUNCE — pure helpers
@@ -699,5 +700,87 @@ describe('sales retake constants', () => {
 
   it('defaultState has declineCount 0', () => {
     expect(defaultState().declineCount).toBe(0);
+  });
+});
+
+// =====================================================
+// 14. P0.4 — FALLBACK PREMIUM (Gemini falha)
+// =====================================================
+describe('P0.4 fallback premium', () => {
+  it('getFallbackResponse never contains "instabilidade"', () => {
+    const service = new GeminiService();
+    // Run multiple times to cover randomness
+    for (let i = 0; i < 20; i++) {
+      const response = service.getFallbackResponse();
+      expect(response.toLowerCase()).not.toContain('instabilidade');
+      expect(response.toLowerCase()).not.toContain('tente novamente');
+    }
+  });
+
+  it('getFallbackResponse returns a helpful message', () => {
+    const service = new GeminiService();
+    const response = service.getFallbackResponse();
+    expect(response.length).toBeGreaterThan(20);
+    // Should offer concrete help
+    expect(response.toLowerCase()).toMatch(/ajudar|serviço|agend|preço|valor/i);
+  });
+});
+
+// =====================================================
+// 15. P0.4 — GREETING SEM VÍRGULA SOLTA
+// =====================================================
+describe('P0.4 greeting format', () => {
+  it('greeting with name produces "Bom dia, Nome!"', () => {
+    const result = composeResponse({
+      greeting: 'Bom dia',
+      introduction: null,
+      clientName: 'Maria Silva',
+      baseText: 'Posso ajudar?',
+      cta: null,
+      askName: false,
+    });
+    expect(result).toContain('Bom dia, Maria!');
+    expect(result).not.toMatch(/^,/); // never starts with comma
+  });
+
+  it('no greeting + name does NOT start with comma', () => {
+    const result = composeResponse({
+      greeting: '',
+      introduction: null,
+      clientName: 'João Santos',
+      baseText: 'Aqui estão os horários.',
+      cta: null,
+      askName: false,
+    });
+    expect(result).not.toMatch(/^,/);
+    expect(result).not.toContain(', João');
+    expect(result).toContain('João,');
+  });
+
+  it('no greeting + no name => only baseText', () => {
+    const result = composeResponse({
+      greeting: '',
+      introduction: null,
+      clientName: null,
+      baseText: 'Resultado aqui.',
+      cta: null,
+      askName: false,
+    });
+    expect(result).not.toMatch(/^[,!]/);
+    expect(result).toContain('Resultado aqui.');
+  });
+
+  it('uses first name only (strips sobrenome)', () => {
+    const result = composeResponse({
+      greeting: 'Boa tarde',
+      introduction: null,
+      clientName: 'Ana Paula Oliveira',
+      baseText: 'Ok!',
+      cta: null,
+      askName: false,
+    });
+    expect(result).toContain('Boa tarde, Ana!');
+    expect(result).not.toContain('Paula');
+    expect(result).not.toContain('Oliveira');
   });
 });
