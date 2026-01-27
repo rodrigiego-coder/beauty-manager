@@ -10,6 +10,9 @@ import {
   handleSchedulingTurn,
   startScheduling,
   parseDatetime,
+  detectPeriod,
+  isAvailabilityQuestion,
+  PERIOD_SUGGESTIONS,
 } from './scheduling-skill';
 import {
   composeResponse,
@@ -117,6 +120,44 @@ describe('scheduling FSM', () => {
       expect(result.nextState.step).toBeUndefined();
       expect(result.replyText).toContain('amanhã');
     });
+
+    // --- P0.1.1: Period-based guided prompts ---
+
+    it('"amanhã de manhã" => suggests morning hours, stays in step', () => {
+      const result = handleSchedulingTurn(stateAwaitingDatetime, 'amanhã de manhã', { services });
+      expect(result.nextState.step).toBeUndefined(); // stays in AWAITING_DATETIME
+      expect(result.replyText).toContain('manhã');
+      expect(result.replyText).toContain('09h');
+      expect(result.replyText).toContain('Alisamento');
+    });
+
+    it('"de tarde" => suggests afternoon hours', () => {
+      const result = handleSchedulingTurn(stateAwaitingDatetime, 'de tarde', { services });
+      expect(result.replyText).toContain('tarde');
+      expect(result.replyText).toContain('14h');
+    });
+
+    it('"à noite" => suggests evening hours', () => {
+      const result = handleSchedulingTurn(stateAwaitingDatetime, 'à noite', { services });
+      expect(result.replyText).toContain('noite');
+      expect(result.replyText).toContain('18h');
+    });
+
+    it('"qual horário tem livre" => guided availability response, no reset', () => {
+      const result = handleSchedulingTurn(stateAwaitingDatetime, 'qual horário tem livre?', { services });
+      expect(result.nextState.step).toBeUndefined(); // stays in step
+      expect(result.nextState.activeSkill).toBeUndefined(); // NOT reset
+      expect(result.replyText).toContain('manhã');
+      expect(result.replyText).toContain('tarde');
+      expect(result.replyText).toContain('noite');
+      expect(result.replyText).toContain('Alisamento');
+    });
+
+    it('"tem vaga amanhã" => guided availability response', () => {
+      const result = handleSchedulingTurn(stateAwaitingDatetime, 'tem vaga amanhã?', { services });
+      expect(result.replyText).toContain('Alisamento');
+      expect(result.replyText).toContain('09h');
+    });
   });
 
   describe('AWAITING_CONFIRM', () => {
@@ -160,7 +201,7 @@ describe('parseDatetime', () => {
     const result = parseDatetime('10h');
     expect(result).not.toBeNull();
     expect(result).not.toBe('INVALID_HOUR');
-    if (result && result !== 'INVALID_HOUR') {
+    if (result && result !== 'INVALID_HOUR' && 'time' in result) {
       expect(result.time).toBe('10:00');
     }
   });
@@ -168,7 +209,7 @@ describe('parseDatetime', () => {
   it('"14:30" => parses 14:30', () => {
     const result = parseDatetime('14:30');
     expect(result).not.toBeNull();
-    if (result && result !== 'INVALID_HOUR') {
+    if (result && result !== 'INVALID_HOUR' && 'time' in result) {
       expect(result.time).toBe('14:30');
     }
   });
@@ -176,7 +217,7 @@ describe('parseDatetime', () => {
   it('"14h30" => parses 14:30', () => {
     const result = parseDatetime('14h30');
     expect(result).not.toBeNull();
-    if (result && result !== 'INVALID_HOUR') {
+    if (result && result !== 'INVALID_HOUR' && 'time' in result) {
       expect(result.time).toBe('14:30');
     }
   });
@@ -185,8 +226,138 @@ describe('parseDatetime', () => {
     expect(parseDatetime('27h')).toBe('INVALID_HOUR');
   });
 
-  it('"qualquer dia" => null (no time)', () => {
+  it('"qualquer dia" => null (no time, no period)', () => {
     expect(parseDatetime('qualquer dia')).toBeNull();
+  });
+
+  // --- P0.1.1: Period parsing ---
+
+  it('"amanhã de manhã" => ParsedPeriod with MANHA', () => {
+    const result = parseDatetime('amanhã de manhã');
+    expect(result).not.toBeNull();
+    expect(result).not.toBe('INVALID_HOUR');
+    if (result && result !== 'INVALID_HOUR' && 'period' in result) {
+      expect(result.period).toBe('MANHA');
+      expect(result.dateISO).toBeDefined();
+    } else {
+      fail('Expected ParsedPeriod with period field');
+    }
+  });
+
+  it('"de manhã" => ParsedPeriod MANHA', () => {
+    const result = parseDatetime('de manhã');
+    expect(result).not.toBeNull();
+    expect(result).not.toBe('INVALID_HOUR');
+    if (result && result !== 'INVALID_HOUR' && 'period' in result) {
+      expect(result.period).toBe('MANHA');
+    } else {
+      fail('Expected ParsedPeriod');
+    }
+  });
+
+  it('"a tarde" => ParsedPeriod TARDE', () => {
+    const result = parseDatetime('a tarde');
+    expect(result).not.toBeNull();
+    expect(result).not.toBe('INVALID_HOUR');
+    if (result && result !== 'INVALID_HOUR' && 'period' in result) {
+      expect(result.period).toBe('TARDE');
+    } else {
+      fail('Expected ParsedPeriod');
+    }
+  });
+
+  it('"à noite" => ParsedPeriod NOITE', () => {
+    const result = parseDatetime('à noite');
+    expect(result).not.toBeNull();
+    expect(result).not.toBe('INVALID_HOUR');
+    if (result && result !== 'INVALID_HOUR' && 'period' in result) {
+      expect(result.period).toBe('NOITE');
+    } else {
+      fail('Expected ParsedPeriod');
+    }
+  });
+
+  it('"amanhã 10h" => ParsedDatetime (time takes priority over period)', () => {
+    const result = parseDatetime('amanhã 10h');
+    expect(result).not.toBeNull();
+    expect(result).not.toBe('INVALID_HOUR');
+    if (result && result !== 'INVALID_HOUR' && 'time' in result) {
+      expect(result.time).toBe('10:00');
+    } else {
+      fail('Expected ParsedDatetime with time');
+    }
+  });
+
+  it('"hoje de tarde" => ParsedPeriod with today date', () => {
+    const result = parseDatetime('hoje de tarde');
+    expect(result).not.toBeNull();
+    expect(result).not.toBe('INVALID_HOUR');
+    if (result && result !== 'INVALID_HOUR' && 'period' in result) {
+      expect(result.period).toBe('TARDE');
+      const today = new Date();
+      const expectedISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      expect(result.dateISO).toBe(expectedISO);
+    } else {
+      fail('Expected ParsedPeriod');
+    }
+  });
+});
+
+// =====================================================
+// 3b. PERIOD DETECTION
+// =====================================================
+describe('detectPeriod', () => {
+  it('"de manha" => MANHA', () => {
+    expect(detectPeriod('de manha')).toBe('MANHA');
+  });
+
+  it('"manha" => MANHA', () => {
+    expect(detectPeriod('manha')).toBe('MANHA');
+  });
+
+  it('"a tarde" => TARDE', () => {
+    expect(detectPeriod('a tarde')).toBe('TARDE');
+  });
+
+  it('"tarde" => TARDE', () => {
+    expect(detectPeriod('tarde')).toBe('TARDE');
+  });
+
+  it('"noite" => NOITE', () => {
+    expect(detectPeriod('noite')).toBe('NOITE');
+  });
+
+  it('"qualquer dia" => null', () => {
+    expect(detectPeriod('qualquer dia')).toBeNull();
+  });
+});
+
+// =====================================================
+// 3c. AVAILABILITY QUESTION DETECTION
+// =====================================================
+describe('isAvailabilityQuestion', () => {
+  it('"qual horário tem livre" => true', () => {
+    expect(isAvailabilityQuestion('qual horário tem livre')).toBe(true);
+  });
+
+  it('"tem vaga amanhã?" => true', () => {
+    expect(isAvailabilityQuestion('tem vaga amanhã?')).toBe(true);
+  });
+
+  it('"quais horários disponíveis" => true', () => {
+    expect(isAvailabilityQuestion('quais horários disponíveis')).toBe(true);
+  });
+
+  it('"tem horário de manhã?" => true', () => {
+    expect(isAvailabilityQuestion('tem horário de manhã?')).toBe(true);
+  });
+
+  it('"amanhã 10h" => false', () => {
+    expect(isAvailabilityQuestion('amanhã 10h')).toBe(false);
+  });
+
+  it('"alisamento" => false', () => {
+    expect(isAvailabilityQuestion('alisamento')).toBe(false);
   });
 });
 
@@ -246,5 +417,22 @@ describe('anti-greeting', () => {
     });
     expect(result).toContain('Bom dia, Maria!');
     expect(result).toContain('Eu sou a Alexis');
+  });
+});
+
+// =====================================================
+// 6. PERIOD SUGGESTIONS (constants)
+// =====================================================
+describe('PERIOD_SUGGESTIONS', () => {
+  it('MANHA includes 09h', () => {
+    expect(PERIOD_SUGGESTIONS.MANHA).toContain('09h');
+  });
+
+  it('TARDE includes 14h', () => {
+    expect(PERIOD_SUGGESTIONS.TARDE).toContain('14h');
+  });
+
+  it('NOITE includes 18h', () => {
+    expect(PERIOD_SUGGESTIONS.NOITE).toContain('18h');
   });
 });
