@@ -338,9 +338,10 @@ export class AlexisService {
       });
     }
 
-    // ========== ANTI-DUPLICAÇÃO: impede reenvio idêntico < 5s ==========
-    if (await this.isDuplicateReply(conversation.id, finalResponse)) {
-      this.logger.debug(`Anti-duplicate: resposta idêntica suprimida para ${clientPhone}`);
+    // ========== ANTI-DUPLICAÇÃO ATÔMICA: ReplyDedupGate via state_json ==========
+    const canSend = await this.stateStore.tryRegisterReply(conversation.id, finalResponse);
+    if (!canSend) {
+      this.logger.debug(`DedupGate: resposta idêntica suprimida para ${clientPhone}`);
       await this.saveMessage(conversation.id, 'client', mergedText, intent, false, false);
       return {
         response: null,
@@ -374,36 +375,6 @@ export class AlexisService {
       shouldSend: true,
       statusChanged: false,
     };
-  }
-
-  /**
-   * =====================================================
-   * ANTI-DUPLICAÇÃO — impede reenvio de resposta idêntica < 5s
-   * =====================================================
-   */
-  private static readonly DUPLICATE_WINDOW_MS = 5000;
-
-  private async isDuplicateReply(conversationId: string, responseText: string): Promise<boolean> {
-    try {
-      const [lastAi] = await db
-        .select({ content: aiMessages.content, createdAt: aiMessages.createdAt })
-        .from(aiMessages)
-        .where(
-          and(
-            eq(aiMessages.conversationId, conversationId),
-            eq(aiMessages.role, 'ai'),
-          ),
-        )
-        .orderBy(desc(aiMessages.createdAt))
-        .limit(1);
-
-      if (!lastAi) return false;
-
-      const elapsed = Date.now() - new Date(lastAi.createdAt).getTime();
-      return lastAi.content === responseText && elapsed < AlexisService.DUPLICATE_WINDOW_MS;
-    } catch {
-      return false;
-    }
   }
 
   /**
@@ -511,6 +482,20 @@ export class AlexisService {
 
     // Compoe resposta — sempre skipGreeting em FSM (conversa em andamento)
     const finalResponse = result.replyText;
+
+    // ========== DEDUP GATE (FSM path — principal fonte de race condition) ==========
+    const canSend = await this.stateStore.tryRegisterReply(conversationId, finalResponse);
+    if (!canSend) {
+      this.logger.debug(`DedupGate FSM: resposta idêntica suprimida para ${clientPhone}`);
+      await this.saveMessage(conversationId, 'client', text, 'SCHEDULE', false, false);
+      return {
+        response: null,
+        intent: 'SCHEDULE',
+        blocked: false,
+        shouldSend: false,
+        statusChanged: false,
+      };
+    }
 
     // Persiste state
     await this.stateStore.updateState(conversationId, {
