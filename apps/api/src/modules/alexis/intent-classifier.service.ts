@@ -40,11 +40,6 @@ export class IntentClassifierService {
       return 'APPOINTMENT_DECLINE';
     }
 
-    // Saudações (verificar primeiro pois são mais comuns no início)
-    if (this.matchesAny(lower, INTENT_KEYWORDS.GREETING, true)) {
-      return 'GREETING';
-    }
-
     // Agendamento
     if (this.matchesAny(lower, INTENT_KEYWORDS.SCHEDULE)) {
       return 'SCHEDULE';
@@ -81,22 +76,30 @@ export class IntentClassifierService {
       return 'HOURS_INFO';
     }
 
+    // ========== GREETING somente se for saudação "pura" (sem intenção real) ==========
+    // Movido para DEPOIS das checagens de conteúdo para evitar falso positivo
+    if (this.isPureGreeting(lower)) {
+      return 'GREETING';
+    }
+
     return 'GENERAL';
   }
 
   /**
    * Verifica se a mensagem contém alguma das palavras-chave
-   * @param message Mensagem em lowercase
-   * @param keywords Lista de palavras-chave
-   * @param startsWith Se true, verifica apenas se a mensagem começa com a palavra
    */
-  private matchesAny(message: string, keywords: string[], startsWith = false): boolean {
-    return keywords.some((keyword) => {
-      if (startsWith) {
-        return message.startsWith(keyword) || message === keyword;
-      }
-      return message.includes(keyword);
-    });
+  private matchesAny(message: string, keywords: string[]): boolean {
+    return keywords.some((keyword) => message.includes(keyword));
+  }
+
+  /**
+   * Verifica se a mensagem é uma saudação "pura" (sem intenção real após a saudação).
+   * Ex.: "Oi" => true, "Bom dia!" => true
+   *      "Oi, quero saber sobre o Ultra Reconstrução" => false
+   */
+  private isPureGreeting(message: string): boolean {
+    const greetingPattern = /^(oi|olá|ola|bom\s+dia|boa\s+tarde|boa\s+noite|hey|eai|e\s+ai|opa)[!,.\s]*$/;
+    return greetingPattern.test(message);
   }
 
   /**
