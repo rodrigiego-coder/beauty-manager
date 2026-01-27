@@ -9,6 +9,7 @@ import { DataCollectorService } from './data-collector.service';
 import { AlexisCatalogService } from './alexis-catalog.service';
 import { ResponseComposerService } from './response-composer.service';
 import { ProductInfoService } from './product-info.service';
+import { ConversationStateStore } from './conversation-state.store';
 
 /**
  * ==========================================
@@ -29,6 +30,7 @@ import { ProductInfoService } from './product-info.service';
     AlexisCatalogService,
     ResponseComposerService,
     ProductInfoService,
+    ConversationStateStore,
   ],
   exports: [AlexisService, AlexisCatalogService, ProductInfoService],
 })

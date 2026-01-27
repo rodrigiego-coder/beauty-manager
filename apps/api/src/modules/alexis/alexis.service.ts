@@ -22,6 +22,18 @@ import { ProductInfoService } from './product-info.service';
 import { ResponseComposerService } from './response-composer.service';
 import { COMMAND_RESPONSES } from './constants/forbidden-terms';
 import { isSchedulePrompt, fuzzyMatchService } from './schedule-continuation';
+import { ConversationStateStore } from './conversation-state.store';
+import {
+  ConversationState,
+  DEBOUNCE_MS,
+  mergeBufferTexts,
+  nowIso,
+} from './conversation-state';
+import {
+  handleSchedulingTurn,
+  startScheduling,
+  SkillContext,
+} from './scheduling-skill';
 
 /**
  * =====================================================
@@ -43,6 +55,12 @@ export interface ProcessMessageResult {
 export class AlexisService {
   private readonly logger = new Logger(AlexisService.name);
 
+  /** Debounce in-memory: agrupa mensagens rápidas por conversa */
+  private debounceMap = new Map<
+    string,
+    { buffer: string[]; timer: NodeJS.Timeout; resolveOwner: () => void }
+  >();
+
   constructor(
     private readonly gemini: GeminiService,
     private readonly contentFilter: ContentFilterService,
@@ -52,6 +70,7 @@ export class AlexisService {
     private readonly catalog: AlexisCatalogService,
     private readonly productInfo: ProductInfoService,
     private readonly composer: ResponseComposerService,
+    private readonly stateStore: ConversationStateStore,
   ) {}
 
   /**
@@ -148,26 +167,41 @@ export class AlexisService {
       };
     }
 
-    // ========== CHARLIE: DETECÇÃO DETERMINÍSTICA DE PRODUTO ==========
-    // Tenta responder perguntas de produto ANTES da classificação Gemini
-    const productInfoResponse = await this.productInfo.tryAnswerProductInfo(salonId, message);
-    if (productInfoResponse) {
-      this.logger.log(`ProductInfo respondeu deterministicamente para: "${message}"`);
+    // ========== DEBOUNCE: anti-atropelo (2.5s) ==========
+    const debounceResult = await this.handleDebounce(conversation.id, message);
+    if (debounceResult.deferred) {
+      return {
+        response: null,
+        intent: 'DEBOUNCED',
+        blocked: false,
+        shouldSend: false,
+        statusChanged: false,
+      };
+    }
+    const mergedText = debounceResult.mergedText!;
 
-      // Salva mensagens
-      await this.saveMessage(conversation.id, 'client', message, 'PRODUCT_INFO', false, false);
+    // Carrega FSM state
+    const state = await this.stateStore.getState(conversation.id);
+
+    // ========== FSM: STEP > INTENT (agendamento em andamento) ==========
+    if (state.activeSkill === 'SCHEDULING' && state.step !== 'NONE') {
+      return this.handleFSMTurn(
+        conversation.id, salonId, clientPhone, clientName, mergedText, state, startTime,
+      );
+    }
+
+    // ========== CHARLIE: DETECÇÃO DETERMINÍSTICA DE PRODUTO ==========
+    const productInfoResponse = await this.productInfo.tryAnswerProductInfo(salonId, mergedText);
+    if (productInfoResponse) {
+      this.logger.log(`ProductInfo respondeu deterministicamente para: "${mergedText}"`);
+
+      await this.saveMessage(conversation.id, 'client', mergedText, 'PRODUCT_INFO', false, false);
       await this.saveMessage(conversation.id, 'ai', productInfoResponse, 'PRODUCT_INFO', false, false);
 
       await this.logInteraction(
-        salonId,
-        conversation.id,
-        clientPhone,
-        message,
-        productInfoResponse,
-        'PRODUCT_INFO',
-        false,
-        undefined,
-        Date.now() - startTime,
+        salonId, conversation.id, clientPhone,
+        mergedText, productInfoResponse, 'PRODUCT_INFO',
+        false, undefined, Date.now() - startTime,
       );
 
       return {
@@ -179,42 +213,36 @@ export class AlexisService {
       };
     }
 
-    // ========== CONTINUAÇÃO TRANSACIONAL: SCHEDULE (aguardando serviço) ==========
+    // ========== CONTINUAÇÃO TRANSACIONAL: SCHEDULE (fallback se FSM state perdido) ==========
     const scheduleContinuation = await this.checkScheduleContinuation(
-      conversation.id,
-      salonId,
-      clientPhone,
-      message,
-      startTime,
+      conversation.id, salonId, clientPhone, mergedText, startTime,
     );
     if (scheduleContinuation) return scheduleContinuation;
 
     // Classifica intenção
-    const intent = this.intentClassifier.classify(message);
+    const intent = this.intentClassifier.classify(mergedText);
+
+    // ========== SCHEDULE via FSM (novo fluxo) ==========
+    if (intent === 'SCHEDULE') {
+      return this.handleFSMStart(
+        conversation.id, salonId, clientPhone, clientName, mergedText, state, startTime,
+      );
+    }
 
     // ========== CONFIRMAÇÃO/RECUSA DE AGENDAMENTO ==========
     if (intent === 'APPOINTMENT_CONFIRM' || intent === 'APPOINTMENT_DECLINE') {
       const confirmResult = await this.handleAppointmentConfirmation(
-        salonId,
-        clientPhone,
-        intent === 'APPOINTMENT_CONFIRM',
+        salonId, clientPhone, intent === 'APPOINTMENT_CONFIRM',
       );
 
       if (confirmResult.handled) {
-        // Salva mensagens
-        await this.saveMessage(conversation.id, 'client', message, intent, false, false);
+        await this.saveMessage(conversation.id, 'client', mergedText, intent, false, false);
         await this.saveMessage(conversation.id, 'ai', confirmResult.response, intent, false, false);
 
         await this.logInteraction(
-          salonId,
-          conversation.id,
-          clientPhone,
-          message,
-          confirmResult.response,
-          intent,
-          false,
-          undefined,
-          Date.now() - startTime,
+          salonId, conversation.id, clientPhone,
+          mergedText, confirmResult.response, intent,
+          false, undefined, Date.now() - startTime,
         );
 
         return {
@@ -225,37 +253,29 @@ export class AlexisService {
           statusChanged: false,
         };
       }
-      // Se não encontrou agendamento pendente, continua fluxo normal
     }
 
     // ========== CAMADA 1: FILTRO DE ENTRADA ==========
-    const inputFilter = this.contentFilter.filterInput(message);
+    const inputFilter = this.contentFilter.filterInput(mergedText);
 
     if (!inputFilter.allowed) {
-      // Log de termos bloqueados
       await db.insert(aiBlockedTermsLog).values({
         salonId,
         conversationId: conversation.id,
-        originalMessage: message,
+        originalMessage: mergedText,
         blockedTerms: inputFilter.blockedTerms,
         layer: 'INPUT',
       });
 
       const blockedResponse = this.contentFilter.getBlockedResponse();
 
-      await this.saveMessage(conversation.id, 'client', message, intent, true, false, 'INPUT_BLOCKED');
+      await this.saveMessage(conversation.id, 'client', mergedText, intent, true, false, 'INPUT_BLOCKED');
       await this.saveMessage(conversation.id, 'ai', blockedResponse, intent, false, false);
 
       await this.logInteraction(
-        salonId,
-        conversation.id,
-        clientPhone,
-        message,
-        blockedResponse,
-        intent,
-        true,
-        'INPUT',
-        Date.now() - startTime,
+        salonId, conversation.id, clientPhone,
+        mergedText, blockedResponse, intent,
+        true, 'INPUT', Date.now() - startTime,
       );
 
       return {
@@ -273,15 +293,12 @@ export class AlexisService {
     let aiResponse: string;
 
     try {
-      // Tratamento especial para agendamento
-      if (intent === 'SCHEDULE') {
-        aiResponse = await this.handleSchedulingIntent(salonId, clientPhone, message, context);
-      }
-      // Tratamento especial para produtos (ALFA.2)
-      else if (intent === 'PRODUCT_INFO' || intent === 'PRICE_INFO') {
-        aiResponse = await this.handleProductIntent(salonId, message);
+      if (intent === 'PRODUCT_INFO' || intent === 'PRICE_INFO') {
+        aiResponse = await this.handleProductIntent(salonId, mergedText);
       } else {
-        aiResponse = await this.gemini.generateResponse(context.salon?.name || 'Salão', message, context, history);
+        aiResponse = await this.gemini.generateResponse(
+          context.salon?.name || 'Salão', mergedText, context, history,
+        );
       }
     } catch (error: any) {
       this.logger.error('Erro na geração de resposta:', error?.message || error);
@@ -303,34 +320,35 @@ export class AlexisService {
 
     const filteredResponse = outputFilter.filtered;
 
-    // DELTA: Compoe resposta humanizada
+    // DELTA: Compoe resposta humanizada — anti-greeting se já saudou
     const finalResponse = await this.composer.compose({
       salonId,
       phone: clientPhone,
       clientName,
       intent,
       baseText: filteredResponse,
+      skipGreeting: state.userAlreadyGreeted,
     });
 
+    // Atualiza greeting state
+    if (!state.userAlreadyGreeted) {
+      await this.stateStore.updateState(conversation.id, {
+        userAlreadyGreeted: true,
+        lastGreetingAt: nowIso(),
+      });
+    }
+
     // Salva mensagens
-    await this.saveMessage(conversation.id, 'client', message, intent, false, false);
+    await this.saveMessage(conversation.id, 'client', mergedText, intent, false, false);
     await this.saveMessage(
-      conversation.id,
-      'ai',
-      finalResponse,
-      intent,
-      !outputFilter.safe,
-      false,
+      conversation.id, 'ai', finalResponse, intent,
+      !outputFilter.safe, false,
       !outputFilter.safe ? 'OUTPUT_BLOCKED' : undefined,
     );
 
     await this.logInteraction(
-      salonId,
-      conversation.id,
-      clientPhone,
-      message,
-      finalResponse,
-      intent,
+      salonId, conversation.id, clientPhone,
+      mergedText, finalResponse, intent,
       !inputFilter.allowed || !outputFilter.safe,
       !outputFilter.safe ? 'OUTPUT' : undefined,
       Date.now() - startTime,
@@ -377,6 +395,189 @@ export class AlexisService {
       .where(eq(aiConversations.id, conversationId));
 
     this.logger.log(`Conversa ${conversationId} retomada pela IA`);
+  }
+
+  /**
+   * =====================================================
+   * DEBOUNCE — anti-atropelo (in-memory por conversa)
+   * Se lock ativo: append no buffer e retorna DEFER
+   * Se lock livre: OWNER, espera debounceMs, consolida
+   * =====================================================
+   */
+  handleDebounce(
+    conversationId: string,
+    text: string,
+  ): Promise<{ deferred: boolean; mergedText?: string }> {
+    return new Promise((resolve) => {
+      const existing = this.debounceMap.get(conversationId);
+
+      if (existing) {
+        // Já tem owner — append e defer
+        existing.buffer.push(text);
+        clearTimeout(existing.timer);
+        existing.timer = setTimeout(() => existing.resolveOwner(), DEBOUNCE_MS);
+        resolve({ deferred: true });
+        return;
+      }
+
+      // Novo owner
+      const entry: {
+        buffer: string[];
+        timer: NodeJS.Timeout;
+        resolveOwner: () => void;
+      } = {
+        buffer: [text],
+        timer: null as any,
+        resolveOwner: null as any,
+      };
+
+      const ownerReady = new Promise<void>((resolveOwner) => {
+        entry.resolveOwner = resolveOwner;
+      });
+
+      entry.timer = setTimeout(() => entry.resolveOwner(), DEBOUNCE_MS);
+      this.debounceMap.set(conversationId, entry);
+
+      ownerReady.then(() => {
+        const final = this.debounceMap.get(conversationId);
+        const merged = mergeBufferTexts(final?.buffer || [text]);
+        this.debounceMap.delete(conversationId);
+        resolve({ deferred: false, mergedText: merged });
+      });
+    });
+  }
+
+  /**
+   * =====================================================
+   * FSM TURN — Processa turno dentro de skill ativa
+   * =====================================================
+   */
+  private async handleFSMTurn(
+    conversationId: string,
+    salonId: string,
+    clientPhone: string,
+    _clientName: string | undefined,
+    text: string,
+    state: ConversationState,
+    startTime: number,
+  ): Promise<ProcessMessageResult> {
+    const context = await this.dataCollector.collectContext(salonId, clientPhone);
+    const skillCtx: SkillContext = { services: (context.services || []) as any };
+
+    const result = handleSchedulingTurn(state, text, skillCtx);
+
+    // Compoe resposta — sempre skipGreeting em FSM (conversa em andamento)
+    const finalResponse = result.replyText;
+
+    // Persiste state
+    await this.stateStore.updateState(conversationId, {
+      ...result.nextState,
+      userAlreadyGreeted: true,
+    });
+
+    await this.saveMessage(conversationId, 'client', text, 'SCHEDULE', false, false);
+    await this.saveMessage(conversationId, 'ai', finalResponse, 'SCHEDULE', false, false);
+
+    await this.logInteraction(
+      salonId, conversationId, clientPhone,
+      text, finalResponse, 'SCHEDULE',
+      false, undefined, Date.now() - startTime,
+    );
+
+    return {
+      response: finalResponse,
+      intent: 'SCHEDULE',
+      blocked: false,
+      shouldSend: true,
+      statusChanged: false,
+    };
+  }
+
+  /**
+   * =====================================================
+   * FSM START — Inicia scheduling skill
+   * =====================================================
+   */
+  private async handleFSMStart(
+    conversationId: string,
+    salonId: string,
+    clientPhone: string,
+    _clientName: string | undefined,
+    text: string,
+    state: ConversationState,
+    startTime: number,
+  ): Promise<ProcessMessageResult> {
+    const context = await this.dataCollector.collectContext(salonId, clientPhone);
+    const services = context.services || [];
+
+    // Se o texto já contém um serviço, pular AWAITING_SERVICE e ir direto
+    const skillCtx: SkillContext = { services: services as any };
+    const result = startScheduling();
+
+    // Tenta já resolver serviço na mesma mensagem (ex.: "quero agendar alisamento")
+    const matched = fuzzyMatchService(text, services) as any;
+    if (matched) {
+      const turnResult = handleSchedulingTurn(
+        { ...state, ...result.nextState } as ConversationState,
+        text,
+        skillCtx,
+      );
+
+      await this.stateStore.updateState(conversationId, {
+        ...turnResult.nextState,
+        userAlreadyGreeted: true,
+      });
+
+      await this.saveMessage(conversationId, 'client', text, 'SCHEDULE', false, false);
+      await this.saveMessage(conversationId, 'ai', turnResult.replyText, 'SCHEDULE', false, false);
+
+      await this.logInteraction(
+        salonId, conversationId, clientPhone,
+        text, turnResult.replyText, 'SCHEDULE',
+        false, undefined, Date.now() - startTime,
+      );
+
+      return {
+        response: turnResult.replyText,
+        intent: 'SCHEDULE',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    }
+
+    // Sem serviço na mensagem — pergunta
+    await this.stateStore.updateState(conversationId, {
+      ...result.nextState,
+      userAlreadyGreeted: true,
+    });
+
+    // Lista serviços na primeira pergunta
+    const serviceList = services
+      .slice(0, 8)
+      .map((s: any) => `• ${s.name} - R$ ${s.price}`)
+      .join('\n');
+
+    const replyText = serviceList
+      ? `Claro, vou te ajudar a agendar! 😊\n\nQual serviço você gostaria?\n\n${serviceList}\n\nÉ só me dizer o serviço e sua preferência de dia/horário!`
+      : result.replyText;
+
+    await this.saveMessage(conversationId, 'client', text, 'SCHEDULE', false, false);
+    await this.saveMessage(conversationId, 'ai', replyText, 'SCHEDULE', false, false);
+
+    await this.logInteraction(
+      salonId, conversationId, clientPhone,
+      text, replyText, 'SCHEDULE',
+      false, undefined, Date.now() - startTime,
+    );
+
+    return {
+      response: replyText,
+      intent: 'SCHEDULE',
+      blocked: false,
+      shouldSend: true,
+      statusChanged: false,
+    };
   }
 
   /**
