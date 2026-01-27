@@ -13,9 +13,11 @@ import {
   detectPeriod,
   isAvailabilityQuestion,
   isStaffQuestion,
+  isInfoQuestion,
   PERIOD_SUGGESTIONS,
 } from './scheduling-skill';
 import { replySig } from './conversation-state.store';
+import { MAX_DECLINES } from './conversation-state';
 import {
   composeResponse,
   shouldGreet,
@@ -180,12 +182,34 @@ describe('scheduling FSM', () => {
       expect(result.replyText).toContain('recepção');
     });
 
-    it('"não" => cancels, resets state', () => {
+    it('"não" => sales retake: back to AWAITING_DATETIME, keeps service slots', () => {
       const result = handleSchedulingTurn(stateAwaitingConfirm, 'não', { services });
+      expect(result.nextState.step).toBe('AWAITING_DATETIME');
+      expect(result.nextState.slots?.serviceId).toBe('1');
+      expect(result.nextState.slots?.serviceLabel).toBe('Alisamento');
+      expect(result.nextState.declineCount).toBe(1);
+      expect(result.handover).toBeUndefined();
+      expect(result.replyText).toContain('Alisamento');
+      expect(result.replyText).toContain('posso tentar');
+    });
+
+    it('"não" suggests alternatives in same period (morning for 10:00)', () => {
+      const result = handleSchedulingTurn(stateAwaitingConfirm, 'não', { services });
+      expect(result.replyText).toContain('manhã');
+      expect(result.replyText).toContain('09h');
+    });
+
+    it('3 declines => handover with summary', () => {
+      const stateWith2Declines: ConversationState = {
+        ...stateAwaitingConfirm,
+        declineCount: MAX_DECLINES - 1,
+      };
+      const result = handleSchedulingTurn(stateWith2Declines, 'não', { services });
       expect(result.nextState.activeSkill).toBe('NONE');
       expect(result.nextState.step).toBe('NONE');
-      expect(result.handover).toBeUndefined();
-      expect(result.replyText).toContain('Sem problemas');
+      expect(result.handover).toBe(true);
+      expect(result.nextState.handoverSummary).toContain('Alisamento');
+      expect(result.nextState.handoverSummary).toContain(`${MAX_DECLINES}x`);
     });
 
     it('"talvez" => repeats confirmation question', () => {
@@ -579,5 +603,101 @@ describe('softened availability copy', () => {
     const result = handleSchedulingTurn(stateAwaitingDatetime, 'qual horário tem livre?', { services });
     expect(result.replyText).toContain('posso tentar');
     expect(result.replyText).not.toMatch(/\btemos\b/);
+  });
+});
+
+// =====================================================
+// 11. INFO QUESTION DETECTION (P0.1.3)
+// =====================================================
+describe('isInfoQuestion', () => {
+  it('"quanto custa o corte?" => true', () => {
+    expect(isInfoQuestion('quanto custa o corte?')).toBe(true);
+  });
+
+  it('"qual o preço do alisamento?" => true', () => {
+    expect(isInfoQuestion('qual o preço do alisamento?')).toBe(true);
+  });
+
+  it('"que hora abre?" => true', () => {
+    expect(isInfoQuestion('que hora abre?')).toBe(true);
+  });
+
+  it('"até que hora funciona?" => true', () => {
+    expect(isInfoQuestion('até que hora funciona?')).toBe(true);
+  });
+
+  it('"horário de funcionamento" => true', () => {
+    expect(isInfoQuestion('horário de funcionamento')).toBe(true);
+  });
+
+  it('"amanhã 10h" => false', () => {
+    expect(isInfoQuestion('amanhã 10h')).toBe(false);
+  });
+
+  it('"sim" => false', () => {
+    expect(isInfoQuestion('sim')).toBe(false);
+  });
+});
+
+// =====================================================
+// 12. INFO INTERRUPTION DURING SCHEDULING (P0.1.3)
+// =====================================================
+describe('info interruption during scheduling', () => {
+  const services = [
+    { id: '1', name: 'Alisamento', price: 250 },
+  ];
+
+  it('AWAITING_CONFIRM: "quanto custa?" => interruptionQuery + resume prompt', () => {
+    const state: ConversationState = {
+      ...defaultState(),
+      activeSkill: 'SCHEDULING',
+      step: 'AWAITING_CONFIRM',
+      slots: { serviceId: '1', serviceLabel: 'Alisamento', dateISO: '2026-01-28', time: '10:00' },
+      ttlExpiresAt: bumpTTL(),
+    };
+    const result = handleSchedulingTurn(state, 'quanto custa o corte?', { services });
+    expect(result.interruptionQuery).toBe(true);
+    expect(result.replyText).toContain('Voltando ao seu agendamento');
+    expect(result.replyText).toContain('Alisamento');
+    expect(result.nextState.step).toBeUndefined(); // no FSM reset
+  });
+
+  it('AWAITING_DATETIME: "que hora abre?" => interruptionQuery + resume', () => {
+    const state: ConversationState = {
+      ...defaultState(),
+      activeSkill: 'SCHEDULING',
+      step: 'AWAITING_DATETIME',
+      slots: { serviceId: '1', serviceLabel: 'Alisamento' },
+      ttlExpiresAt: bumpTTL(),
+    };
+    const result = handleSchedulingTurn(state, 'que hora abre?', { services });
+    expect(result.interruptionQuery).toBe(true);
+    expect(result.replyText).toContain('Voltando');
+    expect(result.nextState.step).toBeUndefined();
+  });
+
+  it('non-info question does NOT trigger interruptionQuery', () => {
+    const state: ConversationState = {
+      ...defaultState(),
+      activeSkill: 'SCHEDULING',
+      step: 'AWAITING_DATETIME',
+      slots: { serviceId: '1', serviceLabel: 'Alisamento' },
+      ttlExpiresAt: bumpTTL(),
+    };
+    const result = handleSchedulingTurn(state, 'amanhã 10h', { services });
+    expect(result.interruptionQuery).toBeUndefined();
+  });
+});
+
+// =====================================================
+// 13. SALES RETAKE — declineCount + MAX_DECLINES (P0.1.3)
+// =====================================================
+describe('sales retake constants', () => {
+  it('MAX_DECLINES is 3', () => {
+    expect(MAX_DECLINES).toBe(3);
+  });
+
+  it('defaultState has declineCount 0', () => {
+    expect(defaultState().declineCount).toBe(0);
   });
 });
