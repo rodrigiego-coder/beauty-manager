@@ -15,6 +15,7 @@ import {
   isStaffQuestion,
   isInfoQuestion,
   PERIOD_SUGGESTIONS,
+  resolveDate,
 } from './scheduling-skill';
 import { replySig } from './conversation-state.store';
 import { MAX_DECLINES } from './conversation-state';
@@ -315,18 +316,102 @@ describe('parseDatetime', () => {
     }
   });
 
-  it('"hoje de tarde" => ParsedPeriod with today date', () => {
+  it('"hoje de tarde" => ParsedPeriod with today date (SP timezone)', () => {
     const result = parseDatetime('hoje de tarde');
     expect(result).not.toBeNull();
     expect(result).not.toBe('INVALID_HOUR');
     if (result && result !== 'INVALID_HOUR' && 'period' in result) {
       expect(result.period).toBe('TARDE');
-      const today = new Date();
-      const expectedISO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      // Usa resolveDate para obter a data esperada em SP
+      const todaySP = resolveDate('hoje');
+      const expectedISO = `${todaySP.getFullYear()}-${String(todaySP.getMonth() + 1).padStart(2, '0')}-${String(todaySP.getDate()).padStart(2, '0')}`;
       expect(result.dateISO).toBe(expectedISO);
     } else {
       fail('Expected ParsedPeriod');
     }
+  });
+});
+
+// =====================================================
+// 3a. "amanhã as 10" + service combo (P0.5)
+// =====================================================
+describe('parseDatetime — "as N" pattern', () => {
+  it('"amanhã as 10" => ParsedDatetime 10:00', () => {
+    const result = parseDatetime('amanhã as 10');
+    expect(result).not.toBeNull();
+    expect(result).not.toBe('INVALID_HOUR');
+    if (result && result !== 'INVALID_HOUR' && 'time' in result) {
+      expect(result.time).toBe('10:00');
+    } else {
+      fail('Expected ParsedDatetime with time');
+    }
+  });
+
+  it('"amanhã às 10h" => ParsedDatetime 10:00', () => {
+    const result = parseDatetime('amanhã às 10h');
+    expect(result).not.toBeNull();
+    if (result && result !== 'INVALID_HOUR' && 'time' in result) {
+      expect(result.time).toBe('10:00');
+    }
+  });
+
+  it('"amanha as 10:30" => ParsedDatetime 10:30', () => {
+    const result = parseDatetime('amanha as 10:30');
+    expect(result).not.toBeNull();
+    if (result && result !== 'INVALID_HOUR' && 'time' in result) {
+      expect(result.time).toBe('10:30');
+    }
+  });
+
+  it('"depois de amanhã as 14" => ParsedDatetime 14:00 + date +2', () => {
+    const result = parseDatetime('depois de amanhã as 14');
+    expect(result).not.toBeNull();
+    if (result && result !== 'INVALID_HOUR' && 'time' in result) {
+      expect(result.time).toBe('14:00');
+      const dayAfterTomorrow = resolveDate('depois de amanha');
+      const expectedISO = `${dayAfterTomorrow.getFullYear()}-${String(dayAfterTomorrow.getMonth() + 1).padStart(2, '0')}-${String(dayAfterTomorrow.getDate()).padStart(2, '0')}`;
+      expect(result.dateISO).toBe(expectedISO);
+    }
+  });
+});
+
+describe('service + datetime combo in AWAITING_SERVICE', () => {
+  const services = [
+    { id: 'svc-1', name: 'Mechas', price: 250 },
+    { id: 'svc-2', name: 'Corte', price: 80 },
+  ];
+
+  it('"mechas amanhã as 10" => goes to AWAITING_CONFIRM with time 10:00', () => {
+    const state: ConversationState = {
+      ...defaultState(),
+      activeSkill: 'SCHEDULING',
+      step: 'AWAITING_SERVICE',
+    };
+    const result = handleSchedulingTurn(state, 'mechas amanhã as 10', { services });
+    expect(result.nextState.step).toBe('AWAITING_CONFIRM');
+    expect(result.nextState.slots?.time).toBe('10:00');
+    expect(result.replyText).toContain('sim/não');
+  });
+
+  it('"corte amanhã 10h" => goes to AWAITING_CONFIRM', () => {
+    const state: ConversationState = {
+      ...defaultState(),
+      activeSkill: 'SCHEDULING',
+      step: 'AWAITING_SERVICE',
+    };
+    const result = handleSchedulingTurn(state, 'corte amanhã 10h', { services });
+    expect(result.nextState.step).toBe('AWAITING_CONFIRM');
+    expect(result.nextState.slots?.time).toBe('10:00');
+  });
+
+  it('"mechas" sem hora => goes to AWAITING_DATETIME (não AWAITING_CONFIRM)', () => {
+    const state: ConversationState = {
+      ...defaultState(),
+      activeSkill: 'SCHEDULING',
+      step: 'AWAITING_SERVICE',
+    };
+    const result = handleSchedulingTurn(state, 'mechas', { services });
+    expect(result.nextState.step).toBe('AWAITING_DATETIME');
   });
 });
 

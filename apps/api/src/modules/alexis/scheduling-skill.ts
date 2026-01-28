@@ -223,12 +223,29 @@ function handleAwaitingService(
   const matched = fuzzyMatchService(text, context.services);
 
   if (matched) {
-    return transitionAfterService(
+    const result = transitionAfterService(
       (matched as any).id,
       matched.name,
       context,
       `Ótima escolha! *${matched.name}* 😊`,
     );
+
+    // Se transicionou para AWAITING_DATETIME, tenta extrair data+hora da mesma mensagem
+    if (result.nextState.step === 'AWAITING_DATETIME') {
+      const parsed = parseDatetime(text);
+      if (parsed && parsed !== 'INVALID_HOUR' && 'time' in parsed) {
+        return {
+          nextState: {
+            ...result.nextState,
+            step: 'AWAITING_CONFIRM',
+            slots: { ...result.nextState.slots, dateISO: parsed.dateISO, time: parsed.time },
+          },
+          replyText: `Perfeito! Posso confirmar *${matched.name}* para *${parsed.display}*? (sim/não)`,
+        };
+      }
+    }
+
+    return result;
   }
 
   // 2. Lexicon fallback: resolve dialeto → serviço canônico → fuzzy match
@@ -411,9 +428,12 @@ export function parseDatetime(
 ): ParsedDatetime | ParsedPeriod | 'INVALID_HOUR' | null {
   const normalized = normalizeText(text);
 
-  // Extrai horário: "10h", "10:30", "14h30", "10 horas"
+  // Extrai horário: "10h", "10:30", "14h30", "10 horas", "as 10", "às 10"
+  // Nota: normalizeText já remove acentos, então "às" → "as"
   const timeMatch = normalized.match(
     /(\d{1,2})(?::(\d{2})|h(\d{2})?|\s*horas?)/,
+  ) || normalized.match(
+    /\bas\s+(\d{1,2})(?::(\d{2}))?(?:\s|$)/,
   );
 
   // Detecta período do dia
@@ -457,15 +477,29 @@ export function detectPeriod(normalized: string): DayPeriod | null {
   return null;
 }
 
-/** Resolve data base do texto: "hoje" → hoje, default → amanhã */
-function resolveDate(normalized: string): Date {
-  const today = new Date();
-  if (normalized.includes('hoje')) {
-    return new Date(today);
-  }
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  return tomorrow;
+/**
+ * Resolve data base do texto usando America/Sao_Paulo.
+ * "hoje" → hoje, "depois de amanhã" → +2, default → amanhã.
+ */
+export function resolveDate(normalized: string): Date {
+  // Obtem data atual em São Paulo via Intl (sem dependência externa)
+  const now = new Date();
+  const spFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const spParts = spFormatter.formatToParts(now);
+  const y = parseInt(spParts.find((p) => p.type === 'year')!.value, 10);
+  const m = parseInt(spParts.find((p) => p.type === 'month')!.value, 10) - 1;
+  const d = parseInt(spParts.find((p) => p.type === 'day')!.value, 10);
+
+  let offset = 1; // default: amanhã
+  if (normalized.includes('hoje')) offset = 0;
+  else if (/depois\s+de\s+amanha/.test(normalized)) offset = 2;
+
+  return new Date(y, m, d + offset);
 }
 
 /** Formata Date para YYYY-MM-DD */
