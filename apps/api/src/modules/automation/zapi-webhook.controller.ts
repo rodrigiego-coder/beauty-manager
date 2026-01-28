@@ -51,6 +51,21 @@ export interface PayloadSummary {
 }
 
 // =====================================================
+// CONSTANTS (ALFA.3.1)
+// =====================================================
+
+/**
+ * TTL for messageId dedupe cache (5 minutes in ms)
+ * Z-API may retry webhooks within seconds, 5 min is safe margin
+ */
+const DEDUPE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Max entries in dedupe cache before triggering cleanup
+ */
+const DEDUPE_MAX_ENTRIES = 5000;
+
+// =====================================================
 // PURE HELPER FUNCTIONS (ALFA.4)
 // =====================================================
 
@@ -135,10 +150,70 @@ export function shouldIgnorePayload(payload: ZapiPayload): { ignore: boolean; re
 export class ZapiWebhookController {
   private readonly logger = new Logger(ZapiWebhookController.name);
 
+  /**
+   * ALFA.3.1: In-memory cache for deduplicating webhook retries
+   * Key: messageId from Z-API, Value: timestamp when first processed
+   */
+  private readonly processedMessageIds = new Map<string, number>();
+
   constructor(
     private readonly alexisService: AlexisService,
     private readonly whatsappService: WhatsAppService,
   ) {}
+
+  // =====================================================
+  // DEDUPE HELPERS (ALFA.3.1)
+  // =====================================================
+
+  /**
+   * Check if messageId was already processed (within TTL)
+   * Returns true if duplicate, false if new message
+   */
+  private isMessageProcessed(messageId: string): boolean {
+    const processedAt = this.processedMessageIds.get(messageId);
+    if (!processedAt) {
+      return false;
+    }
+
+    // Check if TTL expired
+    if (Date.now() - processedAt > DEDUPE_TTL_MS) {
+      this.processedMessageIds.delete(messageId);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Mark messageId as processed
+   */
+  private markMessageProcessed(messageId: string): void {
+    this.processedMessageIds.set(messageId, Date.now());
+
+    // Cleanup if cache grows too large
+    if (this.processedMessageIds.size > DEDUPE_MAX_ENTRIES) {
+      this.purgeExpiredMessages();
+    }
+  }
+
+  /**
+   * Remove expired entries from cache
+   */
+  private purgeExpiredMessages(): void {
+    const now = Date.now();
+    let purged = 0;
+
+    for (const [messageId, timestamp] of this.processedMessageIds) {
+      if (now - timestamp > DEDUPE_TTL_MS) {
+        this.processedMessageIds.delete(messageId);
+        purged++;
+      }
+    }
+
+    if (purged > 0) {
+      this.logger.debug(`Purged ${purged} expired messageIds from dedupe cache`);
+    }
+  }
 
   /**
    * Recebe mensagens do Z-API
@@ -152,6 +227,12 @@ export class ZapiWebhookController {
     this.logger.log(`Webhook recebido: ${JSON.stringify(summary)}`);
 
     try {
+      // ALFA.3.1: Dedupe by messageId (Z-API may retry webhooks)
+      if (summary.messageId && this.isMessageProcessed(summary.messageId)) {
+        this.logger.debug(`DEDUPED inbound messageId=${summary.messageId}`);
+        return { received: true, deduped: true };
+      }
+
       // ALFA.4: Check if should ignore (group, newsletter, fromMe, no text)
       const ignoreCheck = shouldIgnorePayload(payload);
       if (ignoreCheck.ignore) {
@@ -164,6 +245,11 @@ export class ZapiWebhookController {
       const clientName = payload.senderName || payload.pushName || undefined;
 
       this.logger.log(`Mensagem de ${phone} (${clientName || 'sem nome'}): "${summary.messagePreview}"`);
+
+      // ALFA.3.1: Mark messageId as processed BEFORE calling Alexis
+      if (summary.messageId) {
+        this.markMessageProcessed(summary.messageId);
+      }
 
       // ALFA.4: Resolve salon with env vars and deterministic fallback
       const salonId = await this.resolveSalonId();
