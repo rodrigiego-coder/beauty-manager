@@ -35,16 +35,16 @@ describe('ResponseComposerService - Pure Functions (DELTA)', () => {
       expect(shouldGreet(null)).toBe(true);
     });
 
-    it('should return true if greeted more than 12 hours ago', () => {
-      const thirteenHoursAgo = new Date();
-      thirteenHoursAgo.setHours(thirteenHoursAgo.getHours() - 13);
-      expect(shouldGreet(thirteenHoursAgo)).toBe(true);
+    it('should return true if greeted more than 2 hours ago', () => {
+      const threeHoursAgo = new Date();
+      threeHoursAgo.setHours(threeHoursAgo.getHours() - 3);
+      expect(shouldGreet(threeHoursAgo)).toBe(true);
     });
 
-    it('should return false if greeted within 12 hours', () => {
-      const fiveHoursAgo = new Date();
-      fiveHoursAgo.setHours(fiveHoursAgo.getHours() - 5);
-      expect(shouldGreet(fiveHoursAgo)).toBe(false);
+    it('should return false if greeted within 2 hours', () => {
+      const oneHourAgo = new Date();
+      oneHourAgo.setHours(oneHourAgo.getHours() - 1);
+      expect(shouldGreet(oneHourAgo)).toBe(false);
     });
 
     it('should respect custom window hours', () => {

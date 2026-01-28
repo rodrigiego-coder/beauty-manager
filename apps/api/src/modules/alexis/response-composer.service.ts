@@ -51,7 +51,7 @@ export function getGreeting(): string {
  * Verifica se deve repetir saudacao/apresentacao
  * Janela padrao: 12 horas
  */
-export function shouldGreet(lastGreetedAt: Date | null, windowHours = 12): boolean {
+export function shouldGreet(lastGreetedAt: Date | null, windowHours = 2): boolean {
   if (!lastGreetedAt) return true;
   const now = new Date();
   const diff = now.getTime() - lastGreetedAt.getTime();
@@ -106,10 +106,8 @@ export function composeResponse(params: {
     parts.push(`${params.greeting}, ${firstName}!`);
   } else if (params.greeting) {
     parts.push(`${params.greeting}!`);
-  } else if (firstName) {
-    // skipGreeting=true mas temos nome — não prefixar vírgula
-    parts.push(`${firstName},`);
   }
+  // skipGreeting=true e temos nome — NÃO prefixar (anti-repetição P0.5)
 
   // Apresentacao (apenas no primeiro contato da janela)
   if (params.introduction) {

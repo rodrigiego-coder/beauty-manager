@@ -84,7 +84,7 @@ export class ConversationStateStore {
   async tryRegisterReply(
     conversationId: string,
     replyText: string,
-    windowMs = 5000,
+    windowMs = 600_000,
   ): Promise<boolean> {
     try {
       const sig = replySig(replyText);

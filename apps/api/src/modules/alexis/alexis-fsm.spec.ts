@@ -743,7 +743,7 @@ describe('P0.4 greeting format', () => {
     expect(result).not.toMatch(/^,/); // never starts with comma
   });
 
-  it('no greeting + name does NOT start with comma', () => {
+  it('no greeting + name does NOT prefix name (anti-repetição P0.5)', () => {
     const result = composeResponse({
       greeting: '',
       introduction: null,
@@ -753,8 +753,8 @@ describe('P0.4 greeting format', () => {
       askName: false,
     });
     expect(result).not.toMatch(/^,/);
-    expect(result).not.toContain(', João');
-    expect(result).toContain('João,');
+    expect(result).not.toContain('João,');
+    expect(result).toBe('Aqui estão os horários.');
   });
 
   it('no greeting + no name => only baseText', () => {
