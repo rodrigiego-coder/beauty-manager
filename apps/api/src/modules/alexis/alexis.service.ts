@@ -40,6 +40,7 @@ import { matchLexicon } from './lexicon/lexicon-resolver';
 import { getLexiconEnabled } from './lexicon/lexicon-feature-flag';
 import { buildLexiconTelemetry, LexiconTelemetryEvent } from './lexicon/lexicon-telemetry';
 import { resolveServicePrice, formatServicePriceResponse } from './lexicon/service-price-resolver';
+import { resolveRelativeDate } from './relative-date-resolver';
 
 /**
  * =====================================================
@@ -185,6 +186,25 @@ export class AlexisService {
       };
     }
     const mergedText = debounceResult.mergedText!;
+
+    // ========== RELATIVE DATE: resposta determinística (P0.5) ==========
+    const dateResult = resolveRelativeDate(mergedText);
+    if (dateResult.matched && dateResult.response) {
+      await this.saveMessage(conversation.id, 'client', mergedText, 'DATE_INFO', false, false);
+      await this.saveMessage(conversation.id, 'ai', dateResult.response, 'DATE_INFO', false, false);
+      await this.logInteraction(
+        salonId, conversation.id, clientPhone,
+        mergedText, dateResult.response, 'DATE_INFO',
+        false, undefined, Date.now() - startTime,
+      );
+      return {
+        response: dateResult.response,
+        intent: 'DATE_INFO',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    }
 
     // Carrega FSM state
     const state = await this.stateStore.getState(conversation.id);
