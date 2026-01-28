@@ -119,7 +119,7 @@ export class PublicBookingController {
   @Get(':salonSlug/professionals')
   async getAvailableProfessionals(
     @Param('salonSlug') salonSlug: string,
-    @Query('serviceId') _serviceId?: string,
+    @Query('serviceId') serviceId?: string,
   ) {
     const salon = await this.findSalonBySlug(salonSlug);
     await this.checkBookingEnabled(salon.id);
@@ -145,8 +145,29 @@ export class PublicBookingController {
       )
       .orderBy(schema.users.name);
 
-    // TODO: Filtrar por serviço (professional_services)
-    // if (_serviceId) { ... }
+    // Filtra por professional_services quando serviceId informado
+    if (serviceId) {
+      const sid = parseInt(serviceId, 10);
+      if (!isNaN(sid)) {
+        const enabledIds = await this.db
+          .select({ professionalId: schema.professionalServices.professionalId })
+          .from(schema.professionalServices)
+          .innerJoin(schema.users, eq(schema.professionalServices.professionalId, schema.users.id))
+          .where(
+            and(
+              eq(schema.professionalServices.serviceId, sid),
+              eq(schema.professionalServices.enabled, true),
+              eq(schema.users.salonId, salon.id),
+            ),
+          );
+
+        // Só filtra se existirem assignments (fallback legacy: sem filtro)
+        if (enabledIds.length > 0) {
+          const aptSet = new Set(enabledIds.map((r) => r.professionalId));
+          return professionals.filter((p) => aptSet.has(p.id));
+        }
+      }
+    }
 
     return professionals;
   }
@@ -192,10 +213,30 @@ export class PublicBookingController {
       professionalsConditions.push(eq(schema.users.id, professionalId));
     }
 
-    const professionals = await this.db
+    let professionals = await this.db
       .select()
       .from(schema.users)
       .where(and(...professionalsConditions));
+
+    // Filtra por professional_services quando serviceId informado
+    if (serviceId) {
+      const enabledIds = await this.db
+        .select({ professionalId: schema.professionalServices.professionalId })
+        .from(schema.professionalServices)
+        .innerJoin(schema.users, eq(schema.professionalServices.professionalId, schema.users.id))
+        .where(
+          and(
+            eq(schema.professionalServices.serviceId, serviceId),
+            eq(schema.professionalServices.enabled, true),
+            eq(schema.users.salonId, salon.id),
+          ),
+        );
+
+      if (enabledIds.length > 0) {
+        const aptSet = new Set(enabledIds.map((r) => r.professionalId));
+        professionals = professionals.filter((p) => aptSet.has(p.id));
+      }
+    }
 
     const slots: AvailableSlot[] = [];
 
