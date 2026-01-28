@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { db } from '../../database/connection';
-import { appointments, services, users, clients } from '../../database/schema';
+import { appointments, services, users, clients, professionalServices } from '../../database/schema';
 import { eq, and } from 'drizzle-orm';
 
 /**
@@ -60,9 +60,28 @@ export class AlexisSchedulerService {
         .from(users)
         .where(and(eq(users.salonId, salonId), eq(users.role, 'STYLIST'), eq(users.active, true)));
 
+      // Filtra por professional_services (se houver assignments para o serviço)
+      const enabledIds = await db
+        .select({ professionalId: professionalServices.professionalId })
+        .from(professionalServices)
+        .innerJoin(users, eq(professionalServices.professionalId, users.id))
+        .where(
+          and(
+            eq(professionalServices.serviceId, serviceId),
+            eq(professionalServices.enabled, true),
+            eq(users.salonId, salonId),
+          ),
+        );
+
+      let filteredProfessionals = allProfessionals;
+      if (enabledIds.length > 0) {
+        const aptSet = new Set(enabledIds.map((r) => r.professionalId));
+        filteredProfessionals = allProfessionals.filter((p) => aptSet.has(p.id));
+      }
+
       const targetProfessionals = professionalId
-        ? allProfessionals.filter((p) => p.id === professionalId)
-        : allProfessionals;
+        ? filteredProfessionals.filter((p) => p.id === professionalId)
+        : filteredProfessionals;
 
       if (targetProfessionals.length === 0) {
         return [];
