@@ -17,15 +17,23 @@ describe('ZapiWebhookController - Pure Functions (ALFA.4)', () => {
   // isValidUuid
   // =====================================================
   describe('isValidUuid', () => {
-    it('should return true for valid UUID v4', () => {
+    it('should return true for valid UUID (any version)', () => {
+      // v4 UUIDs
       expect(isValidUuid('550e8400-e29b-41d4-a716-446655440000')).toBe(true);
       expect(isValidUuid('6ba7b810-9dad-41d8-80b4-00c04fd430c8')).toBe(true);
+      // v1 UUID
+      expect(isValidUuid('550e8400-e29b-11d4-a716-446655440000')).toBe(true);
+      // Synthetic UUID (all a's)
+      expect(isValidUuid('aaaaaaa1-aaaa-aaaa-aaaa-aaaaaaaaaaaa')).toBe(true);
+      // Mixed case
+      expect(isValidUuid('550E8400-E29B-41D4-A716-446655440000')).toBe(true);
     });
 
-    it('should return false for invalid UUID', () => {
+    it('should return false for invalid UUID format', () => {
       expect(isValidUuid('not-a-uuid')).toBe(false);
-      expect(isValidUuid('550e8400-e29b-11d4-a716-446655440000')).toBe(false); // v1, not v4
-      expect(isValidUuid('550e8400-e29b-41d4-c716-446655440000')).toBe(false); // wrong variant
+      expect(isValidUuid('550e8400-e29b-41d4-a716')).toBe(false); // too short
+      expect(isValidUuid('550e8400-e29b-41d4-a716-446655440000-extra')).toBe(false); // too long
+      expect(isValidUuid('550e8400e29b41d4a716446655440000')).toBe(false); // no dashes
       expect(isValidUuid('')).toBe(false);
     });
 
