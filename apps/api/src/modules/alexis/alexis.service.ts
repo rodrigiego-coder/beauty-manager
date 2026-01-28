@@ -187,6 +187,31 @@ export class AlexisService {
     }
     const mergedText = debounceResult.mergedText!;
 
+    // ========== P0: CARREGA FSM STATE LOGO APÓS DEBOUNCE ==========
+    const state = await this.stateStore.getState(conversation.id);
+
+    // ========== P0: FSM ATIVA TEM PRIORIDADE ABSOLUTA ==========
+    // Se SCHEDULING com step !== 'NONE', vai direto para FSM (NÃO cai em IA/fallback)
+    if (state.activeSkill === 'SCHEDULING' && state.step !== 'NONE') {
+      this.logger.debug(`[Router] FSM_ACTIVE: step=${state.step}, conversationId=${conversation.id}`);
+      return this.handleFSMTurn(
+        conversation.id, salonId, clientPhone, clientName, mergedText, state, startTime,
+      );
+    }
+
+    // ========== CONTINUAÇÃO TRANSACIONAL: SCHEDULE (fallback se FSM state perdido) ==========
+    // Roda ANTES de resolveRelativeDate para capturar respostas de agendamento
+    const scheduleContinuation = await this.checkScheduleContinuation(
+      conversation.id, salonId, clientPhone, mergedText, startTime,
+    );
+    if (scheduleContinuation) {
+      this.logger.debug(`[Router] SCHEDULE_CONTINUATION: conversationId=${conversation.id}`);
+      return scheduleContinuation;
+    }
+
+    // ========== NON-FSM: Pipeline normal ==========
+    this.logger.debug(`[Router] NON_FSM: conversationId=${conversation.id}`);
+
     // ========== RELATIVE DATE: resposta determinística (P0.5) ==========
     const dateResult = resolveRelativeDate(mergedText);
     if (dateResult.matched && dateResult.response) {
@@ -204,16 +229,6 @@ export class AlexisService {
         shouldSend: true,
         statusChanged: false,
       };
-    }
-
-    // Carrega FSM state
-    const state = await this.stateStore.getState(conversation.id);
-
-    // ========== FSM: STEP > INTENT (agendamento em andamento) ==========
-    if (state.activeSkill === 'SCHEDULING' && state.step !== 'NONE') {
-      return this.handleFSMTurn(
-        conversation.id, salonId, clientPhone, clientName, mergedText, state, startTime,
-      );
     }
 
     // ========== LEXICON: dialeto de salão → preço de serviço (antes de ProductInfo) ==========
@@ -246,12 +261,6 @@ export class AlexisService {
         statusChanged: false,
       };
     }
-
-    // ========== CONTINUAÇÃO TRANSACIONAL: SCHEDULE (fallback se FSM state perdido) ==========
-    const scheduleContinuation = await this.checkScheduleContinuation(
-      conversation.id, salonId, clientPhone, mergedText, startTime,
-    );
-    if (scheduleContinuation) return scheduleContinuation;
 
     // Classifica intenção
     const intent = this.intentClassifier.classify(mergedText);
