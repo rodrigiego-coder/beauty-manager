@@ -269,6 +269,13 @@ export class AlexisService {
       }
     }
 
+    // ========== LIST_SERVICES: listagem DB-backed (P0.5) ==========
+    if (intent === 'LIST_SERVICES') {
+      return this.handleListServices(
+        conversation.id, salonId, clientPhone, clientName, mergedText, state, startTime,
+      );
+    }
+
     // ========== CAMADA 1: FILTRO DE ENTRADA ==========
     const inputFilter = this.contentFilter.filterInput(mergedText);
 
@@ -1033,6 +1040,78 @@ Aguardamos você! 💜`,
 
 Quando quiser, agende novamente! Estamos à disposição. 💜`,
     };
+  }
+
+  /**
+   * =====================================================
+   * LIST_SERVICES — Lista serviços do salão via DB (P0.5)
+   * =====================================================
+   */
+  private async handleListServices(
+    conversationId: string,
+    salonId: string,
+    clientPhone: string,
+    clientName: string | undefined,
+    text: string,
+    state: ConversationState,
+    startTime: number,
+  ): Promise<ProcessMessageResult> {
+    const context = await this.dataCollector.collectContext(salonId, clientPhone);
+    const services = (context.services || []) as any[];
+
+    let responseText: string;
+
+    if (services.length === 0) {
+      responseText = 'No momento não consegui carregar a lista de serviços. Entre em contato diretamente com o salão!';
+    } else {
+      const list = services
+        .filter((s: any) => s.active !== false)
+        .slice(0, 10)
+        .map((s: any, i: number) => {
+          const price = s.price ? ` - R$ ${s.price}` : '';
+          const duration = s.durationMinutes ? ` (${s.durationMinutes}min)` : '';
+          return `${i + 1}. ${s.name}${price}${duration}`;
+        })
+        .join('\n');
+
+      responseText = `Nossos serviços:\n\n${list}\n\nQuer agendar algum deles? É só me dizer! 😊`;
+    }
+
+    // Compose com greeting policy
+    const finalResponse = await this.composer.compose({
+      salonId,
+      phone: clientPhone,
+      clientName,
+      intent: 'LIST_SERVICES',
+      baseText: responseText,
+      skipGreeting: state.userAlreadyGreeted,
+    });
+
+    if (!state.userAlreadyGreeted) {
+      await this.stateStore.updateState(conversationId, {
+        userAlreadyGreeted: true,
+        lastGreetingAt: nowIso(),
+      });
+    }
+
+    // Dedup gate
+    const canSend = await this.stateStore.tryRegisterReply(conversationId, finalResponse);
+    if (!canSend) {
+      this.logger.debug(`DedupGate LIST_SERVICES: suprimido para ${clientPhone}`);
+      await this.saveMessage(conversationId, 'client', text, 'LIST_SERVICES', false, false);
+      return { response: null, intent: 'LIST_SERVICES', blocked: false, shouldSend: false, statusChanged: false };
+    }
+
+    await this.saveMessage(conversationId, 'client', text, 'LIST_SERVICES', false, false);
+    await this.saveMessage(conversationId, 'ai', finalResponse, 'LIST_SERVICES', false, false);
+
+    await this.logInteraction(
+      salonId, conversationId, clientPhone,
+      text, finalResponse, 'LIST_SERVICES',
+      false, undefined, Date.now() - startTime,
+    );
+
+    return { response: finalResponse, intent: 'LIST_SERVICES', blocked: false, shouldSend: true, statusChanged: false };
   }
 
   /**

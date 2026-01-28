@@ -15,6 +15,7 @@ export type Intent =
   | 'CANCEL'
   | 'PRODUCT_INFO'
   | 'SERVICE_INFO'
+  | 'LIST_SERVICES'
   | 'PRICE_INFO'
   | 'HOURS_INFO'
   | 'APPOINTMENT_CONFIRM'
@@ -66,6 +67,11 @@ export class IntentClassifierService {
       return 'PRODUCT_INFO';
     }
 
+    // Lista de serviços (mais específico que SERVICE_INFO genérico)
+    if (this.isListServicesIntent(lower)) {
+      return 'LIST_SERVICES';
+    }
+
     // Informações de Serviços
     if (this.matchesAny(lower, INTENT_KEYWORDS.SERVICE_INFO)) {
       return 'SERVICE_INFO';
@@ -113,6 +119,7 @@ export class IntentClassifierService {
       CANCEL: 'Cancelamento',
       PRODUCT_INFO: 'Informação sobre Produtos',
       SERVICE_INFO: 'Informação sobre Serviços',
+      LIST_SERVICES: 'Lista de Serviços',
       PRICE_INFO: 'Informação sobre Preços',
       HOURS_INFO: 'Horário de Funcionamento',
       APPOINTMENT_CONFIRM: 'Confirmação de Agendamento',
@@ -121,6 +128,24 @@ export class IntentClassifierService {
     };
 
     return descriptions[intent];
+  }
+
+  /**
+   * Verifica se a mensagem é um pedido de listagem de serviços
+   * Ex: "quais serviços vocês fazem?", "o que vocês oferecem?"
+   */
+  private isListServicesIntent(message: string): boolean {
+    const patterns = [
+      /quais\s+servi[cç]os/,
+      /servi[cç]os\s+(voc[eê]s|que)\s+(fazem|oferecem|tem|têm)/,
+      /o\s+que\s+(voc[eê]s|o\s+sal[aã]o)\s+(fazem|oferecem|tem|têm)/,
+      /tabela\s+de\s+servi[cç]os/,
+      /lista\s+de\s+servi[cç]os/,
+      /menu\s+de\s+servi[cç]os/,
+      /que\s+servi[cç]os/,
+      /quais\s+s[aã]o\s+os\s+servi[cç]os/,
+    ];
+    return patterns.some((p) => p.test(message));
   }
 
   /**
