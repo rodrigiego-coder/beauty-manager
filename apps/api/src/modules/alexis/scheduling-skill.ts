@@ -629,6 +629,6 @@ function handleAwaitingConfirm(
 
   return {
     nextState: { ttlExpiresAt: bumpTTL() },
-    replyText: `Posso confirmar *${state.slots.serviceLabel}* para *${state.slots.dateISO}* às *${state.slots.time}*? Responda *sim* ou *não* 😊`,
+    replyText: `Desculpa, não entendi 🙏 Você pode responder *sim* para confirmar ou *não* para eu sugerir outro horário? 😊`,
   };
 }
