@@ -379,6 +379,38 @@ export class ScheduledMessagesService {
   }
 
   /**
+   * ALFA.1: Agenda retry específico para QUOTA_EXCEEDED com backoff longo
+   * Base 30 min + jitter ±10%, capped at 60 min
+   */
+  async scheduleQuotaRetry(messageId: string, currentAttempts: number, error: string): Promise<Date> {
+    // Base 30 minutos + jitter ±10% (27-33 min)
+    const baseMinutes = 30;
+    const jitter = baseMinutes * 0.1 * (Math.random() * 2 - 1); // -3 to +3 min
+    const backoffMinutes = Math.min(baseMinutes + jitter, 60);
+    const nextAttempt = addMinutes(new Date(), backoffMinutes);
+
+    await this.db
+      .update(appointmentNotifications)
+      .set({
+        status: 'PENDING',
+        scheduledFor: nextAttempt,
+        lastError: error,
+        lastAttemptAt: new Date(),
+        processingStartedAt: null,
+        processingWorkerId: null,
+        attempts: sql`${appointmentNotifications.attempts} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(appointmentNotifications.id, messageId));
+
+    this.logger.log(
+      `[Quota] Retry agendado para ${format(nextAttempt, 'HH:mm')} (tentativa ${currentAttempts + 1}, delay=${Math.round(backoffMinutes)}min)`,
+    );
+
+    return nextAttempt;
+  }
+
+  /**
    * Registra resposta do cliente
    */
   async registerClientResponse(appointmentId: string, response: string): Promise<void> {

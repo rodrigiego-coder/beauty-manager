@@ -252,17 +252,48 @@ export class ScheduledMessagesProcessor {
   }
 
   /**
-   * Trata mensagem bloqueada por quota excedida
-   * Marca como FAILED com erro QUOTA_EXCEEDED para não reprocessar
+   * ALFA.1: Trata mensagem bloqueada por quota excedida
+   * Se ainda há tentativas: reagenda com backoff longo (30 min)
+   * Se não há mais tentativas: marca como FAILED
    */
   private async handleQuotaBlocked(message: any, errorMessage: string): Promise<void> {
-    // Log estruturado de bloqueio
+    // Usa max_attempts do registro se existir, senão fallback para constante
+    const effectiveMaxAttempts = message.max_attempts ?? MAX_RETRY_ATTEMPTS;
+    const currentAttempts = message.attempts ?? 0;
+
+    // Log estruturado
     this.logger.warn(
       `[Quota] BLOQUEADO: salonId=${message.salon_id}, appointmentId=${message.appointment_id}, ` +
-        `notificationId=${message.id}, motivo=${errorMessage}`,
+        `notificationId=${message.id}, attempts=${currentAttempts}/${effectiveMaxAttempts}, motivo=${errorMessage}`,
     );
 
-    // Marca como FAILED com erro específico para não reprocessar
+    // Se ainda há tentativas restantes, reagenda com backoff longo
+    if (currentAttempts < effectiveMaxAttempts - 1) {
+      const nextScheduledFor = await this.scheduledMessagesService.scheduleQuotaRetry(
+        message.id,
+        currentAttempts,
+        errorMessage,
+      );
+
+      this.logger.log(
+        `[Quota] REAGENDADO: notificationId=${message.id}, salonId=${message.salon_id}, ` +
+          `attempts=${currentAttempts + 1}/${effectiveMaxAttempts}, nextScheduledFor=${nextScheduledFor.toISOString()}`,
+      );
+
+      // Audit log de retry
+      await this.auditService.logWhatsAppSent({
+        salonId: message.salon_id,
+        notificationId: message.id,
+        appointmentId: message.appointment_id,
+        recipientPhone: message.recipient_phone,
+        notificationType: message.notification_type,
+        success: false,
+        error: `${errorMessage} (retry scheduled)`,
+      });
+      return;
+    }
+
+    // Sem tentativas restantes: marca como FAILED
     await this.scheduledMessagesService.updateMessageStatus(
       message.id,
       'FAILED',
@@ -270,7 +301,7 @@ export class ScheduledMessagesProcessor {
       errorMessage,
     );
 
-    // Audit log de bloqueio
+    // Audit log de falha final
     await this.auditService.logWhatsAppSent({
       salonId: message.salon_id,
       notificationId: message.id,
@@ -278,7 +309,7 @@ export class ScheduledMessagesProcessor {
       recipientPhone: message.recipient_phone,
       notificationType: message.notification_type,
       success: false,
-      error: errorMessage,
+      error: `${errorMessage} (max attempts reached)`,
     });
   }
 
