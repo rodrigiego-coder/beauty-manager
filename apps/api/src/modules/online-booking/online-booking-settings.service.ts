@@ -1,11 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Inject } from '@nestjs/common';
+import { Injectable, Logger, Inject, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../../database/schema';
 import {
   UpdateOnlineBookingSettingsDto,
   OnlineBookingSettingsResponse,
+  GenerateAssistedLinkDto,
+  AssistedLinkResponse,
 } from './dto';
 
 @Injectable()
@@ -179,6 +180,36 @@ export class OnlineBookingSettingsService {
   async isEnabled(salonId: string): Promise<boolean> {
     const settings = await this.getSettings(salonId);
     return settings.enabled;
+  }
+
+  /**
+   * Gera link assistido para Alexis enviar ao cliente
+   * O link leva direto para a página de agendamento com parâmetros pré-preenchidos
+   */
+  async generateAssistedLink(dto: GenerateAssistedLinkDto): Promise<AssistedLinkResponse> {
+    const [salon] = await this.db
+      .select()
+      .from(schema.salons)
+      .where(eq(schema.salons.id, dto.salonId))
+      .limit(1);
+
+    if (!salon) {
+      throw new NotFoundException('Salão não encontrado');
+    }
+
+    const params = new URLSearchParams();
+    if (dto.serviceId) params.set('service', String(dto.serviceId));
+    if (dto.professionalId) params.set('professional', dto.professionalId);
+    if (dto.clientPhone) params.set('phone', dto.clientPhone);
+    params.set('source', 'alexis');
+
+    const baseUrl = process.env.FRONTEND_URL || 'https://app.beautymanager.com.br';
+    const slug = salon.slug || salon.id;
+
+    return {
+      url: `${baseUrl}/booking/${slug}?${params.toString()}`,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 horas
+    };
   }
 
   /**

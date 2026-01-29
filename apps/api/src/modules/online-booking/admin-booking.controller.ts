@@ -17,6 +17,7 @@ import {
   UpdateOnlineBookingSettingsDto,
   CreateClientBookingRuleDto,
   UpdateClientBookingRuleDto,
+  GenerateAssistedLinkDto,
 } from './dto';
 import { OnlineBookingSettingsService } from './online-booking-settings.service';
 import { ClientBookingRulesService } from './client-booking-rules.service';
@@ -73,6 +74,22 @@ export class AdminBookingController {
     @Body() body: { enabled: boolean },
   ) {
     return this.settingsService.toggleEnabled(req.user.salonId, body.enabled);
+  }
+
+  /**
+   * Gera link assistido para Alexis enviar ao cliente
+   * Usado quando Alexis precisa enviar um link de agendamento pré-preenchido
+   */
+  @Post('generate-assisted-link')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  async generateAssistedLink(
+    @Request() req: any,
+    @Body() dto: Omit<GenerateAssistedLinkDto, 'salonId'>,
+  ) {
+    return this.settingsService.generateAssistedLink({
+      ...dto,
+      salonId: req.user.salonId,
+    });
   }
 
   // ==================== REGRAS DE CLIENTES ====================

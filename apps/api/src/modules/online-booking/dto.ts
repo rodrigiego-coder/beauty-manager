@@ -647,3 +647,31 @@ export interface BookingConfirmation {
   depositAmount?: string;
   depositPixCode?: string;
 }
+
+// ==================== ASSISTED LINK DTOs ====================
+
+export class GenerateAssistedLinkDto {
+  @ApiProperty({ description: 'ID do salão (UUID)', example: '550e8400-e29b-41d4-a716-446655440000' })
+  @IsUUID()
+  salonId!: string;
+
+  @ApiPropertyOptional({ description: 'ID do serviço', example: 123 })
+  @IsNumber()
+  @IsOptional()
+  serviceId?: number;
+
+  @ApiPropertyOptional({ description: 'ID do profissional (UUID)', example: '550e8400-e29b-41d4-a716-446655440001' })
+  @IsUUID()
+  @IsOptional()
+  professionalId?: string;
+
+  @ApiPropertyOptional({ description: 'Telefone do cliente (10-11 dígitos)', example: '11999998888' })
+  @Matches(/^\d{10,11}$/, { message: 'clientPhone deve ter 10 ou 11 dígitos' })
+  @IsOptional()
+  clientPhone?: string;
+}
+
+export interface AssistedLinkResponse {
+  url: string;
+  expiresAt: Date;
+}
