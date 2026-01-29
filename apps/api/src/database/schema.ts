@@ -92,6 +92,7 @@ export const appointmentSourceEnum = pgEnum('appointment_source', [
   'ONLINE',
   'WHATSAPP',
   'APP',
+  'ALEXIS',
 ]);
 
 // Enum para Via de Confirmação
