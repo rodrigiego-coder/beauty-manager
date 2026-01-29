@@ -59,6 +59,7 @@ describe('ScheduledMessagesProcessor', () => {
       getPendingMessagesWithLock: jest.fn(),
       updateMessageStatus: jest.fn(),
       scheduleRetry: jest.fn(),
+      scheduleQuotaRetry: jest.fn().mockResolvedValue(new Date()),
     };
 
     const mockWhatsappService = {
@@ -100,10 +101,10 @@ describe('ScheduledMessagesProcessor', () => {
 
   describe('processScheduledMessages', () => {
     // ========================================
-    // TESTE 1: Quota=0 -> NÃO chama envio, marca FAILED
+    // TESTE 1: Quota=0 -> NÃO chama envio, agenda retry (ALFA.1)
     // ========================================
-    it('quando quota=0, NÃO deve chamar envio e marcar como FAILED com QUOTA_EXCEEDED', async () => {
-      // Arrange: 1 mensagem pendente
+    it('quando quota=0 e ainda há tentativas, NÃO deve chamar envio e deve agendar retry', async () => {
+      // Arrange: 1 mensagem pendente com attempts=0 (ainda tem tentativas)
       scheduledMessagesService.getPendingMessagesWithLock.mockResolvedValue([mockConfirmationMessage]);
 
       // Quota excedida (402)
@@ -136,15 +137,17 @@ describe('ScheduledMessagesProcessor', () => {
       expect(whatsappService.sendMessage).not.toHaveBeenCalled();
       expect(whatsappService.sendDirectMessage).not.toHaveBeenCalled();
 
-      // 3. Marcou como FAILED com QUOTA_EXCEEDED
-      expect(scheduledMessagesService.updateMessageStatus).toHaveBeenCalledWith(
+      // 3. ALFA.1: Agendou retry (não marcou FAILED imediatamente)
+      expect(scheduledMessagesService.scheduleQuotaRetry).toHaveBeenCalledWith(
         NOTIFICATION_ID,
-        'FAILED',
-        undefined,
+        0, // currentAttempts
         expect.stringContaining('QUOTA_EXCEEDED'),
       );
 
-      // 4. Registrou audit log de bloqueio
+      // 4. NÃO chamou updateMessageStatus (retry foi agendado)
+      expect(scheduledMessagesService.updateMessageStatus).not.toHaveBeenCalled();
+
+      // 5. Registrou audit log de retry
       expect(auditService.logWhatsAppSent).toHaveBeenCalledWith(
         expect.objectContaining({
           salonId: SALON_ID,
