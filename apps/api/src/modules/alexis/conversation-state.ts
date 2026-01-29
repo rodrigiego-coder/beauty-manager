@@ -35,6 +35,10 @@ export interface ConversationState {
   ttlExpiresAt: string | null;
   handoverSummary?: string;
   handoverAt?: string;
+  /** P0: Idempotência — timestamp do commit do agendamento */
+  schedulingCommittedAt?: string;
+  /** P0: Idempotência — ID do appointment criado */
+  schedulingAppointmentId?: string;
 }
 
 /** Debounce window (ms) */

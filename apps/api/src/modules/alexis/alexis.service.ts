@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { db } from '../../database/connection';
 import {
   aiSettings,
@@ -11,6 +11,8 @@ import {
   appointmentNotifications,
   users,
   professionalServices,
+  salons,
+  services,
 } from '../../database/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { GeminiService } from './gemini.service';
@@ -41,6 +43,7 @@ import { getLexiconEnabled } from './lexicon/lexicon-feature-flag';
 import { buildLexiconTelemetry, LexiconTelemetryEvent } from './lexicon/lexicon-telemetry';
 import { resolveServicePrice, formatServicePriceResponse } from './lexicon/service-price-resolver';
 import { resolveRelativeDate } from './relative-date-resolver';
+import { AppointmentsService } from '../appointments/appointments.service';
 
 /**
  * =====================================================
@@ -78,6 +81,8 @@ export class AlexisService {
     private readonly productInfo: ProductInfoService,
     private readonly composer: ResponseComposerService,
     private readonly stateStore: ConversationStateStore,
+    @Inject(forwardRef(() => AppointmentsService))
+    private readonly appointmentsService: AppointmentsService,
   ) {}
 
   /**
@@ -520,7 +525,7 @@ export class AlexisService {
     conversationId: string,
     salonId: string,
     clientPhone: string,
-    _clientName: string | undefined,
+    clientName: string | undefined,
     text: string,
     state: ConversationState,
     startTime: number,
@@ -539,6 +544,28 @@ export class AlexisService {
       finalResponse = resumePrompt
         ? `${infoAnswer}\n\n${resumePrompt}`
         : infoAnswer;
+    }
+
+    // ========== P0: COMMIT TRANSACIONAL quando handover=true ==========
+    if (result.handover && state.slots.serviceId && state.slots.dateISO && state.slots.time) {
+      const commitResult = await this.commitSchedulingTransaction(
+        conversationId,
+        salonId,
+        clientPhone,
+        clientName,
+        state,
+        skillCtx,
+      );
+
+      if (commitResult.success) {
+        finalResponse = commitResult.response;
+        // Atualiza nextState com marcador de commit
+        result.nextState.schedulingCommittedAt = nowIso();
+        result.nextState.schedulingAppointmentId = commitResult.appointmentId;
+      } else {
+        // Fallback: erro no commit, mantém resposta original (handover para recepção)
+        this.logger.error(`[CommitScheduling] Falha: ${commitResult.error}`);
+      }
     }
 
     // ========== DEDUP GATE (FSM path — principal fonte de race condition) ==========
@@ -577,6 +604,175 @@ export class AlexisService {
       shouldSend: true,
       statusChanged: false,
     };
+  }
+
+  /**
+   * =====================================================
+   * COMMIT SCHEDULING TRANSACTION (P0)
+   * Cria appointment real no banco usando AppointmentsService
+   * =====================================================
+   */
+  private async commitSchedulingTransaction(
+    conversationId: string,
+    salonId: string,
+    clientPhone: string,
+    clientName: string | undefined,
+    state: ConversationState,
+    context: SkillContext,
+  ): Promise<{ success: true; appointmentId: string; response: string } | { success: false; error: string }> {
+    try {
+      // ========== IDEMPOTÊNCIA: verifica se já foi commitado ==========
+      const currentState = await this.stateStore.getState(conversationId);
+      if (currentState.schedulingCommittedAt && currentState.schedulingAppointmentId) {
+        this.logger.log(
+          `[CommitScheduling] Idempotente: já commitado em ${currentState.schedulingCommittedAt}, ` +
+            `appointmentId=${currentState.schedulingAppointmentId}`,
+        );
+        // Retorna mensagem de confirmação sem criar novamente
+        return {
+          success: true,
+          appointmentId: currentState.schedulingAppointmentId,
+          response: 'Seu agendamento já está confirmado! ✅',
+        };
+      }
+
+      // ========== BUSCA DADOS DO SERVIÇO (duration, price) ==========
+      const serviceId = state.slots.serviceId;
+      const serviceMatch = context.services.find((s) => s.id === serviceId);
+      const serviceName = state.slots.serviceLabel || serviceMatch?.name || 'Serviço';
+
+      // Busca duração do serviço no DB
+      let duration = 60; // fallback 60 min
+      let price = '0';
+      if (serviceId) {
+        const [svc] = await db
+          .select({ durationMinutes: services.durationMinutes, basePrice: services.basePrice })
+          .from(services)
+          .where(eq(services.id, parseInt(serviceId, 10)))
+          .limit(1);
+        if (svc) {
+          duration = svc.durationMinutes || 60;
+          price = svc.basePrice || '0';
+        }
+      }
+
+      // ========== RESOLVE PROFISSIONAL (se não especificado, pega primeiro disponível) ==========
+      let professionalId = state.slots.professionalId;
+      let professionalName = state.slots.professionalLabel;
+
+      if (!professionalId && context.professionals && context.professionals.length > 0) {
+        const firstPro = context.professionals[0];
+        professionalId = firstPro.id;
+        professionalName = firstPro.name;
+        this.logger.debug(`[CommitScheduling] Auto-selecionou profissional: ${professionalName}`);
+      }
+
+      if (!professionalId) {
+        return { success: false, error: 'Nenhum profissional disponível' };
+      }
+
+      // ========== CRIA APPOINTMENT via AppointmentsService ==========
+      this.logger.log(
+        `[CommitScheduling] Criando appointment: salonId=${salonId}, service=${serviceName}, ` +
+          `date=${state.slots.dateISO}, time=${state.slots.time}, professional=${professionalName}`,
+      );
+
+      const appointment = await this.appointmentsService.create(
+        salonId,
+        {
+          professionalId,
+          service: serviceName,
+          serviceId: serviceId ? parseInt(serviceId, 10) : undefined,
+          date: state.slots.dateISO!,
+          time: state.slots.time!,
+          duration,
+          price,
+          clientName: clientName || 'Cliente WhatsApp',
+          clientPhone,
+          source: 'WHATSAPP',
+          notes: 'Agendado via Alexis (WhatsApp)',
+        },
+        professionalId, // createdById = professional (auto-atribuído)
+      );
+
+      this.logger.log(
+        `[CommitScheduling] Appointment criado: id=${appointment.id}, salonId=${salonId}, ` +
+          `conversationId=${conversationId}`,
+      );
+
+      // ========== BUSCA DADOS DO SALÃO PARA RESPOSTA (endereço, maps) ==========
+      const salonInfo = await this.getSalonInfoForConfirmation(salonId);
+
+      // ========== MONTA RESPOSTA DE CONFIRMAÇÃO ==========
+      const dateDisplay = new Date(state.slots.dateISO!).toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      });
+
+      let confirmationMsg = `Agendamento confirmado! ✅
+
+📅 *${dateDisplay}* às *${state.slots.time}*
+✂️ ${serviceName}`;
+
+      if (professionalName) {
+        confirmationMsg += `\n💇 ${professionalName}`;
+      }
+
+      // Adiciona endereço se disponível
+      if (salonInfo.address) {
+        confirmationMsg += `\n\n📍 *Endereço:*\n${salonInfo.address}`;
+      }
+
+      // Adiciona links de navegação
+      if (salonInfo.locationUrl) {
+        confirmationMsg += `\n\n🗺️ Google Maps:\n${salonInfo.locationUrl}`;
+      }
+      if (salonInfo.wazeUrl) {
+        confirmationMsg += `\n\n🚗 Waze:\n${salonInfo.wazeUrl}`;
+      }
+
+      confirmationMsg += '\n\nAguardamos você! 💜';
+
+      return {
+        success: true,
+        appointmentId: appointment.id,
+        response: confirmationMsg,
+      };
+    } catch (error: any) {
+      this.logger.error(`[CommitScheduling] Erro: ${error?.message || error}`);
+      return { success: false, error: error?.message || 'Erro desconhecido' };
+    }
+  }
+
+  /**
+   * Busca informações do salão para mensagem de confirmação
+   */
+  private async getSalonInfoForConfirmation(
+    salonId: string,
+  ): Promise<{ address?: string; locationUrl?: string; wazeUrl?: string }> {
+    try {
+      const [salon] = await db
+        .select({
+          address: salons.address,
+          locationUrl: salons.locationUrl,
+          wazeUrl: salons.wazeUrl,
+        })
+        .from(salons)
+        .where(eq(salons.id, salonId))
+        .limit(1);
+
+      if (!salon) return {};
+
+      return {
+        address: salon.address || undefined,
+        locationUrl: salon.locationUrl || undefined,
+        wazeUrl: salon.wazeUrl || undefined,
+      };
+    } catch (error) {
+      this.logger.warn(`Erro ao buscar dados do salão ${salonId}: ${error}`);
+      return {};
+    }
   }
 
   /**
