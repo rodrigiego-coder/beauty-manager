@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { db } from '../../database/connection';
 import { appointments, services, users, clients, professionalServices } from '../../database/schema';
 import { eq, and } from 'drizzle-orm';
+import { SchedulesService, AvailabilityResult } from '../schedules/schedules.service';
 
 /**
  * =====================================================
@@ -35,6 +36,11 @@ export interface AppointmentResult {
 @Injectable()
 export class AlexisSchedulerService {
   private readonly logger = new Logger(AlexisSchedulerService.name);
+
+  constructor(
+    @Inject(forwardRef(() => SchedulesService))
+    private readonly schedulesService: SchedulesService,
+  ) {}
 
   /**
    * Busca horários disponíveis para um serviço
@@ -192,23 +198,23 @@ export class AlexisSchedulerService {
         return { success: false, error: 'Serviço não encontrado' };
       }
 
-      // Verifica disponibilidade novamente (double check)
-      const slots = await this.getAvailableSlots(
-        data.salonId,
-        data.serviceId,
-        data.date,
-        data.professionalId,
-      );
-      const isAvailable = slots.some(
-        (s) => s.time === data.time && s.professionalId === data.professionalId,
-      );
-
-      if (!isAvailable) {
-        return { success: false, error: 'Horário não está mais disponível' };
-      }
-
       // Formata data como YYYY-MM-DD
       const dateStr = data.date.toISOString().split('T')[0];
+
+      // Verifica disponibilidade usando SchedulesService (validação completa)
+      const availability = await this.schedulesService.checkAvailability(
+        data.salonId,
+        data.professionalId,
+        dateStr,
+        data.time,
+        service.durationMinutes,
+      );
+
+      if (!availability.available) {
+        // Retorna mensagem amigável baseada no motivo
+        const friendlyMessage = this.formatAvailabilityError(availability);
+        return { success: false, error: friendlyMessage };
+      }
 
       // Calcula o horário de fim
       const [hour, minute] = data.time.split(':').map(Number);
@@ -254,5 +260,40 @@ export class AlexisSchedulerService {
 
     const limitedSlots = slots.slice(0, limit);
     return limitedSlots.map((s) => `• ${s.time} - ${s.professionalName}`).join('\n');
+  }
+
+  /**
+   * Formata erro de disponibilidade em mensagem amigável para WhatsApp
+   */
+  private formatAvailabilityError(availability: AvailabilityResult): string {
+    const suggestions = availability.suggestedSlots?.length
+      ? `\n\nHorários sugeridos: ${availability.suggestedSlots.join(', ')}`
+      : '';
+
+    switch (availability.reason) {
+      case 'SALON_CLOSED':
+        return `${availability.message}${suggestions}`;
+
+      case 'EXCEEDS_CLOSING_TIME':
+        return `Esse horário não dá porque o serviço terminaria às ${availability.details?.serviceEndTime}, ` +
+          `mas o salão fecha às ${availability.details?.salonCloseTime?.substring(0, 5)}.${suggestions}`;
+
+      case 'PROFESSIONAL_NOT_WORKING':
+        return `${availability.message}${suggestions}`;
+
+      case 'EXCEEDS_WORK_HOURS':
+        return `Esse horário passa do expediente do profissional. ` +
+          `O serviço terminaria às ${availability.details?.serviceEndTime}, ` +
+          `mas ele encerra às ${availability.details?.professionalEndTime?.substring(0, 5)}.${suggestions}`;
+
+      case 'PROFESSIONAL_BLOCKED':
+        return `O profissional tem um compromisso nesse horário.${suggestions}`;
+
+      case 'SLOT_OCCUPIED':
+        return `Já existe um agendamento nesse horário.${suggestions}`;
+
+      default:
+        return availability.message || 'Horário não disponível. Tente outro horário.';
+    }
   }
 }

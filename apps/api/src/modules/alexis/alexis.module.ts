@@ -12,6 +12,7 @@ import { ProductInfoService } from './product-info.service';
 import { ConversationStateStore } from './conversation-state.store';
 import { AppointmentsModule } from '../appointments/appointments.module';
 import { OnlineBookingModule } from '../online-booking/online-booking.module';
+import { SchedulesModule } from '../schedules/schedules.module';
 
 /**
  * ==========================================
@@ -24,6 +25,7 @@ import { OnlineBookingModule } from '../online-booking/online-booking.module';
   imports: [
     forwardRef(() => AppointmentsModule), // Para criar agendamento via FSM
     forwardRef(() => OnlineBookingModule), // Para gerar link de agendamento assistido
+    forwardRef(() => SchedulesModule), // Para validação de disponibilidade
   ],
   controllers: [AlexisController],
   providers: [

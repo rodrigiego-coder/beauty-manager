@@ -27,6 +27,8 @@ import {
   ShoppingBag,
   Bot,
   User,
+  Clock,
+  CalendarOff,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
@@ -43,6 +45,8 @@ interface NavItem {
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST'] },
   { name: 'Meu Painel', href: '/meu-painel', icon: User, roles: ['STYLIST', 'MANAGER', 'OWNER'] },
+  { name: 'Meu Horario', href: '/meu-horario', icon: Clock, roles: ['STYLIST', 'MANAGER', 'OWNER'] },
+  { name: 'Meus Bloqueios', href: '/meus-bloqueios', icon: CalendarOff, roles: ['STYLIST', 'MANAGER', 'OWNER'] },
   { name: 'Caixa', href: '/caixa', icon: CreditCard, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
   { name: 'Agenda', href: '/agenda', icon: Calendar, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST'] },
   { name: 'Servicos', href: '/servicos', icon: Scissors, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
@@ -67,6 +71,7 @@ const bottomNavigation: NavItem[] = [
   { name: 'Fidelidade', href: '/configuracoes/fidelidade', icon: Crown, roles: ['OWNER', 'MANAGER'] },
   { name: 'Integracoes', href: '/integracoes', icon: Link2, roles: ['OWNER', 'MANAGER', 'STYLIST'] },
   { name: 'Automacao', href: '/automacao', icon: MessageSquare, roles: ['OWNER', 'MANAGER'] },
+  { name: 'Horarios Salao', href: '/configuracoes/horarios', icon: Clock, roles: ['OWNER', 'MANAGER'] },
   { name: 'Meu Plano', href: '/meu-plano', icon: Sparkles, roles: ['OWNER'] },
   { name: 'Faturamento', href: '/assinatura', icon: CreditCard, roles: ['OWNER'] },
   { name: 'Configuracoes', href: '/configuracoes', icon: Settings, roles: ['OWNER', 'MANAGER'] },
