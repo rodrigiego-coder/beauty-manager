@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { NotificationsController } from './notifications.controller';
 import { ScheduledMessagesService } from './scheduled-messages.service';
@@ -9,7 +9,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 @Module({
   imports: [
     // ScheduleModule já é importado globalmente em app.module.ts
-    AutomationModule, // Para acessar WhatsAppService
+    forwardRef(() => AutomationModule), // Para acessar WhatsAppService (forwardRef para evitar ciclo)
     SubscriptionsModule, // Para acessar AddonsService (consumo de quota)
   ],
   controllers: [NotificationsController],

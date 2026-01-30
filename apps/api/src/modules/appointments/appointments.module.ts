@@ -8,7 +8,7 @@ import { TriageModule } from '../triage/triage.module';
 @Module({
   imports: [
     UsersModule,
-    NotificationsModule, // Para notificações WhatsApp automáticas
+    forwardRef(() => NotificationsModule), // Para notificações WhatsApp automáticas (forwardRef para evitar ciclo)
     forwardRef(() => TriageModule), // Para verificar se serviço requer triagem
   ],
   controllers: [AppointmentsController],
