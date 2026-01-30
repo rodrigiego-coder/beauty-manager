@@ -58,6 +58,7 @@ import { PaymentDestinationsModule } from './modules/payment-destinations/paymen
 import { AsaasModule } from './modules/asaas';
 import { BillingModule } from './modules/billing';
 import { TriageModule } from './modules/triage/triage.module';
+import { SchedulesModule } from './modules/schedules/schedules.module';
 import { OnlineBookingModule } from './modules/online-booking/online-booking.module';
 @Module({
   imports: [
@@ -132,6 +133,8 @@ import { OnlineBookingModule } from './modules/online-booking/online-booking.mod
     JobsModule,
     // Integração Google Calendar (completa)
     CalendarModule,
+    // Módulo de Horários e Disponibilidade
+    SchedulesModule,
     // Módulo de Automação WhatsApp/SMS
     AutomationModule,
     // Módulo WhatsApp (Evolution API)

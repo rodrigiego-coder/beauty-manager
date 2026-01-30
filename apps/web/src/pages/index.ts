@@ -33,3 +33,6 @@ export { PaymentMethodsPage } from './PaymentMethodsPage';
 export { PaymentDestinationsPage } from './PaymentDestinationsPage';
 export { UsersManagementPage } from './UsersManagementPage';
 export { MyPlanPage } from './MyPlanPage';
+export { default as SalonSchedulePage } from './SalonSchedulePage';
+export { default as MySchedulePage } from './MySchedulePage';
+export { default as MyBlocksPage } from './MyBlocksPage';

@@ -38,6 +38,9 @@ import {
   PaymentDestinationsPage,
   UsersManagementPage,
   MyPlanPage,
+  SalonSchedulePage,
+  MySchedulePage,
+  MyBlocksPage,
 } from './pages';
 import AlexisConversationsPage from './pages/AlexisConversationsPage';
 import AlexisSettingsPage from './pages/AlexisSettingsPage';
@@ -207,6 +210,33 @@ function App() {
                 </RoleGuard>
               }
             />
+            <Route
+              path="/configuracoes/horarios"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <SalonSchedulePage />
+                </RoleGuard>
+              }
+            />
+
+            {/* Horarios e Bloqueios do Profissional */}
+            <Route
+              path="/meu-horario"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER', 'STYLIST']}>
+                  <MySchedulePage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/meus-bloqueios"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER', 'STYLIST']}>
+                  <MyBlocksPage />
+                </RoleGuard>
+              }
+            />
+
             <Route
               path="/integracoes"
               element={

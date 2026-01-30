@@ -21,6 +21,7 @@ import {
 import { UsersService } from '../users';
 import { ScheduledMessagesService } from '../notifications';
 import { TriageService } from '../triage/triage.service';
+import { SchedulesService } from '../schedules/schedules.service';
 
 // ==================== INTERFACES ====================
 
@@ -102,6 +103,8 @@ export class AppointmentsService {
     private scheduledMessagesService: ScheduledMessagesService,
     @Inject(forwardRef(() => TriageService))
     private triageService: TriageService,
+    @Inject(forwardRef(() => SchedulesService))
+    private schedulesService: SchedulesService,
   ) {}
 
   // ==================== APPOINTMENTS CRUD ====================
@@ -297,6 +300,28 @@ export class AppointmentsService {
       if (isBlocked) {
         throw new BadRequestException('Cliente está bloqueado devido a histórico de não comparecimentos');
       }
+    }
+
+    // Validate availability using SchedulesService (provides detailed error messages)
+    const availability = await this.schedulesService.checkAvailability(
+      salonId,
+      data.professionalId,
+      data.date,
+      data.time,
+      data.duration,
+    );
+
+    if (!availability.available) {
+      const error: any = new BadRequestException(availability.message);
+      error.response = {
+        statusCode: 400,
+        error: 'APPOINTMENT_NOT_AVAILABLE',
+        reason: availability.reason,
+        message: availability.message,
+        details: availability.details,
+        suggestedSlots: availability.suggestedSlots,
+      };
+      throw error;
     }
 
     // Validate professional

@@ -4,12 +4,14 @@ import { AppointmentsController } from './appointments.controller';
 import { UsersModule } from '../users';
 import { NotificationsModule } from '../notifications';
 import { TriageModule } from '../triage/triage.module';
+import { SchedulesModule } from '../schedules/schedules.module';
 
 @Module({
   imports: [
     UsersModule,
     forwardRef(() => NotificationsModule), // Para notificações WhatsApp automáticas (forwardRef para evitar ciclo)
     forwardRef(() => TriageModule), // Para verificar se serviço requer triagem
+    forwardRef(() => SchedulesModule), // Para validação de disponibilidade
   ],
   controllers: [AppointmentsController],
   providers: [AppointmentsService],

@@ -10,6 +10,7 @@ import {
   serial,
   decimal,
   date,
+  time,
   json,
   unique,
   index,
@@ -3925,3 +3926,48 @@ export type ProductAlias = typeof productAliases.$inferSelect;
 export type NewProductAlias = typeof productAliases.$inferInsert;
 export type GlobalProductPolicy = typeof globalProductPolicies.$inferSelect;
 export type NewGlobalProductPolicy = typeof globalProductPolicies.$inferInsert;
+
+// ==================== SCHEDULES & AVAILABILITY ====================
+
+/**
+ * Horário de funcionamento do salão
+ * Define os dias/horários em que o salão está aberto
+ */
+export const salonSchedules = pgTable('salon_schedules', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  salonId: uuid('salon_id').notNull().references(() => salons.id, { onDelete: 'cascade' }),
+  dayOfWeek: integer('day_of_week').notNull(), // 0=domingo, 6=sábado
+  isOpen: boolean('is_open').notNull().default(true),
+  openTime: time('open_time'),
+  closeTime: time('close_time'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+  salonIdx: index('salon_schedules_salon_idx').on(table.salonId),
+  uniqueSalonDay: unique().on(table.salonId, table.dayOfWeek),
+}));
+
+/**
+ * Horário de trabalho do profissional
+ * Define os dias/horários em que o profissional trabalha
+ */
+export const professionalSchedules = pgTable('professional_schedules', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  professionalId: uuid('professional_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  salonId: uuid('salon_id').notNull().references(() => salons.id, { onDelete: 'cascade' }),
+  dayOfWeek: integer('day_of_week').notNull(), // 0=domingo, 6=sábado
+  isWorking: boolean('is_working').notNull().default(true),
+  startTime: time('start_time'),
+  endTime: time('end_time'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+  professionalIdx: index('professional_schedules_professional_idx').on(table.professionalId),
+  uniqueProfessionalDay: unique().on(table.professionalId, table.dayOfWeek),
+}));
+
+// Types para Schedules
+export type SalonSchedule = typeof salonSchedules.$inferSelect;
+export type NewSalonSchedule = typeof salonSchedules.$inferInsert;
+export type ProfessionalSchedule = typeof professionalSchedules.$inferSelect;
+export type NewProfessionalSchedule = typeof professionalSchedules.$inferInsert;
