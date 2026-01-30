@@ -44,6 +44,8 @@ import AlexisSettingsPage from './pages/AlexisSettingsPage';
 import AlexisLogsPage from './pages/AlexisLogsPage';
 import { TriagePublicPage } from './pages/public/TriagePublicPage';
 import { OnlineBookingPage } from './pages/public/OnlineBookingPage';
+import { LandingPage } from './pages/public/LandingPage';
+import { SignupPage } from './pages/public/SignupPage';
 import { MyDashboardPage } from './pages/MyDashboardPage';
 
 type UserRole = 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST' | 'SUPER_ADMIN';
@@ -71,6 +73,8 @@ function App() {
       <AuthProvider>
         <Routes>
           {/* Rotas publicas */}
+          <Route path="/inicio" element={<LandingPage />} />
+          <Route path="/signup" element={<SignupPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/criar-senha" element={<CreatePasswordPage />} />
           <Route path="/cart/:code" element={<CartLinkPublicPage />} />

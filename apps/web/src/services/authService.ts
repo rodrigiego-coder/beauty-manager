@@ -24,9 +24,44 @@ export interface LoginResponse {
   message: string;
 }
 
+export interface SignupRequest {
+  salonName: string;
+  ownerName: string;
+  email: string;
+  phone: string;
+  password: string;
+  planId?: string;
+}
+
+export interface SignupResponse extends LoginResponse {
+  salon: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  subscription: {
+    id: string;
+    status: string;
+    trialEndsAt: string;
+  };
+}
+
 const USER_KEY = 'beauty_manager_user';
 
 export const authService = {
+  /**
+   * Cadastro público de novo salão (signup)
+   */
+  async signup(request: SignupRequest): Promise<SignupResponse> {
+    const { data } = await api.post<SignupResponse>('/auth/signup', request);
+
+    // Salva tokens via tokenManager (login automático após signup)
+    setTokens(data.accessToken, data.refreshToken);
+    localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+
+    return data;
+  },
+
   /**
    * Realiza login do usuario via API
    * ALFA: usa tokenManager para salvar tokens

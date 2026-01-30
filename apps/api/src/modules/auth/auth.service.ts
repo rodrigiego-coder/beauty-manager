@@ -1,16 +1,21 @@
-import { Injectable, UnauthorizedException, BadRequestException, Inject } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, ConflictException, Inject } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { UsersService } from '../users/users.service';
+import { SalonsService } from '../salons/salons.service';
+import { SalonSubscriptionsService } from '../subscriptions/salon-subscriptions.service';
 import { JwtPayload } from './jwt.strategy';
+import { SignupDto } from './dto';
 import * as schema from '../../database/schema';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly usersService: UsersService,
+    private readonly salonsService: SalonsService,
+    private readonly subscriptionsService: SalonSubscriptionsService,
     private readonly jwtService: JwtService,
     @Inject('DATABASE_CONNECTION')
     private readonly db: NodePgDatabase<typeof schema>,
@@ -195,6 +200,116 @@ export class AuthService {
     }
 
     return { valid: true, userName: user.name };
+  }
+
+  /**
+   * Realiza o signup (cadastro público) de um novo salão
+   * Cria: Salão + Usuário OWNER + Assinatura Trial
+   */
+  async signup(dto: SignupDto) {
+    // 1. Verificar se email já existe
+    const existingUser = await this.usersService.findByEmail(dto.email);
+    if (existingUser) {
+      throw new ConflictException('Este email já está cadastrado');
+    }
+
+    // 2. Gerar slug único para o salão
+    const slug = await this.generateUniqueSlug(dto.salonName);
+
+    // 3. Buscar plano (Professional como padrão)
+    let planId = dto.planId;
+    if (!planId) {
+      const defaultPlan = await this.db
+        .select()
+        .from(schema.plans)
+        .where(eq(schema.plans.code, 'PROFESSIONAL'))
+        .limit(1);
+
+      if (defaultPlan.length === 0) {
+        throw new BadRequestException('Plano padrão não encontrado');
+      }
+      planId = defaultPlan[0].id;
+    }
+
+    // 4. Criar salão
+    const salon = await this.salonsService.create({
+      name: dto.salonName,
+      slug,
+      phone: dto.phone,
+      email: dto.email,
+    });
+
+    // 5. Criar usuário OWNER
+    const user = await this.usersService.create({
+      salonId: salon.id,
+      name: dto.ownerName,
+      email: dto.email,
+      phone: dto.phone,
+      password: dto.password,
+      role: 'OWNER',
+    });
+
+    // 6. Criar assinatura com trial de 14 dias
+    const subscription = await this.subscriptionsService.startTrial(salon.id, {
+      planId,
+      trialDays: 14,
+    }, user.id);
+
+    // 7. Gerar tokens para login automático
+    const tokens = await this.generateTokens(user.id, user.email!, user.role, salon.id);
+
+    // 8. Remove dados sensíveis do retorno
+    const { passwordHash, passwordResetToken, passwordResetExpires, ...userData } = user;
+
+    return {
+      user: userData,
+      salon: {
+        id: salon.id,
+        name: salon.name,
+        slug: salon.slug,
+      },
+      subscription: {
+        id: subscription.id,
+        status: subscription.status,
+        trialEndsAt: subscription.trialEndsAt,
+      },
+      ...tokens,
+      message: 'Conta criada com sucesso! Seu trial de 14 dias começou.',
+    };
+  }
+
+  /**
+   * Gera um slug único baseado no nome do salão
+   */
+  private async generateUniqueSlug(name: string): Promise<string> {
+    // Remove acentos e caracteres especiais
+    const baseSlug = name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    // Verifica se slug já existe
+    let slug = baseSlug;
+    let counter = 1;
+
+    while (true) {
+      const existing = await this.db
+        .select()
+        .from(schema.salons)
+        .where(eq(schema.salons.slug, slug))
+        .limit(1);
+
+      if (existing.length === 0) {
+        break;
+      }
+
+      slug = `${baseSlug}-${counter}`;
+      counter++;
+    }
+
+    return slug;
   }
 
   /**

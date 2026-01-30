@@ -4,13 +4,30 @@ import { ApiTags, ApiOperation, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { LoginDto, RefreshTokenDto, LogoutDto, CreatePasswordDto } from './dto';
+import { LoginDto, RefreshTokenDto, LogoutDto, CreatePasswordDto, SignupDto } from './dto';
 import { JwtPayload } from './jwt.strategy';
 
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  /**
+   * POST /auth/signup
+   * Cadastro publico de novo salao + usuario OWNER
+   * Rota publica - nao requer autenticacao
+   *
+   * RATE LIMIT: 3 por minuto (protege contra spam)
+   */
+  @Public()
+  @Post('signup')
+  @HttpCode(HttpStatus.CREATED)
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @ApiOperation({ summary: 'Cadastro público de novo salão' })
+  @ApiBody({ type: SignupDto })
+  async signup(@Body() signupDto: SignupDto) {
+    return this.authService.signup(signupDto);
+  }
 
   /**
    * POST /auth/login

@@ -1,5 +1,5 @@
-import { IsEmail, IsString, IsNotEmpty, MinLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsEmail, IsString, IsNotEmpty, MinLength, IsUUID, IsOptional, Matches } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
  * DTO para login
@@ -71,4 +71,60 @@ export class CreatePasswordDto {
   @IsNotEmpty({ message: 'Senha é obrigatória' })
   @MinLength(6, { message: 'Senha deve ter no mínimo 6 caracteres' })
   password!: string;
+}
+
+/**
+ * DTO para signup (cadastro público)
+ */
+export class SignupDto {
+  @ApiProperty({
+    description: 'Nome do salão/estabelecimento',
+    example: 'Studio Maria Beleza',
+  })
+  @IsString({ message: 'Nome do salão deve ser uma string' })
+  @IsNotEmpty({ message: 'Nome do salão é obrigatório' })
+  salonName!: string;
+
+  @ApiProperty({
+    description: 'Nome completo do proprietário',
+    example: 'Maria Silva',
+  })
+  @IsString({ message: 'Nome deve ser uma string' })
+  @IsNotEmpty({ message: 'Nome é obrigatório' })
+  ownerName!: string;
+
+  @ApiProperty({
+    description: 'Email do proprietário',
+    example: 'maria@exemplo.com',
+  })
+  @IsEmail({}, { message: 'Email inválido' })
+  @IsNotEmpty({ message: 'Email é obrigatório' })
+  email!: string;
+
+  @ApiProperty({
+    description: 'Telefone com DDD (apenas números)',
+    example: '11999999999',
+  })
+  @IsString({ message: 'Telefone deve ser uma string' })
+  @IsNotEmpty({ message: 'Telefone é obrigatório' })
+  @Matches(/^\d{10,11}$/, { message: 'Telefone deve ter 10 ou 11 dígitos' })
+  phone!: string;
+
+  @ApiProperty({
+    description: 'Senha (mínimo 6 caracteres)',
+    example: 'senha123',
+    minLength: 6,
+  })
+  @IsString({ message: 'Senha deve ser uma string' })
+  @IsNotEmpty({ message: 'Senha é obrigatória' })
+  @MinLength(6, { message: 'Senha deve ter no mínimo 6 caracteres' })
+  password!: string;
+
+  @ApiPropertyOptional({
+    description: 'ID do plano escolhido (UUID). Se não informado, usa o plano Professional.',
+    example: 'eeeeeee1-eeee-eeee-eeee-eeeeeeeeeeee',
+  })
+  @IsUUID('4', { message: 'planId deve ser um UUID válido' })
+  @IsOptional()
+  planId?: string;
 }
