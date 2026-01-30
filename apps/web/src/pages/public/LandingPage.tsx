@@ -224,7 +224,7 @@ export function LandingPage() {
               </h3>
               <p className="text-gray-600 text-sm">
                 Confirmacoes e lembretes automaticos.
-                <span className="block mt-2 text-green-600 font-medium">Teste incluso no 1o mes.</span>
+                <span className="block mt-2 text-green-600 font-medium">14 dias gratis para testar.</span>
               </p>
             </div>
 
@@ -242,7 +242,7 @@ export function LandingPage() {
               </h3>
               <p className="text-gray-600 text-sm">
                 Atendimento 24/7 que agenda clientes.
-                <span className="block mt-2 text-purple-600 font-medium">Teste incluso no 1o mes.</span>
+                <span className="block mt-2 text-purple-600 font-medium">14 dias gratis para testar.</span>
               </p>
             </div>
           </div>

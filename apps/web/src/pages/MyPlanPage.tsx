@@ -501,7 +501,7 @@ export function MyPlanPage() {
         {!currentPlan?.hasAutomation && (
           <div className="flex items-center gap-2 text-fuchsia-600 bg-fuchsia-50 px-4 py-3 rounded-xl mb-6 mt-4">
             <Sparkles className="w-5 h-5" />
-            <span className="font-medium">+ WhatsApp Automatico (teste gratis no 1o mes) - Faca upgrade!</span>
+            <span className="font-medium">+ WhatsApp Automatico (14 dias gratis) - Faca upgrade!</span>
           </div>
         )}
 
@@ -570,7 +570,7 @@ export function MyPlanPage() {
           {!currentPlan?.hasAI && (
             <div className="flex items-center gap-2 bg-fuchsia-500/20 px-4 py-3 rounded-xl mb-6 mt-4">
               <Sparkles className="w-5 h-5 text-fuchsia-300" />
-              <span className="text-fuchsia-100 font-medium">+ Alexis IA (300 atendimentos gratis no 1o mes) - Faca upgrade!</span>
+              <span className="text-fuchsia-100 font-medium">+ Alexis IA (300 atendimentos gratis por 14 dias) - Faca upgrade!</span>
             </div>
           )}
 
