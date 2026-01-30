@@ -207,7 +207,7 @@ export class OnlineBookingSettingsService {
     const slug = salon.slug || salon.id;
 
     return {
-      url: `${baseUrl}/booking/${slug}?${params.toString()}`,
+      url: `${baseUrl}/agendar/${slug}?${params.toString()}`,
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 horas
     };
   }

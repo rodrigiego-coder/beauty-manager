@@ -35,7 +35,7 @@ import {
 } from './conversation-state';
 import {
   handleSchedulingTurn,
-  startScheduling,
+  // startScheduling, // Comentado: não usado após mudança para link de agendamento
   SkillContext,
 } from './scheduling-skill';
 import { matchLexicon } from './lexicon/lexicon-resolver';
@@ -44,6 +44,7 @@ import { buildLexiconTelemetry, LexiconTelemetryEvent } from './lexicon/lexicon-
 import { resolveServicePrice, formatServicePriceResponse } from './lexicon/service-price-resolver';
 import { resolveRelativeDate } from './relative-date-resolver';
 import { AppointmentsService } from '../appointments/appointments.service';
+import { OnlineBookingSettingsService } from '../online-booking/online-booking-settings.service';
 
 /**
  * =====================================================
@@ -83,6 +84,7 @@ export class AlexisService {
     private readonly stateStore: ConversationStateStore,
     @Inject(forwardRef(() => AppointmentsService))
     private readonly appointmentsService: AppointmentsService,
+    private readonly onlineBookingSettings: OnlineBookingSettingsService,
   ) {}
 
   /**
@@ -904,7 +906,8 @@ export class AlexisService {
 
   /**
    * =====================================================
-   * FSM START — Inicia scheduling skill
+   * FSM START — Envia link de agendamento online
+   * (Antes: iniciava scheduling skill via FSM)
    * =====================================================
    */
   private async handleFSMStart(
@@ -913,18 +916,50 @@ export class AlexisService {
     clientPhone: string,
     _clientName: string | undefined,
     text: string,
-    state: ConversationState,
+    _state: ConversationState,
     startTime: number,
   ): Promise<ProcessMessageResult> {
     const context = await this.dataCollector.collectContext(salonId, clientPhone);
     const services = context.services || [];
 
+    // Tenta identificar serviço mencionado na mensagem
+    const matched = fuzzyMatchService(text, services) as any;
+
+    // Gera link de agendamento assistido
+    const replyText = await this.generateBookingLinkResponse(
+      salonId,
+      clientPhone,
+      matched?.id,
+      matched?.name,
+    );
+
+    await this.stateStore.updateState(conversationId, {
+      userAlreadyGreeted: true,
+    });
+
+    await this.saveMessage(conversationId, 'client', text, 'SCHEDULE', false, false);
+    await this.saveMessage(conversationId, 'ai', replyText, 'SCHEDULE', false, false);
+
+    await this.logInteraction(
+      salonId, conversationId, clientPhone,
+      text, replyText, 'SCHEDULE',
+      false, undefined, Date.now() - startTime,
+    );
+
+    return {
+      response: replyText,
+      intent: 'SCHEDULE',
+      blocked: false,
+      shouldSend: true,
+      statusChanged: false,
+    };
+
+    /* ========== CÓDIGO ANTIGO: FSM SCHEDULING (comentado para referência) ==========
     // Se o texto já contém um serviço, pular AWAITING_SERVICE e ir direto
     const skillCtx = await this.buildSkillContext(salonId, context);
     const result = startScheduling();
 
     // Tenta já resolver serviço na mesma mensagem (ex.: "quero agendar alisamento")
-    const matched = fuzzyMatchService(text, services) as any;
     if (matched) {
       const turnResult = handleSchedulingTurn(
         { ...state, ...result.nextState } as ConversationState,
@@ -987,6 +1022,39 @@ export class AlexisService {
       shouldSend: true,
       statusChanged: false,
     };
+    ========== FIM CÓDIGO ANTIGO ========== */
+  }
+
+  /**
+   * =====================================================
+   * GERA RESPOSTA COM LINK DE AGENDAMENTO ONLINE
+   * =====================================================
+   */
+  private async generateBookingLinkResponse(
+    salonId: string,
+    clientPhone: string,
+    serviceId?: number,
+    serviceName?: string,
+  ): Promise<string> {
+    try {
+      const result = await this.onlineBookingSettings.generateAssistedLink({
+        salonId,
+        serviceId,
+        clientPhone: clientPhone?.replace(/\D/g, ''),
+      });
+
+      const serviceText = serviceName ? `*${serviceName}*` : 'o serviço desejado';
+
+      return `Entendi! Você quer agendar ${serviceText} 💇‍♀️
+
+Clique no link abaixo para escolher o melhor horário:
+🔗 ${result.url}
+
+⏰ Link válido por 24 horas.`;
+    } catch (error) {
+      this.logger.error('Erro ao gerar link de agendamento:', error);
+      return 'Desculpe, tive um problema ao gerar o link de agendamento. Por favor, entre em contato pelo telefone do salão.';
+    }
   }
 
   /**

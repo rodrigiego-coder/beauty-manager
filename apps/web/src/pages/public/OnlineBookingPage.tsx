@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 
 // Types
 interface SalonInfo {
@@ -80,6 +80,8 @@ enum BookingStep {
 
 export function OnlineBookingPage() {
   const { salonSlug } = useParams<{ salonSlug: string }>();
+  const [searchParams] = useSearchParams();
+  const preSelectedServiceId = searchParams.get('service');
 
   // Estados principais
   const [loading, setLoading] = useState(true);
@@ -152,6 +154,18 @@ export function OnlineBookingPage() {
 
     loadSalonInfo();
   }, [salonSlug]);
+
+  // Pré-seleciona serviço via query param ?service=ID
+  useEffect(() => {
+    if (preSelectedServiceId && services.length > 0 && !selectedService) {
+      const serviceId = Number(preSelectedServiceId);
+      const service = services.find(s => s.id === serviceId);
+      if (service) {
+        setSelectedService(service);
+        setCurrentStep(BookingStep.PROFESSIONAL);
+      }
+    }
+  }, [preSelectedServiceId, services, selectedService]);
 
   // Timer do hold
   useEffect(() => {

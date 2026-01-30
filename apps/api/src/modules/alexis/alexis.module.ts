@@ -11,6 +11,7 @@ import { ResponseComposerService } from './response-composer.service';
 import { ProductInfoService } from './product-info.service';
 import { ConversationStateStore } from './conversation-state.store';
 import { AppointmentsModule } from '../appointments/appointments.module';
+import { OnlineBookingModule } from '../online-booking/online-booking.module';
 
 /**
  * ==========================================
@@ -22,6 +23,7 @@ import { AppointmentsModule } from '../appointments/appointments.module';
 @Module({
   imports: [
     forwardRef(() => AppointmentsModule), // Para criar agendamento via FSM
+    forwardRef(() => OnlineBookingModule), // Para gerar link de agendamento assistido
   ],
   controllers: [AlexisController],
   providers: [
