@@ -5,6 +5,7 @@ export { ReportsPage } from './ReportsPage';
 export { ClientsPage } from './ClientsPage';
 export { AppointmentsPage } from './AppointmentsPage';
 export { LoginPage } from './LoginPage';
+export { CreatePasswordPage } from './CreatePasswordPage';
 export { TeamPage } from './TeamPage';
 export { SettingsPage } from './SettingsPage';
 export { SubscriptionPage } from './SubscriptionPage';

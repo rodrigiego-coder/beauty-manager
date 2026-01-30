@@ -467,6 +467,9 @@ export const users = pgTable('users', {
   workSchedule: json('work_schedule').$type<WorkSchedule>(),
   specialties: text('specialties'),
   active: boolean('active').default(true).notNull(),
+  // Token para criação/reset de senha (enviado via WhatsApp)
+  passwordResetToken: varchar('password_reset_token', { length: 64 }).unique(),
+  passwordResetExpires: timestamp('password_reset_expires'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

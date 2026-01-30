@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, Inject } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, Inject } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
@@ -125,6 +125,76 @@ export class AuthService {
         message: 'Logout realizado com sucesso',
       };
     }
+  }
+
+  /**
+   * Cria senha usando token recebido via WhatsApp
+   * Valida token, verifica expiração e define a senha
+   */
+  async createPassword(token: string, password: string) {
+    // Busca usuário pelo token
+    const user = await this.usersService.findByPasswordResetToken(token);
+
+    if (!user) {
+      throw new BadRequestException('Token invalido ou ja utilizado');
+    }
+
+    // Verifica se token expirou
+    if (!user.passwordResetExpires || new Date() > user.passwordResetExpires) {
+      throw new BadRequestException('Token expirado. Solicite um novo link ao administrador.');
+    }
+
+    // Verifica se usuário está ativo
+    if (!user.active) {
+      throw new BadRequestException('Usuario desativado');
+    }
+
+    // Define a senha
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    await this.db
+      .update(schema.users)
+      .set({
+        passwordHash,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.users.id, user.id));
+
+    // Limpa o token após uso
+    await this.usersService.clearPasswordResetToken(user.id);
+
+    // Gera tokens para login automático
+    const tokens = await this.generateTokens(user.id, user.email!, user.role, user.salonId!);
+
+    // Remove a senha do retorno
+    const { passwordHash: _, passwordResetToken: __, passwordResetExpires: ___, ...userData } = user;
+
+    return {
+      user: userData,
+      ...tokens,
+      message: 'Senha criada com sucesso',
+    };
+  }
+
+  /**
+   * Valida se um token de criação de senha é válido (sem criar a senha)
+   */
+  async validatePasswordToken(token: string): Promise<{ valid: boolean; userName?: string }> {
+    const user = await this.usersService.findByPasswordResetToken(token);
+
+    if (!user) {
+      return { valid: false };
+    }
+
+    if (!user.passwordResetExpires || new Date() > user.passwordResetExpires) {
+      return { valid: false };
+    }
+
+    if (!user.active) {
+      return { valid: false };
+    }
+
+    return { valid: true, userName: user.name };
   }
 
   /**

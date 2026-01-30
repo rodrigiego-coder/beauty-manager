@@ -49,3 +49,26 @@ export class LogoutDto {
   @IsNotEmpty({ message: 'Refresh token é obrigatório' })
   refreshToken!: string;
 }
+
+/**
+ * DTO para criar senha via token
+ */
+export class CreatePasswordDto {
+  @ApiProperty({
+    description: 'Token de criação de senha recebido via WhatsApp',
+    example: 'a1b2c3d4e5f6...',
+  })
+  @IsString({ message: 'Token deve ser uma string' })
+  @IsNotEmpty({ message: 'Token é obrigatório' })
+  token!: string;
+
+  @ApiProperty({
+    description: 'Nova senha (mínimo 6 caracteres)',
+    example: 'minhaSenha123',
+    minLength: 6,
+  })
+  @IsString({ message: 'Senha deve ser uma string' })
+  @IsNotEmpty({ message: 'Senha é obrigatória' })
+  @MinLength(6, { message: 'Senha deve ter no mínimo 6 caracteres' })
+  password!: string;
+}

@@ -122,10 +122,35 @@ export class UsersController {
   /**
    * POST /users
    * Cria um novo usuario
+   * Se criado sem senha e com telefone, envia link de criacao de senha via WhatsApp
    */
   @Post()
   async create(@Body() data: CreateUserDto) {
-    return this.usersService.create(data as any);
+    const { sendPasswordLink, ...userData } = data;
+    const user = await this.usersService.create(userData as any);
+
+    // Se não tem senha e tem telefone, envia link de criação de senha
+    // sendPasswordLink: true por default se não vier senha, false se vier
+    const shouldSendLink = sendPasswordLink !== false && !data.password && user.phone;
+
+    if (shouldSendLink) {
+      try {
+        await this.usersService.sendPasswordCreationLink(user.id);
+        return {
+          ...user,
+          message: 'Usuario criado. Link de criacao de senha enviado via WhatsApp.',
+        };
+      } catch (error) {
+        // Se falhar o envio, ainda retorna o usuário criado
+        console.error('Erro ao enviar link de senha:', error);
+        return {
+          ...user,
+          message: 'Usuario criado. Falha ao enviar link via WhatsApp.',
+        };
+      }
+    }
+
+    return user;
   }
 
   /**
@@ -177,5 +202,20 @@ export class UsersController {
     }
 
     return { message: 'Usuario desativado com sucesso' };
+  }
+
+  /**
+   * POST /users/:id/send-password-link
+   * Reenvia link de criacao de senha via WhatsApp
+   */
+  @Post(':id/send-password-link')
+  async sendPasswordLink(@Param('id') id: string) {
+    const user = await this.usersService.findById(id);
+
+    if (!user) {
+      throw new NotFoundException('Usuario nao encontrado');
+    }
+
+    return this.usersService.sendPasswordCreationLink(id);
   }
 }

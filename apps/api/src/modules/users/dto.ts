@@ -70,6 +70,11 @@ export class CreateUserDto {
   @IsObject({ message: 'Horario de trabalho deve ser um objeto' })
   @IsOptional()
   workSchedule?: Record<string, string>;
+
+  @ApiPropertyOptional({ description: 'Enviar link de criação de senha via WhatsApp (default: true se sem senha)', example: true })
+  @IsBoolean({ message: 'sendPasswordLink deve ser um booleano' })
+  @IsOptional()
+  sendPasswordLink?: boolean;
 }
 
 // DTO para atualizar usuario

@@ -10,6 +10,7 @@ import {
   ClientsPage,
   AppointmentsPage,
   LoginPage,
+  CreatePasswordPage,
   TeamPage,
   SettingsPage,
   SubscriptionPage,
@@ -71,6 +72,7 @@ function App() {
         <Routes>
           {/* Rotas publicas */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/criar-senha" element={<CreatePasswordPage />} />
           <Route path="/cart/:code" element={<CartLinkPublicPage />} />
           <Route path="/pre-avaliacao/:token" element={<TriagePublicPage />} />
           <Route path="/agendar/:salonSlug" element={<OnlineBookingPage />} />

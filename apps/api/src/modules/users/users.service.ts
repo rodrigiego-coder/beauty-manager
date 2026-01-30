@@ -1,14 +1,21 @@
 import { Injectable, Inject, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { eq } from 'drizzle-orm';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 import { DATABASE_CONNECTION } from '../../database/database.module';
 import { Database, users, User, NewUser, WorkSchedule } from '../../database';
+import { WhatsAppService } from '../../whatsapp/whatsapp.service';
+import { SalonsService } from '../salons/salons.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     @Inject(DATABASE_CONNECTION)
     private db: Database,
+    private configService: ConfigService,
+    private whatsappService: WhatsAppService,
+    private salonsService: SalonsService,
   ) {}
 
   /**
@@ -239,5 +246,96 @@ export class UsersService {
   calculateCommission(user: User, totalValue: number): number {
     const rate = user.commissionRate ? parseFloat(user.commissionRate) : 0.5;
     return totalValue * rate;
+  }
+
+  /**
+   * Busca usuario por token de reset de senha
+   */
+  async findByPasswordResetToken(token: string): Promise<User | null> {
+    const result = await this.db
+      .select()
+      .from(users)
+      .where(eq(users.passwordResetToken, token))
+      .limit(1);
+
+    return result[0] || null;
+  }
+
+  /**
+   * Gera token de criação de senha e envia link via WhatsApp
+   * Token expira em 48 horas
+   */
+  async sendPasswordCreationLink(userId: string): Promise<{ success: boolean; message: string }> {
+    const user = await this.findById(userId);
+
+    if (!user) {
+      throw new BadRequestException('Usuario nao encontrado');
+    }
+
+    if (!user.phone) {
+      throw new BadRequestException('Usuario nao possui telefone cadastrado');
+    }
+
+    if (!user.salonId) {
+      throw new BadRequestException('Usuario nao possui salao vinculado');
+    }
+
+    // Busca nome do salão
+    const salon = await this.salonsService.findById(user.salonId);
+    if (!salon) {
+      throw new BadRequestException('Salao nao encontrado');
+    }
+
+    // Gera token único (32 bytes = 64 caracteres hex)
+    const token = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 horas
+
+    // Salva token no usuário
+    await this.db
+      .update(users)
+      .set({
+        passwordResetToken: token,
+        passwordResetExpires: expires,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+
+    // Monta link
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'https://app.beautymanager.com.br';
+    const link = `${frontendUrl}/criar-senha?token=${token}`;
+
+    // Monta mensagem
+    const message = `Ola, ${user.name}!
+
+Voce foi adicionado a equipe do *${salon.name}*!
+
+Crie sua senha para acessar o sistema:
+${link}
+
+Link valido por 48 horas.`;
+
+    // Envia via WhatsApp
+    try {
+      await this.whatsappService.sendMessage(user.salonId, user.phone, message);
+      return { success: true, message: 'Link de criacao de senha enviado com sucesso' };
+    } catch (error) {
+      console.error('Erro ao enviar WhatsApp:', error);
+      // Não falha se WhatsApp der erro, apenas loga
+      return { success: true, message: 'Usuario criado. Link disponivel mas falha no envio WhatsApp.' };
+    }
+  }
+
+  /**
+   * Limpa o token de reset de senha após uso
+   */
+  async clearPasswordResetToken(userId: string): Promise<void> {
+    await this.db
+      .update(users)
+      .set({
+        passwordResetToken: null,
+        passwordResetExpires: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
   }
 }

@@ -1,10 +1,10 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Get, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { ApiTags, ApiOperation, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { LoginDto, RefreshTokenDto, LogoutDto } from './dto';
+import { LoginDto, RefreshTokenDto, LogoutDto, CreatePasswordDto } from './dto';
 import { JwtPayload } from './jwt.strategy';
 
 @ApiTags('Auth')
@@ -58,5 +58,40 @@ export class AuthController {
   @ApiBody({ type: LogoutDto })
   async logout(@Body() logoutDto: LogoutDto, @CurrentUser() user: JwtPayload) {
     return this.authService.logout(logoutDto.refreshToken, user.sub);
+  }
+
+  /**
+   * POST /auth/create-password
+   * Cria senha usando token recebido via WhatsApp
+   * Rota publica - nao requer autenticacao
+   *
+   * RATE LIMIT: 5 tentativas por minuto
+   * Protege contra ataques de forca bruta
+   */
+  @Public()
+  @Post('create-password')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @ApiOperation({ summary: 'Criar senha via token (primeiro acesso)' })
+  @ApiBody({ type: CreatePasswordDto })
+  async createPassword(@Body() dto: CreatePasswordDto) {
+    return this.authService.createPassword(dto.token, dto.password);
+  }
+
+  /**
+   * GET /auth/validate-token
+   * Valida se um token de criacao de senha eh valido
+   * Rota publica - nao requer autenticacao
+   *
+   * RATE LIMIT: 10 por minuto
+   */
+  @Public()
+  @Get('validate-token')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @ApiOperation({ summary: 'Validar token de criacao de senha' })
+  @ApiQuery({ name: 'token', description: 'Token de criacao de senha' })
+  async validateToken(@Query('token') token: string) {
+    return this.authService.validatePasswordToken(token);
   }
 }
