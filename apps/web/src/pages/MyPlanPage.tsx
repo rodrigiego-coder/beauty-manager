@@ -9,7 +9,6 @@ import {
   Bot,
   ChevronDown,
   ChevronUp,
-  AlertTriangle,
   Loader2,
   TrendingUp,
   DollarSign,
@@ -177,7 +176,11 @@ export function MyPlanPage() {
   const perdaMensal = faltasMes * ticketMedio;
   const custoRobo = 29.9;
   const economiaPotencial = Math.max(0, perdaMensal * 0.7 - custoRobo);
-  const roi = custoRobo > 0 ? Math.round((economiaPotencial / custoRobo) * 100) : 0;
+  const retornoPorReal = custoRobo > 0 ? (economiaPotencial / custoRobo).toFixed(2) : '0';
+
+  // Plan order for upgrade/downgrade logic
+  const planOrder = ['ESSENTIAL', 'PROFESSIONAL', 'MASTER'];
+  const currentPlanIndex = currentSub?.plan?.code ? planOrder.indexOf(currentSub.plan.code) : -1;
 
   // Handlers
   const handleChangePlan = async (plan: DisplayPlan) => {
@@ -320,6 +323,8 @@ export function MyPlanPage() {
             const isCurrent = plan.id === subscription?.planId;
             const price = billingCycle === 'MONTHLY' ? parseFloat(plan.priceMonthly) : parseFloat(plan.priceYearly || plan.priceMonthly);
             const perMonth = billingCycle === 'YEARLY' ? (price / 12).toFixed(2) : null;
+            const thisPlanIndex = planOrder.indexOf(plan.code);
+            const isUpgrade = thisPlanIndex > currentPlanIndex;
 
             return (
               <div
@@ -381,19 +386,30 @@ export function MyPlanPage() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => handleChangePlan(plan)}
-                  disabled={isCurrent || changingPlan}
-                  className={`w-full py-3 rounded-xl font-semibold transition-all flex items-center justify-center gap-2 ${
-                    isCurrent
-                      ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                      : plan.popular
-                        ? 'bg-primary-600 text-white hover:bg-primary-700'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {changingPlan ? <Loader2 className="w-5 h-5 animate-spin" /> : isCurrent ? 'Plano Atual' : 'Escolher'}
-                </button>
+                {isCurrent ? (
+                  <button
+                    disabled
+                    className="w-full py-3 rounded-xl font-semibold bg-slate-100 text-slate-500 cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    <Check className="w-4 h-4" /> Seu plano atual
+                  </button>
+                ) : isUpgrade ? (
+                  <button
+                    onClick={() => handleChangePlan(plan)}
+                    disabled={changingPlan}
+                    className="w-full py-3 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-all flex items-center justify-center gap-2"
+                  >
+                    {changingPlan ? <Loader2 className="w-5 h-5 animate-spin" /> : <>Subir para {plan.name} <ArrowRight className="w-4 h-4" /></>}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleChangePlan(plan)}
+                    disabled={changingPlan}
+                    className="w-full py-3 rounded-xl font-semibold bg-slate-200 text-slate-600 hover:bg-slate-300 transition-all flex items-center justify-center gap-2"
+                  >
+                    {changingPlan ? <Loader2 className="w-5 h-5 animate-spin" /> : `Mudar para ${plan.name}`}
+                  </button>
+                )}
               </div>
             );
           })}
@@ -451,10 +467,10 @@ export function MyPlanPage() {
               <span className="font-medium">Economia potencial (70%)</span>
               <span className="text-3xl font-bold text-emerald-300">+ R$ {economiaPotencial.toFixed(0)}</span>
             </div>
-            {roi > 0 && (
+            {parseFloat(retornoPorReal) > 0 && (
               <div className="flex items-center gap-2 text-emerald-300">
                 <TrendingUp className="w-5 h-5" />
-                <span className="font-semibold">ROI de {roi}%</span>
+                <span className="font-semibold">Para cada R$1 investido, voce recupera R$ {retornoPorReal}</span>
               </div>
             )}
           </div>
@@ -483,9 +499,9 @@ export function MyPlanPage() {
         </div>
 
         {!currentPlan?.hasAutomation && (
-          <div className="flex items-center gap-2 text-amber-700 bg-amber-50 px-4 py-3 rounded-xl mb-6">
-            <AlertTriangle className="w-5 h-5" />
-            <span>Disponivel nos planos Professional e Master</span>
+          <div className="flex items-center gap-2 text-fuchsia-600 bg-fuchsia-50 px-4 py-3 rounded-xl mb-6 mt-4">
+            <Sparkles className="w-5 h-5" />
+            <span className="font-medium">+ WhatsApp Automatico (teste gratis no 1o mes) - Faca upgrade!</span>
           </div>
         )}
 
@@ -552,16 +568,16 @@ export function MyPlanPage() {
           </div>
 
           {!currentPlan?.hasAI && (
-            <div className="flex items-center gap-2 bg-white/10 px-4 py-3 rounded-xl mb-6 mt-4">
-              <AlertTriangle className="w-5 h-5 text-amber-300" />
-              <span className="text-purple-100">Disponivel nos planos Professional e Master</span>
+            <div className="flex items-center gap-2 bg-fuchsia-500/20 px-4 py-3 rounded-xl mb-6 mt-4">
+              <Sparkles className="w-5 h-5 text-fuchsia-300" />
+              <span className="text-fuchsia-100 font-medium">+ Alexis IA (300 atendimentos gratis no 1o mes) - Faca upgrade!</span>
             </div>
           )}
 
           {!activeWhatsapp && currentPlan?.hasAI && (
             <div className="flex items-center gap-2 bg-white/10 px-4 py-3 rounded-xl mb-6 mt-4">
-              <AlertTriangle className="w-5 h-5 text-amber-300" />
-              <span className="text-purple-100">Ative o WhatsApp primeiro para usar a Alexis</span>
+              <Phone className="w-5 h-5 text-green-300" />
+              <span className="text-purple-100">Ative o WhatsApp primeiro para liberar a Alexis</span>
             </div>
           )}
 
@@ -583,18 +599,13 @@ export function MyPlanPage() {
             </div>
           </div>
 
-          {alexisAddons.length > 0 && currentPlan?.hasAI && activeWhatsapp && (
-            <div className="grid md:grid-cols-2 gap-4 mt-6">
-              {alexisAddons.map((addon) => {
-                const isActive = activeAlexis?.addonCode === addon.code;
-                return (
-                  <button
+          {alexisAddons.length > 0 && currentPlan?.hasAI && activeWhatsapp && !activeAlexis && (
+            <>
+              <div className="grid md:grid-cols-2 gap-4 mt-6">
+                {alexisAddons.map((addon) => (
+                  <div
                     key={addon.code}
-                    onClick={() => !isActive && handleActivateAddon(addon.code)}
-                    disabled={isActive || !!activatingAddon}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${
-                      isActive ? 'border-white/50 bg-white/20' : 'border-white/20 bg-white/5 hover:bg-white/10'
-                    }`}
+                    className="p-4 rounded-xl border-2 border-white/20 bg-white/5"
                   >
                     <div className="flex justify-between items-center">
                       <div>
@@ -603,7 +614,40 @@ export function MyPlanPage() {
                       </div>
                       <div className="text-xl font-bold">{addon.priceFormatted}</div>
                     </div>
-                  </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => alexisAddons[0] && handleActivateAddon(alexisAddons[0].code)}
+                disabled={!!activatingAddon}
+                className="w-full mt-8 bg-white text-purple-700 py-4 rounded-2xl font-black text-lg hover:bg-purple-50 transition-all active:scale-95 flex items-center justify-center gap-2"
+              >
+                {activatingAddon ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Sparkles className="w-5 h-5" /> Ativar Alexis (300 atendimentos gratis)</>}
+              </button>
+              <p className="text-xs text-center text-purple-200 mt-2">Teste expira em 30 dias. Depois voce decide.</p>
+            </>
+          )}
+
+          {alexisAddons.length > 0 && currentPlan?.hasAI && activeWhatsapp && activeAlexis && (
+            <div className="grid md:grid-cols-2 gap-4 mt-6">
+              {alexisAddons.map((addon) => {
+                const isActive = activeAlexis?.addonCode === addon.code;
+                return (
+                  <div
+                    key={addon.code}
+                    className={`p-4 rounded-xl border-2 ${isActive ? 'border-white/50 bg-white/20' : 'border-white/20 bg-white/5'}`}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="font-semibold">{addon.tier}</div>
+                        <div className="text-sm text-purple-200">{addon.quotaAmount} interacoes/mes</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xl font-bold">{addon.priceFormatted}</div>
+                        {isActive && <span className="text-xs text-green-300">Ativo</span>}
+                      </div>
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -615,7 +659,7 @@ export function MyPlanPage() {
                 const proPlan = displayPlans.find((p) => p.code === 'PROFESSIONAL');
                 if (proPlan) handleChangePlan(proPlan);
               }}
-              className="mt-6 w-full md:w-auto px-8 py-4 bg-white text-purple-700 rounded-xl font-bold hover:bg-purple-50 transition-all flex items-center justify-center gap-2"
+              className="mt-8 w-full bg-white text-purple-700 py-4 rounded-2xl font-black text-lg hover:bg-purple-50 transition-all active:scale-95 flex items-center justify-center gap-2"
             >
               <Rocket className="w-5 h-5" />
               Fazer Upgrade para ter Alexis
