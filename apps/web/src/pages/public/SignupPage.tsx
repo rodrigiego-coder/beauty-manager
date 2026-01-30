@@ -320,44 +320,33 @@ export function SignupPage() {
             <span className="font-medium">14 dias gratis</span>
           </div>
 
-          <h2 className="text-3xl font-bold mb-6">
-            Por que escolher o Beauty Manager?
-          </h2>
+          {/* Trial Benefits Card */}
+          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 mb-8">
+            <h2 className="text-2xl font-bold mb-6">
+              Seu trial de 14 dias inclui:
+            </h2>
 
-          <div className="space-y-6">
-            {[
-              {
-                title: 'Reduza faltas em 70%',
-                desc: 'Confirmacao automatica via WhatsApp que funciona',
-              },
-              {
-                title: 'Economize 10+ horas/semana',
-                desc: 'Automacao de tarefas repetitivas e agenda online',
-              },
-              {
-                title: 'Aumente seu faturamento',
-                desc: 'Fidelizacao, upsell e recomendacoes inteligentes',
-              },
-              {
-                title: 'Configuracao em minutos',
-                desc: 'Interface simples, sem necessidade de treinamento',
-              },
-            ].map((item, i) => (
-              <div key={i} className="flex items-start gap-4">
-                <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Check className="w-5 h-5" />
+            <div className="space-y-4">
+              {[
+                'Acesso completo ao sistema',
+                '50 confirmacoes WhatsApp para testar',
+                '300 atendimentos Alexis para testar',
+                'Sem cartao de credito',
+                'Cancele quando quiser',
+              ].map((item, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Check className="w-4 h-4" />
+                  </div>
+                  <span className="font-medium">{item}</span>
                 </div>
-                <div>
-                  <div className="font-semibold">{item.title}</div>
-                  <div className="text-primary-200 text-sm">{item.desc}</div>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
           {/* Selected Plan Info */}
           {selectedPlan && (
-            <div className="mt-10 p-6 bg-white/10 rounded-2xl">
+            <div className="p-6 bg-white/10 rounded-2xl">
               <div className="text-sm text-primary-200 mb-1">Plano selecionado</div>
               <div className="text-2xl font-bold">{selectedPlan.name}</div>
               <div className="text-primary-200 mt-2">
@@ -371,6 +360,11 @@ export function SignupPage() {
               </div>
             </div>
           )}
+
+          {/* Transparency note */}
+          <p className="text-primary-200 text-sm mt-6 text-center">
+            Voce paga so pelo que usar. Sem surpresas.
+          </p>
         </div>
       </div>
     </div>

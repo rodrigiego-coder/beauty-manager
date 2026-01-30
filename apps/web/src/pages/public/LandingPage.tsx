@@ -3,10 +3,10 @@ import {
   Calendar,
   Users,
   MessageSquare,
+  MessageCircle,
   TrendingUp,
   Shield,
   Clock,
-  Star,
   Check,
   ArrowRight,
   Sparkles,
@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
   Gift,
+  Bot,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -84,7 +85,7 @@ export function LandingPage() {
           <p className="text-xl text-gray-600 mt-6 max-w-2xl mx-auto">
             Agenda, comandas, financeiro e WhatsApp automatico.
             <br />
-            Reduza faltas em 70% e foque no que importa: seus clientes.
+            Confirmacao automatica que reduz faltas. Foque no que importa: seus clientes.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-10">
@@ -104,23 +105,14 @@ export function LandingPage() {
           </div>
 
           {/* Social Proof */}
-          <div className="flex items-center justify-center gap-8 mt-12">
-            <div className="flex items-center gap-2">
-              <div className="flex -space-x-2">
-                {[1, 2, 3, 4].map((i) => (
-                  <div
-                    key={i}
-                    className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 border-2 border-white"
-                  />
-                ))}
-              </div>
-              <span className="text-gray-600 font-medium">+500 saloes</span>
+          <div className="flex items-center justify-center gap-6 mt-12">
+            <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-full">
+              <Shield className="w-5 h-5 text-emerald-600" />
+              <span className="text-gray-600 font-medium">Dados protegidos</span>
             </div>
-            <div className="flex items-center gap-1">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Star key={i} className="w-5 h-5 text-amber-400 fill-amber-400" />
-              ))}
-              <span className="text-gray-600 ml-1">4.9/5</span>
+            <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 rounded-full">
+              <Clock className="w-5 h-5 text-primary-600" />
+              <span className="text-gray-600 font-medium">Suporte humanizado</span>
             </div>
           </div>
         </div>
@@ -149,7 +141,7 @@ export function LandingPage() {
               {
                 icon: MessageSquare,
                 title: 'WhatsApp Automatico',
-                desc: 'Confirmacao, lembrete e reagendamento automatico. Reduza faltas em 70%.',
+                desc: 'Confirmacao, lembrete e reagendamento automatico. Reduza faltas significativamente.',
                 color: 'bg-green-500',
               },
               {
@@ -173,7 +165,7 @@ export function LandingPage() {
               {
                 icon: Shield,
                 title: 'Seguro e Confiavel',
-                desc: 'Seus dados criptografados, backups automaticos e LGPD compliant.',
+                desc: 'Seus dados criptografados, exportacao a qualquer momento e LGPD compliant.',
                 color: 'bg-gray-700',
               },
             ].map((feature, i) => (
@@ -194,8 +186,75 @@ export function LandingPage() {
         </div>
       </section>
 
+      {/* ========== COMO FUNCIONA ========== */}
+      <section className="py-20 px-4">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-gray-900">Como funciona</h2>
+            <p className="text-gray-600 mt-2">Simples, modular e sem surpresas.</p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {/* Step 1 */}
+            <div className="bg-white rounded-2xl border-2 border-gray-100 p-6 relative">
+              <div className="absolute -top-3 -left-3 w-8 h-8 bg-primary-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
+                1
+              </div>
+              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
+                <Calendar className="w-6 h-6 text-blue-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Assine o sistema</h3>
+              <p className="text-gray-600 text-sm">
+                Agenda, comandas, financeiro e gestao de clientes.
+                <span className="block mt-2 text-primary-600 font-medium">14 dias gratis.</span>
+              </p>
+            </div>
+
+            {/* Step 2 */}
+            <div className="bg-white rounded-2xl border-2 border-gray-100 p-6 relative">
+              <div className="absolute -top-3 -left-3 w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
+                2
+              </div>
+              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mb-4">
+                <MessageCircle className="w-6 h-6 text-green-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">
+                Ative WhatsApp
+                <span className="text-xs font-normal text-gray-500 ml-2">(opcional)</span>
+              </h3>
+              <p className="text-gray-600 text-sm">
+                Confirmacoes e lembretes automaticos.
+                <span className="block mt-2 text-green-600 font-medium">Teste incluso no 1o mes.</span>
+              </p>
+            </div>
+
+            {/* Step 3 */}
+            <div className="bg-white rounded-2xl border-2 border-gray-100 p-6 relative">
+              <div className="absolute -top-3 -left-3 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
+                3
+              </div>
+              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-4">
+                <Bot className="w-6 h-6 text-purple-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">
+                Ative Alexis IA
+                <span className="text-xs font-normal text-gray-500 ml-2">(opcional)</span>
+              </h3>
+              <p className="text-gray-600 text-sm">
+                Atendimento 24/7 que agenda clientes.
+                <span className="block mt-2 text-purple-600 font-medium">Teste incluso no 1o mes.</span>
+              </p>
+            </div>
+          </div>
+
+          <p className="text-center text-gray-500 mt-8 text-sm">
+            Voce paga so pelo que usar. Sem surpresas. Sem multa de cancelamento.
+          </p>
+        </div>
+      </section>
+
       {/* ========== PRICING ========== */}
-      <section id="pricing" className="py-20 px-4">
+      <section id="pricing" className="py-20 bg-gray-50 px-4">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold text-gray-900">
@@ -288,7 +347,7 @@ export function LandingPage() {
                   '50 usuarios',
                   '5.000+ clientes',
                   'Tudo do Professional',
-                  'Multi-unidades',
+                  'Relatorios avancados',
                   'Suporte prioritario',
                 ].map((item) => (
                   <li key={item} className="flex items-center gap-2 text-sm text-gray-700">
@@ -330,7 +389,7 @@ export function LandingPage() {
             />
             <FAQItem
               q="Meus dados ficam seguros?"
-              a="Sim! Criptografia de ponta, backups automaticos e LGPD compliant."
+              a="Sim! Criptografia em transito, exportacao de dados e conformidade com LGPD."
             />
             <FAQItem
               q="Quanto tempo para configurar?"
@@ -347,7 +406,7 @@ export function LandingPage() {
             Pronto para transformar seu salao?
           </h2>
           <p className="text-primary-100 mb-8 text-lg">
-            Junte-se a +500 saloes que ja automatizaram sua gestao
+            Automatize sua gestao e recupere horas do seu dia
           </p>
           <Link
             to="/signup"
@@ -386,7 +445,7 @@ export function LandingPage() {
             <Shield className="w-4 h-4" />
             <span>Dados protegidos</span>
             <Clock className="w-4 h-4 ml-2" />
-            <span>Suporte em 2h</span>
+            <span>Suporte por WhatsApp</span>
           </div>
         </div>
       </footer>

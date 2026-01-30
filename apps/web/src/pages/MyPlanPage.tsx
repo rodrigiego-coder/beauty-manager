@@ -61,7 +61,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Meus dados ficam seguros?',
-    a: 'Sim! Criptografia de ponta, backups automaticos e LGPD compliant.',
+    a: 'Sim! Criptografia em transito, exportacao de dados e conformidade com LGPD.',
   },
 ];
 
@@ -477,7 +477,7 @@ export function MyPlanPage() {
         </div>
 
         <p className="mt-6 text-emerald-200 text-sm text-center">
-          * Baseado em reducao media de 70% nas faltas com confirmacao automatica
+          * Estimativa baseada em medias de mercado. Resultados podem variar.
         </p>
       </section>
 
@@ -489,7 +489,7 @@ export function MyPlanPage() {
           </div>
           <div className="flex-1">
             <h2 className="text-2xl font-bold text-gray-900">Confirmacao WhatsApp</h2>
-            <p className="text-gray-600">Reduza faltas em ate 70%</p>
+            <p className="text-gray-600">Reduza faltas com confirmacao automatica</p>
           </div>
           {activeWhatsapp && (
             <span className="bg-green-600 text-white text-xs font-bold px-3 py-1 rounded-full">
@@ -690,7 +690,7 @@ export function MyPlanPage() {
               </div>
               <div className="flex items-center gap-3">
                 <Clock className="w-5 h-5 text-primary-600" />
-                <span className="text-gray-700">Suporte em ate 2 horas</span>
+                <span className="text-gray-700">Suporte por WhatsApp</span>
               </div>
               <div className="flex items-center gap-3">
                 <Gift className="w-5 h-5 text-primary-600" />
@@ -705,21 +705,17 @@ export function MyPlanPage() {
 
           <div className="bg-gray-900 rounded-2xl p-6 text-white">
             <div className="flex items-center gap-4 mb-4">
-              <div className="flex -space-x-2">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 border-2 border-gray-900" />
-                ))}
+              <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center">
+                <Rocket className="w-6 h-6" />
               </div>
               <div>
-                <div className="font-bold">+500 saloes</div>
-                <div className="text-gray-400 text-sm">confiam no Beauty Manager</div>
+                <div className="font-bold">Feito para saloes</div>
+                <div className="text-gray-400 text-sm">que querem crescer</div>
               </div>
             </div>
-            <div className="flex items-center gap-1">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Star key={i} className="w-5 h-5 text-amber-400 fill-amber-400" />
-              ))}
-              <span className="ml-2 text-gray-300">4.9/5 de avaliacao</span>
+            <div className="flex items-center gap-2 text-gray-300">
+              <Check className="w-5 h-5 text-emerald-400" />
+              <span>Agenda, financeiro e automacao em um so lugar</span>
             </div>
           </div>
         </div>
