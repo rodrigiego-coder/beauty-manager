@@ -15,6 +15,7 @@ import { SchedulesService, SalonScheduleDto, ProfessionalScheduleDto, CreateBloc
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtPayload } from '../auth/jwt.strategy';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 
 @ApiTags('Schedules')
 @ApiBearerAuth()
@@ -161,6 +162,7 @@ export class SchedulesController {
 
   // ==================== AVAILABILITY CHECK ====================
 
+  @Public()
   @Get('check-availability')
   @ApiOperation({ summary: 'Verificar disponibilidade para agendamento' })
   @ApiQuery({ name: 'salonId', required: true })
