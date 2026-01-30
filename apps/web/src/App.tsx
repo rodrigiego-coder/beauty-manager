@@ -43,6 +43,7 @@ import AlexisSettingsPage from './pages/AlexisSettingsPage';
 import AlexisLogsPage from './pages/AlexisLogsPage';
 import { TriagePublicPage } from './pages/public/TriagePublicPage';
 import { OnlineBookingPage } from './pages/public/OnlineBookingPage';
+import { MyDashboardPage } from './pages/MyDashboardPage';
 
 type UserRole = 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST' | 'SUPER_ADMIN';
 
@@ -88,6 +89,16 @@ function App() {
             <Route path="/agenda/*" element={<AppointmentsPage />} />
             <Route path="/perfil" element={<ProfilePage />} />
             <Route path="/comandas/:id" element={<CommandPage />} />
+
+            {/* Acesso: STYLIST, MANAGER, OWNER - Dashboard do profissional */}
+            <Route
+              path="/meu-painel"
+              element={
+                <RoleGuard allowedRoles={['STYLIST', 'MANAGER', 'OWNER']}>
+                  <MyDashboardPage />
+                </RoleGuard>
+              }
+            />
 
             {/* Acesso: OWNER, MANAGER, RECEPTIONIST */}
             <Route

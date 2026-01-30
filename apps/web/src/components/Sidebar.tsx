@@ -26,6 +26,7 @@ import {
   FlaskConical,
   ShoppingBag,
   Bot,
+  User,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
@@ -41,6 +42,7 @@ interface NavItem {
 
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST'] },
+  { name: 'Meu Painel', href: '/meu-painel', icon: User, roles: ['STYLIST', 'MANAGER', 'OWNER'] },
   { name: 'Caixa', href: '/caixa', icon: CreditCard, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
   { name: 'Agenda', href: '/agenda', icon: Calendar, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST'] },
   { name: 'Servicos', href: '/servicos', icon: Scissors, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },

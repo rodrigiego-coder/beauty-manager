@@ -8,7 +8,10 @@ import {
   commandItems,
   commandPayments,
   cashRegisters,
+  appointments,
+  users,
 } from '../../database/schema';
+import { ProfessionalDashboardDto } from './dto/professional-dashboard.dto';
 
 export type DashboardPeriod = 'today' | 'week' | 'month' | 'year';
 
@@ -596,6 +599,192 @@ export class DashboardService {
 
     return todayCommands.reduce(
       (sum, cmd) => sum + parseFloat(cmd.totalNet || '0'),
+      0,
+    );
+  }
+
+  /**
+   * =====================================================
+   * DASHBOARD DO PROFISSIONAL
+   * CRÍTICO: Sempre filtra por professionalId para isolamento
+   * =====================================================
+   */
+  async getProfessionalDashboard(
+    salonId: string,
+    professionalId: string,
+  ): Promise<ProfessionalDashboardDto> {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayStr = today.toISOString().split('T')[0];
+
+    const weekStart = new Date(today);
+    weekStart.setDate(weekStart.getDate() - 7);
+    const weekStartStr = weekStart.toISOString().split('T')[0];
+
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    // Buscar dados do profissional (nome e taxa de comissão)
+    const [professional] = await this.db
+      .select({
+        name: users.name,
+        commissionRate: users.commissionRate,
+      })
+      .from(users)
+      .where(eq(users.id, professionalId))
+      .limit(1);
+
+    const commissionRate = parseFloat(professional?.commissionRate || '0.50');
+
+    // CRÍTICO: Todos os queries filtram por professionalId
+    const [
+      todayAppts,
+      weekAppts,
+      monthAppts,
+      upcomingAppts,
+      monthRevenue,
+    ] = await Promise.all([
+      // Agendamentos de hoje
+      this.db
+        .select()
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.salonId, salonId),
+            eq(appointments.professionalId, professionalId),
+            eq(appointments.date, todayStr),
+          ),
+        ),
+
+      // Agendamentos da semana
+      this.db
+        .select()
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.salonId, salonId),
+            eq(appointments.professionalId, professionalId),
+            gte(appointments.date, weekStartStr),
+            lte(appointments.date, todayStr),
+          ),
+        ),
+
+      // Agendamentos do mês (para performance)
+      this.db
+        .select()
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.salonId, salonId),
+            eq(appointments.professionalId, professionalId),
+            gte(appointments.date, monthStart.toISOString().split('T')[0]),
+            lte(appointments.date, monthEnd.toISOString().split('T')[0]),
+          ),
+        ),
+
+      // Próximos agendamentos (hoje e futuros)
+      this.db
+        .select()
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.salonId, salonId),
+            eq(appointments.professionalId, professionalId),
+            gte(appointments.date, todayStr),
+            sql`${appointments.status} NOT IN ('CANCELLED', 'NO_SHOW')`,
+          ),
+        )
+        .orderBy(appointments.date, appointments.time)
+        .limit(10),
+
+      // Faturamento do mês (serviços executados pelo profissional)
+      this.getProfessionalMonthRevenue(salonId, professionalId, monthStart, monthEnd),
+    ]);
+
+    // Calcular performance
+    const completedAppts = monthAppts.filter(a => a.status === 'COMPLETED').length;
+    const cancelledAppts = monthAppts.filter(a => a.status === 'CANCELLED').length;
+    const noShowAppts = monthAppts.filter(a => a.status === 'NO_SHOW').length;
+    const totalMonthAppts = monthAppts.length;
+    const completionRate = totalMonthAppts > 0
+      ? (completedAppts / totalMonthAppts) * 100
+      : 0;
+
+    // Calcular comissão pendente
+    const pendingCommission = monthRevenue * commissionRate;
+
+    return {
+      todayAppointments: todayAppts.length,
+      weekAppointments: weekAppts.length,
+      monthRevenue,
+      pendingCommission,
+      commissionRate: commissionRate * 100, // Converter para percentual
+      upcomingAppointments: upcomingAppts.map(a => ({
+        id: a.id,
+        clientName: a.clientName || 'Cliente não informado',
+        serviceName: a.service,
+        date: a.date,
+        time: a.time,
+        status: a.status,
+        price: parseFloat(a.price || '0'),
+      })),
+      performance: {
+        totalAppointments: totalMonthAppts,
+        completedAppointments: completedAppts,
+        cancelledAppointments: cancelledAppts,
+        noShowAppointments: noShowAppts,
+        completionRate: Math.round(completionRate * 10) / 10,
+      },
+      professionalName: professional?.name || 'Profissional',
+    };
+  }
+
+  /**
+   * Calcula faturamento do profissional no mês
+   * Baseado em commandItems.performerId
+   */
+  private async getProfessionalMonthRevenue(
+    salonId: string,
+    professionalId: string,
+    monthStart: Date,
+    monthEnd: Date,
+  ): Promise<number> {
+    // Buscar comandas fechadas no mês
+    const closedCommands = await this.db
+      .select({ id: commands.id })
+      .from(commands)
+      .where(
+        and(
+          eq(commands.salonId, salonId),
+          eq(commands.status, 'CLOSED'),
+          gte(commands.cashierClosedAt, monthStart),
+          lte(commands.cashierClosedAt, monthEnd),
+        ),
+      );
+
+    if (closedCommands.length === 0) {
+      return 0;
+    }
+
+    const commandIds = closedCommands.map(c => c.id);
+
+    // Buscar itens de serviço executados pelo profissional
+    const items = await this.db
+      .select({
+        totalPrice: commandItems.totalPrice,
+      })
+      .from(commandItems)
+      .where(
+        and(
+          sql`${commandItems.commandId} IN ${sql`(${sql.join(commandIds.map(id => sql`${id}`), sql`, `)})`}`,
+          eq(commandItems.performerId, professionalId),
+          eq(commandItems.type, 'SERVICE'),
+          sql`${commandItems.canceledAt} IS NULL`,
+        ),
+      );
+
+    return items.reduce(
+      (sum, item) => sum + parseFloat(item.totalPrice || '0'),
       0,
     );
   }
