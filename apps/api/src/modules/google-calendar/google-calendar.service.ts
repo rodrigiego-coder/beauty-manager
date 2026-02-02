@@ -46,11 +46,40 @@ export class GoogleCalendarService {
   }
 
   /**
+   * Codifica string para Base64 URL-safe
+   * Substitui + por -, / por _, remove =
+   */
+  private encodeBase64UrlSafe(data: string): string {
+    return Buffer.from(data)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  }
+
+  /**
+   * Decodifica Base64 URL-safe para string
+   * Restaura + e / e adiciona padding se necessário
+   */
+  private decodeBase64UrlSafe(data: string): string {
+    // Restaura caracteres Base64 padrão
+    let base64 = data.replace(/-/g, '+').replace(/_/g, '/');
+    // Adiciona padding se necessário
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    return Buffer.from(base64, 'base64').toString();
+  }
+
+  /**
    * Gera a URL de autorização OAuth2 do Google
    * Inclui state para preservar userId/salonId
    */
   getAuthUrl(userId: string, salonId: string): string {
-    const state = Buffer.from(JSON.stringify({ userId, salonId })).toString('base64');
+    const state = this.encodeBase64UrlSafe(JSON.stringify({ userId, salonId }));
+
+    this.logger.log(`Gerando auth URL para userId=${userId}, salonId=${salonId}`);
+    this.logger.debug(`State gerado: ${state}`);
 
     return this.oauth2Client.generateAuthUrl({
       access_type: 'offline',
@@ -65,15 +94,49 @@ export class GoogleCalendarService {
    */
   async handleCallback(code: string, state: string): Promise<{ success: boolean; email?: string }> {
     try {
-      // Decodifica state para obter userId e salonId
-      const { userId, salonId } = JSON.parse(Buffer.from(state, 'base64').toString());
+      // Log detalhado para diagnóstico
+      this.logger.log(`[OAuth Callback] Iniciando processamento`);
+      this.logger.log(`[OAuth Callback] Code length: ${code?.length || 0}`);
+      this.logger.log(`[OAuth Callback] Code preview: ${code?.substring(0, 20)}...`);
+      this.logger.log(`[OAuth Callback] State: ${state}`);
+
+      // Decodifica state para obter userId e salonId (suporta ambos formatos)
+      let decodedState: string;
+      try {
+        decodedState = this.decodeBase64UrlSafe(state);
+      } catch {
+        // Fallback para Base64 padrão (compatibilidade)
+        decodedState = Buffer.from(state, 'base64').toString();
+      }
+
+      this.logger.debug(`State decodificado: ${decodedState}`);
+
+      const { userId, salonId } = JSON.parse(decodedState);
 
       if (!userId || !salonId) {
+        this.logger.error(`State inválido - userId: ${userId}, salonId: ${salonId}`);
         throw new BadRequestException('Estado inválido na autenticação');
       }
 
+      this.logger.log(`[OAuth Callback] Processando para userId=${userId}, salonId=${salonId}`);
+
       // Troca o código por tokens
-      const { tokens } = await this.oauth2Client.getToken(code);
+      this.logger.log(`[OAuth Callback] Iniciando troca de código por tokens...`);
+      this.logger.log(`[OAuth Callback] Redirect URI configurado: ${this.configService.get<string>('GOOGLE_REDIRECT_URI')}`);
+
+      let tokens;
+      try {
+        const response = await this.oauth2Client.getToken(code);
+        tokens = response.tokens;
+        this.logger.log(`[OAuth Callback] Tokens obtidos com sucesso`);
+      } catch (tokenError: any) {
+        this.logger.error(`[OAuth Callback] Falha ao obter tokens: ${tokenError?.message}`);
+        this.logger.error(`[OAuth Callback] Detalhes: ${JSON.stringify({
+          error: tokenError?.response?.data?.error,
+          error_description: tokenError?.response?.data?.error_description,
+        })}`);
+        throw tokenError;
+      }
       this.oauth2Client.setCredentials(tokens);
 
       // Obtém email do usuário Google

@@ -28,6 +28,15 @@ describe('UsersController', () => {
     updatedAt: new Date(),
   };
 
+  // Mock do usuário autenticado (para @CurrentUser())
+  const mockAuthUser = {
+    id: '11111111-1111-1111-1111-111111111111',
+    salonId: 'aaaaaaa1-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    email: 'joao@salao.com',
+    name: 'João Silva',
+    role: 'OWNER' as const,
+  };
+
   // Mock do UsersService
   const mockUsersService = {
     findAll: jest.fn(),
@@ -79,12 +88,12 @@ describe('UsersController', () => {
       mockUsersService.findAll.mockResolvedValue(mockUsers);
 
       // Act
-      const result = await controller.findAll();
+      const result = await controller.findAll(mockAuthUser);
 
       // Assert
       expect(result).toEqual(mockUsers);
       expect(result).toHaveLength(2);
-      expect(mockUsersService.findAll).toHaveBeenCalledTimes(1);
+      expect(mockUsersService.findAll).toHaveBeenCalledWith(mockAuthUser.salonId);
     });
 
     it('deve retornar lista vazia quando não há usuários', async () => {
@@ -92,7 +101,7 @@ describe('UsersController', () => {
       mockUsersService.findAll.mockResolvedValue([]);
 
       // Act
-      const result = await controller.findAll();
+      const result = await controller.findAll(mockAuthUser);
 
       // Assert
       expect(result).toEqual([]);
@@ -113,12 +122,12 @@ describe('UsersController', () => {
       mockUsersService.findProfessionals.mockResolvedValue(mockProfessionals);
 
       // Act
-      const result = await controller.findProfessionals();
+      const result = await controller.findProfessionals(mockAuthUser);
 
       // Assert
       expect(result).toEqual(mockProfessionals);
       expect(result).toHaveLength(2);
-      expect(mockUsersService.findProfessionals).toHaveBeenCalledTimes(1);
+      expect(mockUsersService.findProfessionals).toHaveBeenCalledWith(mockAuthUser.salonId);
     });
 
     it('deve retornar lista vazia quando não há profissionais', async () => {
@@ -126,7 +135,7 @@ describe('UsersController', () => {
       mockUsersService.findProfessionals.mockResolvedValue([]);
 
       // Act
-      const result = await controller.findProfessionals();
+      const result = await controller.findProfessionals(mockAuthUser);
 
       // Assert
       expect(result).toEqual([]);

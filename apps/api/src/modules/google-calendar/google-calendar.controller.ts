@@ -2,8 +2,7 @@ import { Controller, Get, Post, Delete, Query, Res, Body, HttpCode, HttpStatus }
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { FastifyReply } from 'fastify';
 import { GoogleCalendarService } from './google-calendar.service';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { JwtPayload } from '../auth/jwt.strategy';
+import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 
@@ -20,8 +19,8 @@ export class GoogleCalendarController {
   @Get('status')
   @Roles('OWNER', 'MANAGER', 'STYLIST')
   @ApiOperation({ summary: 'Verificar status da conexão Google Calendar' })
-  async getStatus(@CurrentUser() user: JwtPayload) {
-    return this.googleCalendarService.getConnectionStatus(user.sub, user.salonId);
+  async getStatus(@CurrentUser() user: AuthenticatedUser) {
+    return this.googleCalendarService.getConnectionStatus(user.id, user.salonId);
   }
 
   /**
@@ -31,8 +30,8 @@ export class GoogleCalendarController {
   @Get('auth')
   @Roles('OWNER', 'MANAGER', 'STYLIST')
   @ApiOperation({ summary: 'Iniciar fluxo de autorização Google Calendar' })
-  async redirectToGoogle(@CurrentUser() user: JwtPayload, @Res() reply: FastifyReply) {
-    const url = this.googleCalendarService.getAuthUrl(user.sub, user.salonId);
+  async redirectToGoogle(@CurrentUser() user: AuthenticatedUser, @Res() reply: FastifyReply) {
+    const url = this.googleCalendarService.getAuthUrl(user.id, user.salonId);
     return reply.redirect(url);
   }
 
@@ -43,8 +42,8 @@ export class GoogleCalendarController {
   @Get('auth-url')
   @Roles('OWNER', 'MANAGER', 'STYLIST')
   @ApiOperation({ summary: 'Obter URL de autorização Google Calendar' })
-  async getAuthUrl(@CurrentUser() user: JwtPayload) {
-    const url = this.googleCalendarService.getAuthUrl(user.sub, user.salonId);
+  async getAuthUrl(@CurrentUser() user: AuthenticatedUser) {
+    const url = this.googleCalendarService.getAuthUrl(user.id, user.salonId);
     return { url };
   }
 
@@ -65,12 +64,23 @@ export class GoogleCalendarController {
   ): Promise<void> {
     const frontendUrl = process.env.FRONTEND_URL || 'https://app.agendasalaopro.com.br';
 
+    // Log detalhado para diagnóstico
+    console.log('[OAuth Controller] Callback recebido:', {
+      hasCode: !!code,
+      codeLength: code?.length,
+      hasState: !!state,
+      stateLength: state?.length,
+      error: error || 'none',
+    });
+
     if (error) {
+      console.log('[OAuth Controller] Google retornou erro:', error);
       reply?.status(302).redirect(`${frontendUrl}/integracoes?google=error&message=${encodeURIComponent(error)}`);
       return;
     }
 
     if (!code || !state) {
+      console.log('[OAuth Controller] Parâmetros faltando - code:', !!code, 'state:', !!state);
       reply?.status(302).redirect(`${frontendUrl}/integracoes?google=error&message=missing_params`);
       return;
     }
@@ -101,11 +111,11 @@ export class GoogleCalendarController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Sincronizar agendamento com Google Calendar' })
   async syncAppointment(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() body: { appointmentId: string },
   ) {
     return this.googleCalendarService.syncAppointmentToGoogle(
-      user.sub,
+      user.id,
       user.salonId,
       body.appointmentId,
     );
@@ -119,13 +129,13 @@ export class GoogleCalendarController {
   @Roles('OWNER', 'MANAGER', 'STYLIST')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Importar eventos do Google Calendar' })
-  async syncFromGoogle(@CurrentUser() user: JwtPayload) {
+  async syncFromGoogle(@CurrentUser() user: AuthenticatedUser) {
     const startDate = new Date();
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + 30);
 
     return this.googleCalendarService.syncGoogleToSystem(
-      user.sub,
+      user.id,
       user.salonId,
       startDate,
       endDate,
@@ -141,11 +151,11 @@ export class GoogleCalendarController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Remover evento do Google Calendar' })
   async deleteEvent(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() body: { eventId: string },
   ) {
     return this.googleCalendarService.deleteEventFromGoogle(
-      user.sub,
+      user.id,
       user.salonId,
       body.eventId,
     );
@@ -160,10 +170,10 @@ export class GoogleCalendarController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Ativar/desativar sincronização automática' })
   async toggleSync(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() body: { enabled: boolean },
   ) {
-    await this.googleCalendarService.toggleSync(user.sub, user.salonId, body.enabled);
+    await this.googleCalendarService.toggleSync(user.id, user.salonId, body.enabled);
     return { success: true, syncEnabled: body.enabled };
   }
 
@@ -175,7 +185,7 @@ export class GoogleCalendarController {
   @Roles('OWNER', 'MANAGER', 'STYLIST')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Desconectar Google Calendar' })
-  async disconnect(@CurrentUser() user: JwtPayload) {
-    await this.googleCalendarService.disconnectGoogle(user.sub, user.salonId);
+  async disconnect(@CurrentUser() user: AuthenticatedUser) {
+    await this.googleCalendarService.disconnectGoogle(user.id, user.salonId);
   }
 }

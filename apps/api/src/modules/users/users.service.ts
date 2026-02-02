@@ -1,6 +1,6 @@
 import { Injectable, Inject, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { DATABASE_CONNECTION } from '../../database/database.module';
@@ -19,9 +19,25 @@ export class UsersService {
   ) {}
 
   /**
-   * Lista todos os usuarios ativos
+   * Lista usuarios do salão
    */
-  async findAll(): Promise<User[]> {
+  async findAll(salonId?: string, includeInactive = false): Promise<User[]> {
+    if (salonId) {
+      if (includeInactive) {
+        return this.db
+          .select()
+          .from(users)
+          .where(eq(users.salonId, salonId));
+      }
+      return this.db
+        .select()
+        .from(users)
+        .where(and(eq(users.salonId, salonId), eq(users.active, true)));
+    }
+    // Fallback para admin sem salão específico
+    if (includeInactive) {
+      return this.db.select().from(users);
+    }
     return this.db
       .select()
       .from(users)
@@ -55,14 +71,21 @@ export class UsersService {
   }
 
   /**
-   * Busca profissionais ativos
+   * Busca profissionais ativos do salão
    */
-  async findProfessionals(): Promise<User[]> {
+  async findProfessionals(salonId?: string): Promise<User[]> {
+    if (salonId) {
+      const salonUsers = await this.db
+        .select()
+        .from(users)
+        .where(and(eq(users.salonId, salonId), eq(users.active, true)));
+      return salonUsers.filter(u => u.role === 'STYLIST');
+    }
+    // Fallback para admin
     const allUsers = await this.db
       .select()
       .from(users)
       .where(eq(users.active, true));
-
     return allUsers.filter(u => u.role === 'STYLIST');
   }
 

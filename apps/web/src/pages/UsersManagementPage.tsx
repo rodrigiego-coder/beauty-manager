@@ -12,6 +12,7 @@ import {
   AlertCircle,
   CheckCircle,
 } from 'lucide-react';
+import api from '../services/api';
 
 // ============================================
 // TIPOS
@@ -48,53 +49,6 @@ const AVATAR_COLORS = [
   'bg-red-500',
   'bg-indigo-500',
   'bg-teal-500',
-];
-
-// ============================================
-// DADOS MOCK
-// ============================================
-
-const MOCK_USERS: ManagedUser[] = [
-  {
-    id: '1',
-    name: 'Maria Silva',
-    email: 'maria@salao.com',
-    role: 'OWNER',
-    active: true,
-    createdAt: '2024-01-15T10:00:00Z',
-  },
-  {
-    id: '2',
-    name: 'Joao Santos',
-    email: 'joao@salao.com',
-    role: 'MANAGER',
-    active: true,
-    createdAt: '2024-02-20T14:30:00Z',
-  },
-  {
-    id: '3',
-    name: 'Ana Costa',
-    email: 'ana@salao.com',
-    role: 'RECEPTIONIST',
-    active: true,
-    createdAt: '2024-03-10T09:00:00Z',
-  },
-  {
-    id: '4',
-    name: 'Carlos Oliveira',
-    email: 'carlos@salao.com',
-    role: 'STYLIST',
-    active: true,
-    createdAt: '2024-03-15T11:00:00Z',
-  },
-  {
-    id: '5',
-    name: 'Paula Mendes',
-    email: 'paula@salao.com',
-    role: 'STYLIST',
-    active: false,
-    createdAt: '2024-01-05T08:00:00Z',
-  },
 ];
 
 // ============================================
@@ -144,15 +98,16 @@ export function UsersManagementPage() {
 
   const loadUsers = async () => {
     setLoading(true);
-    // Simula delay de API
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    let filtered = [...MOCK_USERS];
-    if (!showInactive) {
-      filtered = filtered.filter((u) => u.active);
+    try {
+      const params = showInactive ? '?includeInactive=true' : '';
+      const response = await api.get(`/users${params}`);
+      setUsers(response.data);
+    } catch (error) {
+      console.error('Erro ao carregar usuários:', error);
+      setMessage({ type: 'error', text: 'Erro ao carregar usuários' });
+    } finally {
+      setLoading(false);
     }
-    setUsers(filtered);
-    setLoading(false);
   };
 
   const getInitials = (name: string) => {
@@ -218,47 +173,46 @@ export function UsersManagementPage() {
     if (!validateForm()) return;
 
     setIsSaving(true);
-    // Simula delay de API
-    await new Promise((resolve) => setTimeout(resolve, 600));
-
-    if (modalMode === 'create') {
-      const newUser: ManagedUser = {
-        id: String(Date.now()),
-        name: formData.name,
-        email: formData.email,
-        role: formData.role,
-        active: true,
-        createdAt: new Date().toISOString(),
-      };
-      setUsers((prev) => [...prev, newUser]);
-      setMessage({ type: 'success', text: 'Usuario criado com sucesso!' });
-    } else if (selectedUser) {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === selectedUser.id
-            ? { ...u, name: formData.name, email: formData.email, role: formData.role }
-            : u
-        )
-      );
-      setMessage({ type: 'success', text: 'Usuario atualizado com sucesso!' });
+    try {
+      if (modalMode === 'create') {
+        await api.post('/users', {
+          name: formData.name,
+          email: formData.email,
+          role: formData.role,
+        });
+        setMessage({ type: 'success', text: 'Usuario criado com sucesso!' });
+      } else if (selectedUser) {
+        await api.patch(`/users/${selectedUser.id}`, {
+          name: formData.name,
+          email: formData.email,
+          role: formData.role,
+        });
+        setMessage({ type: 'success', text: 'Usuario atualizado com sucesso!' });
+      }
+      await loadUsers(); // Recarrega a lista
+      closeModal();
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.message || 'Erro ao salvar usuario';
+      setMessage({ type: 'error', text: errorMsg });
+    } finally {
+      setIsSaving(false);
     }
-
-    setIsSaving(false);
-    closeModal();
   };
 
   const handleToggleStatus = async (user: ManagedUser) => {
-    // Simula delay de API
-    await new Promise((resolve) => setTimeout(resolve, 300));
-
-    setUsers((prev) =>
-      prev.map((u) => (u.id === user.id ? { ...u, active: !u.active } : u))
-    );
-
-    setMessage({
-      type: 'success',
-      text: user.active ? 'Usuario desativado' : 'Usuario reativado',
-    });
+    try {
+      if (user.active) {
+        await api.delete(`/users/${user.id}`);
+        setMessage({ type: 'success', text: 'Usuario desativado' });
+      } else {
+        await api.patch(`/users/${user.id}`, { active: true });
+        setMessage({ type: 'success', text: 'Usuario reativado' });
+      }
+      await loadUsers(); // Recarrega a lista
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.message || 'Erro ao alterar status';
+      setMessage({ type: 'error', text: errorMsg });
+    }
   };
 
   // Filtra usuarios por busca

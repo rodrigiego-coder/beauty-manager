@@ -6,6 +6,7 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -88,20 +89,26 @@ export class UsersController {
 
   /**
    * GET /users
-   * Lista todos os usuarios ativos
+   * Lista usuarios do salão do usuario logado
    */
   @Get()
-  async findAll() {
-    return this.usersService.findAll();
+  async findAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    console.log('[UsersController] findAll - user:', user?.id, 'salonId:', user?.salonId, 'includeInactive:', includeInactive);
+    const result = await this.usersService.findAll(user?.salonId, includeInactive === 'true');
+    console.log('[UsersController] findAll - returning', result.length, 'users');
+    return result;
   }
 
   /**
    * GET /users/professionals
-   * Lista apenas profissionais ativos
+   * Lista apenas profissionais ativos do salão
    */
   @Get('professionals')
-  async findProfessionals() {
-    return this.usersService.findProfessionals();
+  async findProfessionals(@CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.findProfessionals(user?.salonId);
   }
 
   /**
