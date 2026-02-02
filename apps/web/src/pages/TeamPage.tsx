@@ -16,8 +16,10 @@ import {
   AlertTriangle,
   CheckCircle,
   AlertCircle,
+  KeyRound,
 } from 'lucide-react';
 import api from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 interface SalonService {
   id: number;
@@ -70,6 +72,7 @@ const AVATAR_COLORS = [
 ];
 
 export function TeamPage() {
+  const { user } = useAuth();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [summary, setSummary] = useState<TeamSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -96,6 +99,10 @@ export function TeamPage() {
     defaultCommission: 50,
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // System access state (for creating user login)
+  const [giveSystemAccess, setGiveSystemAccess] = useState(false);
+  const [loginPassword, setLoginPassword] = useState('');
 
   useEffect(() => {
     loadData();
@@ -143,7 +150,7 @@ export function TeamPage() {
     }).format(num);
   };
 
-  const validateForm = () => {
+  const validateForm = (isCreate = false) => {
     const errors: Record<string, string> = {};
 
     if (!formData.name || formData.name.trim().length < 2) {
@@ -156,6 +163,11 @@ export function TeamPage() {
 
     if (formData.defaultCommission < 0 || formData.defaultCommission > 100) {
       errors.defaultCommission = 'Comissao deve estar entre 0 e 100';
+    }
+
+    // Validate password if giving system access
+    if (isCreate && giveSystemAccess && loginPassword.length < 6) {
+      errors.loginPassword = 'Senha deve ter pelo menos 6 caracteres';
     }
 
     setFormErrors(errors);
@@ -171,6 +183,8 @@ export function TeamPage() {
       defaultCommission: 50,
     });
     setFormErrors({});
+    setGiveSystemAccess(false);
+    setLoginPassword('');
     setShowCreateModal(true);
   };
 
@@ -200,12 +214,38 @@ export function TeamPage() {
   };
 
   const handleCreate = async () => {
-    if (!validateForm()) return;
+    if (!validateForm(true)) return;
 
     setIsSaving(true);
     try {
+      // 1. Create team member
       await api.post('/team', formData);
-      setMessage({ type: 'success', text: 'Membro adicionado com sucesso!' });
+
+      // 2. If giving system access, also create user
+      if (giveSystemAccess && formData.email && loginPassword && user?.salonId) {
+        try {
+          await api.post('/users', {
+            name: formData.name,
+            email: formData.email,
+            password: loginPassword,
+            phone: formData.phone || undefined,
+            role: formData.role,
+            salonId: user.salonId,
+            commissionRate: formData.defaultCommission / 100,
+            sendPasswordLink: false,
+          });
+          setMessage({ type: 'success', text: 'Membro adicionado com acesso ao sistema!' });
+        } catch (userError: any) {
+          const userMsg = userError.response?.data?.message || 'Erro ao criar login';
+          setMessage({
+            type: 'error',
+            text: `Membro adicionado, mas erro ao criar login: ${userMsg}. Crie manualmente em Usuarios.`
+          });
+        }
+      } else {
+        setMessage({ type: 'success', text: 'Membro adicionado com sucesso!' });
+      }
+
       setShowCreateModal(false);
       loadData();
     } catch (error: any) {
@@ -597,6 +637,53 @@ export function TeamPage() {
                     {formErrors.defaultCommission && (
                       <p className="text-red-500 text-sm mt-1">{formErrors.defaultCommission}</p>
                     )}
+                  </div>
+                )}
+
+                {/* System Access Toggle */}
+                <div className="border-t border-gray-200 pt-4 mt-4">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={giveSystemAccess}
+                      onChange={(e) => setGiveSystemAccess(e.target.checked)}
+                      className="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <div className="flex items-center gap-2">
+                      <KeyRound className="w-4 h-4 text-gray-500" />
+                      <span className="text-sm font-medium text-gray-700">
+                        Este profissional tera acesso ao sistema?
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* System Access Fields */}
+                {giveSystemAccess && (
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-4">
+                    <p className="text-sm text-blue-700">
+                      O profissional podera fazer login para ver sua agenda e comissoes.
+                    </p>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Senha de acesso *
+                      </label>
+                      <input
+                        type="password"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none ${
+                          formErrors.loginPassword ? 'border-red-500' : 'border-gray-200'
+                        }`}
+                        placeholder="Minimo 6 caracteres"
+                      />
+                      {formErrors.loginPassword && (
+                        <p className="text-red-500 text-sm mt-1">{formErrors.loginPassword}</p>
+                      )}
+                      <p className="text-xs text-gray-500 mt-1">
+                        O email informado acima sera usado para login.
+                      </p>
+                    </div>
                   </div>
                 )}
 
