@@ -1,4 +1,4 @@
-import { IsEmail, IsString, IsNotEmpty, MinLength, IsUUID, IsOptional, Matches } from 'class-validator';
+import { IsEmail, IsString, IsNotEmpty, MinLength, IsOptional, Matches } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
@@ -124,7 +124,7 @@ export class SignupDto {
     description: 'ID do plano escolhido (UUID). Se não informado, usa o plano Professional.',
     example: 'eeeeeee1-eeee-eeee-eeee-eeeeeeeeeeee',
   })
-  @IsUUID('4', { message: 'planId deve ser um UUID válido' })
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, { message: 'planId deve ser um UUID válido' })
   @IsOptional()
   planId?: string;
 }

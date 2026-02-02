@@ -12,6 +12,7 @@ import { PlansService } from '../plans/plans.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import {
   StartTrialDto,
@@ -32,8 +33,9 @@ export class SubscriptionsController {
   ) {}
 
   /**
-   * GET /subscriptions/plans - Lista todos os planos disponiveis
+   * GET /subscriptions/plans - Lista todos os planos disponiveis (público)
    */
+  @Public()
   @Get('plans')
   async getPlans() {
     return this.plansService.findAll();
