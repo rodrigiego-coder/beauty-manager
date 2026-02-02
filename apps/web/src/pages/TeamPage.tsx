@@ -214,6 +214,8 @@ export function TeamPage() {
   };
 
   const handleCreate = async () => {
+    // Prevent double-click race condition
+    if (isSaving) return;
     if (!validateForm(true)) return;
 
     setIsSaving(true);
@@ -257,6 +259,8 @@ export function TeamPage() {
   };
 
   const handleUpdate = async () => {
+    // Prevent double-click race condition
+    if (isSaving) return;
     if (!validateForm() || !selectedMember) return;
 
     setIsSaving(true);
@@ -278,6 +282,8 @@ export function TeamPage() {
   };
 
   const handleDeactivate = async () => {
+    // Prevent double-click race condition
+    if (isSaving) return;
     if (!selectedMember) return;
 
     setIsSaving(true);
