@@ -35,6 +35,7 @@ interface TeamMember {
   commissionRate: string;
   specialties: string | null;
   active: boolean;
+  isProfessional: boolean;
   createdAt: string;
   stats: {
     appointmentsThisMonth: number;
@@ -516,22 +517,24 @@ export function TeamPage() {
               <div className="flex items-center gap-2">
                 {member.active ? (
                   <>
+                    {/* OWNER que é profissional pode editar, mas não excluir */}
+                    {(member.role !== 'OWNER' || member.isProfessional) && (
+                      <button
+                        onClick={() => handleOpenEditModal(member)}
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                      >
+                        <Pencil className="w-4 h-4" />
+                        Editar
+                      </button>
+                    )}
+                    {/* Apenas não-OWNER pode ser excluído */}
                     {member.role !== 'OWNER' && (
-                      <>
-                        <button
-                          onClick={() => handleOpenEditModal(member)}
-                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                        >
-                          <Pencil className="w-4 h-4" />
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => handleOpenDeleteModal(member)}
-                          className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </>
+                      <button
+                        onClick={() => handleOpenDeleteModal(member)}
+                        className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     )}
                   </>
                 ) : (
@@ -793,7 +796,8 @@ export function TeamPage() {
                   </select>
                 </div>
 
-                {formData.role === 'STYLIST' && (
+                {/* Comissão - mostra para STYLIST ou OWNER profissional */}
+                {(formData.role === 'STYLIST' || (selectedMember?.role === 'OWNER' && selectedMember?.isProfessional)) && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Comissao Padrao (%)
@@ -817,7 +821,8 @@ export function TeamPage() {
                 )}
 
                 {/* Especialidades (serviços que o profissional realiza) */}
-                {formData.role === 'STYLIST' && salonServices.length > 0 && (
+                {/* Mostra para STYLIST ou OWNER que é profissional */}
+                {(formData.role === 'STYLIST' || (selectedMember?.role === 'OWNER' && selectedMember?.isProfessional)) && salonServices.length > 0 && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Servicos que realiza
