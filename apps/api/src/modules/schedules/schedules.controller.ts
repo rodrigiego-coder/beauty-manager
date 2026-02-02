@@ -12,8 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SchedulesService, SalonScheduleDto, ProfessionalScheduleDto, CreateBlockDto } from './schedules.service';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { JwtPayload } from '../auth/jwt.strategy';
+import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 
@@ -28,7 +27,7 @@ export class SchedulesController {
   @Get('salon')
   @Roles('OWNER', 'MANAGER')
   @ApiOperation({ summary: 'Obter horário de funcionamento do salão' })
-  async getSalonSchedule(@CurrentUser() user: JwtPayload) {
+  async getSalonSchedule(@CurrentUser() user: AuthenticatedUser) {
     return this.schedulesService.getSalonSchedule(user.salonId);
   }
 
@@ -36,7 +35,7 @@ export class SchedulesController {
   @Roles('OWNER', 'MANAGER')
   @ApiOperation({ summary: 'Atualizar horário de um dia específico' })
   async updateSalonSchedule(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('dayOfWeek') dayOfWeek: string,
     @Body() data: SalonScheduleDto,
   ) {
@@ -53,12 +52,12 @@ export class SchedulesController {
   @Roles('OWNER', 'MANAGER', 'STYLIST')
   @ApiOperation({ summary: 'Obter horário de trabalho do profissional' })
   async getProfessionalSchedule(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('id') professionalId: string,
   ) {
     // STYLIST só pode ver próprio horário
-    if (user.role === 'STYLIST' && user.sub !== professionalId) {
-      professionalId = user.sub;
+    if (user.role === 'STYLIST' && user.id !== professionalId) {
+      professionalId = user.id;
     }
     return this.schedulesService.getProfessionalSchedule(professionalId);
   }
@@ -66,13 +65,13 @@ export class SchedulesController {
   @Get('my-schedule')
   @Roles('OWNER', 'MANAGER', 'STYLIST')
   @ApiOperation({ summary: 'Obter meu horário de trabalho' })
-  async getMySchedule(@CurrentUser() user: JwtPayload) {
-    const schedule = await this.schedulesService.getProfessionalSchedule(user.sub);
+  async getMySchedule(@CurrentUser() user: AuthenticatedUser) {
+    const schedule = await this.schedulesService.getProfessionalSchedule(user.id);
 
     // Se não tem horário, inicializar com padrão do salão
     if (schedule.length === 0) {
-      await this.schedulesService.initializeProfessionalSchedule(user.sub, user.salonId);
-      return this.schedulesService.getProfessionalSchedule(user.sub);
+      await this.schedulesService.initializeProfessionalSchedule(user.id, user.salonId);
+      return this.schedulesService.getProfessionalSchedule(user.id);
     }
 
     return schedule;
@@ -82,14 +81,14 @@ export class SchedulesController {
   @Roles('OWNER', 'MANAGER', 'STYLIST')
   @ApiOperation({ summary: 'Atualizar horário de trabalho do profissional' })
   async updateProfessionalSchedule(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('id') professionalId: string,
     @Param('dayOfWeek') dayOfWeek: string,
     @Body() data: ProfessionalScheduleDto,
   ) {
     // STYLIST só pode editar próprio horário
-    if (user.role === 'STYLIST' && user.sub !== professionalId) {
-      professionalId = user.sub;
+    if (user.role === 'STYLIST' && user.id !== professionalId) {
+      professionalId = user.id;
     }
     return this.schedulesService.updateProfessionalSchedule(
       professionalId,
@@ -106,14 +105,14 @@ export class SchedulesController {
   @ApiQuery({ name: 'startDate', required: false })
   @ApiQuery({ name: 'endDate', required: false })
   async getProfessionalBlocks(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('id') professionalId: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
     // STYLIST só pode ver próprios bloqueios
-    if (user.role === 'STYLIST' && user.sub !== professionalId) {
-      professionalId = user.sub;
+    if (user.role === 'STYLIST' && user.id !== professionalId) {
+      professionalId = user.id;
     }
     return this.schedulesService.getProfessionalBlocks(professionalId, startDate, endDate);
   }
@@ -124,11 +123,11 @@ export class SchedulesController {
   @ApiQuery({ name: 'startDate', required: false })
   @ApiQuery({ name: 'endDate', required: false })
   async getMyBlocks(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: AuthenticatedUser,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    return this.schedulesService.getProfessionalBlocks(user.sub, startDate, endDate);
+    return this.schedulesService.getProfessionalBlocks(user.id, startDate, endDate);
   }
 
   @Post('professional/:id/blocks')
@@ -136,18 +135,18 @@ export class SchedulesController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Criar bloqueio para o profissional' })
   async createProfessionalBlock(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: AuthenticatedUser,
     @Param('id') professionalId: string,
     @Body() data: CreateBlockDto,
   ) {
     // STYLIST só pode criar bloqueio para si mesmo
-    if (user.role === 'STYLIST' && user.sub !== professionalId) {
-      professionalId = user.sub;
+    if (user.role === 'STYLIST' && user.id !== professionalId) {
+      professionalId = user.id;
     }
     return this.schedulesService.createProfessionalBlock(
       professionalId,
       user.salonId,
-      user.sub,
+      user.id,
       data,
     );
   }
