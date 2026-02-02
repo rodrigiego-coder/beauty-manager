@@ -232,10 +232,10 @@ export class CommandsController {
 
   /**
    * POST /commands/:id/payments
-   * Adiciona pagamento (apenas OWNER/MANAGER/RECEPTIONIST)
+   * Adiciona pagamento
    */
   @Post(':id/payments')
-  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
   async addPayment(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
@@ -250,10 +250,10 @@ export class CommandsController {
 
   /**
    * POST /commands/:id/close-cashier
-   * Fecha comanda no caixa (apenas OWNER/MANAGER/RECEPTIONIST)
+   * Fecha comanda no caixa
    */
   @Post(':id/close-cashier')
-  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
   async closeCashier(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,

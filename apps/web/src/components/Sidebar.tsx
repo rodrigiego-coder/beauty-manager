@@ -29,6 +29,7 @@ import {
   User,
   Clock,
   CalendarOff,
+  ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
@@ -49,6 +50,7 @@ const navigation: NavItem[] = [
   { name: 'Meus Bloqueios', href: '/meus-bloqueios', icon: CalendarOff, roles: ['STYLIST', 'MANAGER', 'OWNER'] },
   { name: 'Caixa', href: '/caixa', icon: CreditCard, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
   { name: 'Agenda', href: '/agenda', icon: Calendar, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST'] },
+  { name: 'Comandas', href: '/comandas', icon: ClipboardList, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST'] },
   { name: 'Servicos', href: '/servicos', icon: Scissors, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
   { name: 'Comissoes', href: '/comissoes', icon: Percent, roles: ['OWNER', 'MANAGER'] },
   { name: 'Financeiro', href: '/financeiro', icon: DollarSign, roles: ['OWNER', 'MANAGER'] },

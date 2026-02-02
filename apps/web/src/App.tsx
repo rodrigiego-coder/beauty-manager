@@ -50,6 +50,7 @@ import { OnlineBookingPage } from './pages/public/OnlineBookingPage';
 import { LandingPage } from './pages/public/LandingPage';
 import { SignupPage } from './pages/public/SignupPage';
 import { MyDashboardPage } from './pages/MyDashboardPage';
+import { CommandsListPage } from './pages/CommandsListPage';
 
 type UserRole = 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST' | 'SUPER_ADMIN';
 
@@ -98,6 +99,9 @@ function App() {
             <Route path="/agenda/*" element={<AppointmentsPage />} />
             <Route path="/perfil" element={<ProfilePage />} />
             <Route path="/comandas/:id" element={<CommandPage />} />
+
+            {/* Acesso: Todos - Lista de comandas */}
+            <Route path="/comandas" element={<CommandsListPage />} />
 
             {/* Acesso: STYLIST, MANAGER, OWNER - Dashboard do profissional */}
             <Route
