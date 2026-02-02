@@ -572,6 +572,8 @@ export const appointments = pgTable('appointments', {
   rescheduledFromId: uuid('rescheduled_from_id'),
   rescheduledToId: uuid('rescheduled_to_id'),
   rescheduleCount: integer('reschedule_count').default(0),
+  // Google Calendar
+  googleEventId: varchar('google_event_id', { length: 255 }),
 });
 
 /**
@@ -3971,3 +3973,36 @@ export type SalonSchedule = typeof salonSchedules.$inferSelect;
 export type NewSalonSchedule = typeof salonSchedules.$inferInsert;
 export type ProfessionalSchedule = typeof professionalSchedules.$inferSelect;
 export type NewProfessionalSchedule = typeof professionalSchedules.$inferInsert;
+
+// ==================== GOOGLE CALENDAR INTEGRATION ====================
+
+/**
+ * Tokens OAuth2 do Google Calendar por usuário
+ * Permite sincronização bidirecional entre o sistema e o Google Calendar
+ */
+export const googleCalendarTokens = pgTable('google_calendar_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  salonId: uuid('salon_id').notNull().references(() => salons.id, { onDelete: 'cascade' }),
+
+  // OAuth tokens
+  accessToken: text('access_token').notNull(),
+  refreshToken: text('refresh_token').notNull(),
+  tokenExpiry: timestamp('token_expiry').notNull(),
+
+  // Configurações de sincronização
+  calendarId: varchar('calendar_id', { length: 255 }).default('primary'),
+  syncEnabled: boolean('sync_enabled').default(true),
+  lastSyncAt: timestamp('last_sync_at'),
+
+  // Auditoria
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+  userIdx: index('google_calendar_tokens_user_idx').on(table.userId),
+  uniqueUserSalon: unique().on(table.userId, table.salonId),
+}));
+
+// Types para Google Calendar
+export type GoogleCalendarToken = typeof googleCalendarTokens.$inferSelect;
+export type NewGoogleCalendarToken = typeof googleCalendarTokens.$inferInsert;
