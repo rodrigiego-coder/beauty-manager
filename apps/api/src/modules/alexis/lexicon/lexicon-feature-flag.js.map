@@ -1,0 +1,1 @@
+{"version":3,"file":"lexicon-feature-flag.js","sourceRoot":"","sources":["lexicon-feature-flag.ts"],"names":[],"mappings":";AAAA;;;;;;GAMG;;AAOH,8CAIC;AATD;;;;GAIG;AACH,SAAgB,iBAAiB;IAC/B,MAAM,GAAG,GAAG,OAAO,CAAC,GAAG,CAAC,sBAAsB,CAAC;IAC/C,IAAI,GAAG,KAAK,SAAS,IAAI,GAAG,KAAK,EAAE;QAAE,OAAO,IAAI,CAAC;IACjD,OAAO,GAAG,KAAK,OAAO,IAAI,GAAG,KAAK,GAAG,CAAC;AACxC,CAAC"}

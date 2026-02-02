@@ -18,8 +18,10 @@ export function LoginPage() {
     setLoading(true);
 
     try {
-      await login(email, password);
-      navigate('/');
+      const user = await login(email, password);
+      // STYLIST vai para /meu-painel, outros vão para dashboard
+      const redirectPath = user.role === 'STYLIST' ? '/meu-painel' : '/';
+      navigate(redirectPath);
     } catch (err) {
       setError('Email ou senha invalidos');
     } finally {

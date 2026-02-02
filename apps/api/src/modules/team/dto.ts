@@ -19,6 +19,10 @@ export class CreateTeamMemberDto {
   @Min(0)
   @Max(100)
   defaultCommission?: number;
+
+  @IsOptional()
+  @IsString()
+  password?: string;
 }
 
 export class UpdateTeamMemberDto {

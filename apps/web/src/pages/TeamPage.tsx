@@ -19,7 +19,6 @@ import {
   KeyRound,
 } from 'lucide-react';
 import api from '../services/api';
-import { useAuth } from '../contexts/AuthContext';
 
 interface SalonService {
   id: number;
@@ -72,7 +71,6 @@ const AVATAR_COLORS = [
 ];
 
 export function TeamPage() {
-  const { user } = useAuth();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [summary, setSummary] = useState<TeamSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -220,50 +218,32 @@ export function TeamPage() {
 
     setIsSaving(true);
     try {
-      // 1. Create team member
-      await api.post('/team', formData);
+      // Create team member with password if giving system access
+      const teamData = {
+        ...formData,
+        ...(giveSystemAccess && loginPassword ? { password: loginPassword } : {}),
+      };
+      await api.post('/team', teamData);
 
-      // 2. If giving system access, also create user
-      if (giveSystemAccess && formData.email && loginPassword && user?.salonId) {
+      // Send WhatsApp with credentials if phone is provided and giving system access
+      if (giveSystemAccess && formData.phone && loginPassword) {
         try {
-          await api.post('/users', {
+          const cleanPhone = formData.phone.replace(/\D/g, '');
+          const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+
+          await api.post('/automation/send-welcome-credentials', {
+            phone: formattedPhone,
             name: formData.name,
             email: formData.email,
             password: loginPassword,
-            phone: formData.phone || undefined,
-            role: formData.role,
-            salonId: user.salonId,
-            commissionRate: formData.defaultCommission / 100,
-            sendPasswordLink: false,
           });
-
-          // 3. Send WhatsApp with credentials if phone is provided
-          if (formData.phone) {
-            try {
-              const cleanPhone = formData.phone.replace(/\D/g, '');
-              const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
-
-              await api.post('/automation/send-welcome-credentials', {
-                phone: formattedPhone,
-                name: formData.name,
-                email: formData.email,
-                password: loginPassword,
-              });
-              setMessage({ type: 'success', text: 'Membro adicionado! Credenciais enviadas por WhatsApp.' });
-            } catch (whatsappError) {
-              console.error('Erro ao enviar WhatsApp:', whatsappError);
-              setMessage({ type: 'success', text: 'Membro adicionado com acesso ao sistema! Informe as credenciais manualmente.' });
-            }
-          } else {
-            setMessage({ type: 'success', text: 'Membro adicionado com acesso ao sistema!' });
-          }
-        } catch (userError: any) {
-          const userMsg = userError.response?.data?.message || 'Erro ao criar login';
-          setMessage({
-            type: 'error',
-            text: `Membro adicionado, mas erro ao criar login: ${userMsg}. Crie manualmente em Usuarios.`
-          });
+          setMessage({ type: 'success', text: 'Membro adicionado! Credenciais enviadas por WhatsApp.' });
+        } catch (whatsappError) {
+          console.error('Erro ao enviar WhatsApp:', whatsappError);
+          setMessage({ type: 'success', text: 'Membro adicionado com acesso ao sistema! Informe as credenciais manualmente.' });
         }
+      } else if (giveSystemAccess) {
+        setMessage({ type: 'success', text: 'Membro adicionado com acesso ao sistema!' });
       } else {
         setMessage({ type: 'success', text: 'Membro adicionado com sucesso!' });
       }

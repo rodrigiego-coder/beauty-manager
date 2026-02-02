@@ -73,9 +73,9 @@ export class TeamService {
       throw new ConflictException('Email ja cadastrado');
     }
 
-    // Generate temporary password
-    const tempPassword = Math.random().toString(36).slice(-8);
-    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    // Use provided password or generate temporary one
+    const passwordToUse = data.password || Math.random().toString(36).slice(-8);
+    const passwordHash = await bcrypt.hash(passwordToUse, 10);
 
     const commissionRate = data.defaultCommission
       ? (data.defaultCommission / 100).toFixed(2)
@@ -97,7 +97,8 @@ export class TeamService {
 
     return {
       ...result[0],
-      tempPassword, // Return temp password to be sent to user
+      // Only return password if it was auto-generated (not provided)
+      ...(data.password ? {} : { tempPassword: passwordToUse }),
     };
   }
 
