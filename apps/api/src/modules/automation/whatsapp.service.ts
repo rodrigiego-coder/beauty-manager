@@ -105,6 +105,34 @@ export class WhatsAppService {
   }
 
   /**
+   * Envia credenciais de acesso ao sistema para novo profissional
+   */
+  async sendWelcomeCredentials(
+    phoneNumber: string,
+    name: string,
+    email: string,
+    password: string,
+  ): Promise<WhatsAppSendResult> {
+    this.logger.log(`[WELCOME] Enviando credenciais para ${name} (${phoneNumber})`);
+
+    const message = `Ola ${name}! 👋
+
+Seu acesso ao *Beauty Manager* foi criado!
+
+🔗 *Acesse:* https://app.agendasalaopro.com.br/login
+📧 *Email:* ${email}
+🔑 *Senha:* ${password}
+
+Recomendamos trocar sua senha no primeiro acesso.
+
+Qualquer duvida, fale com a gente! 💜`;
+
+    const result = await this.sendDirectMessage(phoneNumber, message);
+    this.logger.log(`[WELCOME] Resultado: ${JSON.stringify(result)}`);
+    return result;
+  }
+
+  /**
    * Retorna os headers necessários para chamadas Z-API
    */
   private getZapiHeaders(): Record<string, string> {

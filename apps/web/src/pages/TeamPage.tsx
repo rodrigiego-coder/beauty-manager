@@ -236,7 +236,27 @@ export function TeamPage() {
             commissionRate: formData.defaultCommission / 100,
             sendPasswordLink: false,
           });
-          setMessage({ type: 'success', text: 'Membro adicionado com acesso ao sistema!' });
+
+          // 3. Send WhatsApp with credentials if phone is provided
+          if (formData.phone) {
+            try {
+              const cleanPhone = formData.phone.replace(/\D/g, '');
+              const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+
+              await api.post('/automation/send-welcome-credentials', {
+                phone: formattedPhone,
+                name: formData.name,
+                email: formData.email,
+                password: loginPassword,
+              });
+              setMessage({ type: 'success', text: 'Membro adicionado! Credenciais enviadas por WhatsApp.' });
+            } catch (whatsappError) {
+              console.error('Erro ao enviar WhatsApp:', whatsappError);
+              setMessage({ type: 'success', text: 'Membro adicionado com acesso ao sistema! Informe as credenciais manualmente.' });
+            }
+          } else {
+            setMessage({ type: 'success', text: 'Membro adicionado com acesso ao sistema!' });
+          }
         } catch (userError: any) {
           const userMsg = userError.response?.data?.message || 'Erro ao criar login';
           setMessage({

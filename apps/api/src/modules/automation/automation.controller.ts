@@ -287,4 +287,26 @@ export class AutomationController {
 
     return this.whatsAppService.sendDirectMessage(body.phone, body.message);
   }
+
+  /**
+   * POST /automation/send-welcome-credentials
+   * Envia credenciais de acesso via WhatsApp para novo profissional
+   */
+  @Post('send-welcome-credentials')
+  @Roles('OWNER', 'MANAGER')
+  @HttpCode(HttpStatus.OK)
+  async sendWelcomeCredentials(
+    @Body() body: { phone: string; name: string; email: string; password: string },
+  ) {
+    if (!body.phone || !body.name || !body.email || !body.password) {
+      return { success: false, error: 'phone, name, email e password são obrigatórios.' };
+    }
+
+    return this.whatsAppService.sendWelcomeCredentials(
+      body.phone,
+      body.name,
+      body.email,
+      body.password,
+    );
+  }
 }
