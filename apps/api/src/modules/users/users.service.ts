@@ -1,6 +1,6 @@
 import { Injectable, Inject, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or } from 'drizzle-orm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { DATABASE_CONNECTION } from '../../database/database.module';
@@ -72,21 +72,37 @@ export class UsersService {
 
   /**
    * Busca profissionais ativos do salão
+   * Inclui STYLIST e qualquer usuário com isProfessional = true (ex: OWNER que também atende)
    */
   async findProfessionals(salonId?: string): Promise<User[]> {
     if (salonId) {
-      const salonUsers = await this.db
+      return this.db
         .select()
         .from(users)
-        .where(and(eq(users.salonId, salonId), eq(users.active, true)));
-      return salonUsers.filter(u => u.role === 'STYLIST');
+        .where(
+          and(
+            eq(users.salonId, salonId),
+            eq(users.active, true),
+            or(
+              eq(users.role, 'STYLIST'),
+              eq(users.isProfessional, true)
+            )
+          )
+        );
     }
     // Fallback para admin
-    const allUsers = await this.db
+    return this.db
       .select()
       .from(users)
-      .where(eq(users.active, true));
-    return allUsers.filter(u => u.role === 'STYLIST');
+      .where(
+        and(
+          eq(users.active, true),
+          or(
+            eq(users.role, 'STYLIST'),
+            eq(users.isProfessional, true)
+          )
+        )
+      );
   }
 
   /**

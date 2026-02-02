@@ -75,6 +75,11 @@ export class CreateUserDto {
   @IsBoolean({ message: 'sendPasswordLink deve ser um booleano' })
   @IsOptional()
   sendPasswordLink?: boolean;
+
+  @ApiPropertyOptional({ description: 'Se o usuário é um profissional que atende clientes', example: false })
+  @IsBoolean({ message: 'isProfessional deve ser um booleano' })
+  @IsOptional()
+  isProfessional?: boolean;
 }
 
 // DTO para atualizar usuario
@@ -115,6 +120,11 @@ export class UpdateUserDto {
   @IsBoolean({ message: 'Active deve ser um booleano' })
   @IsOptional()
   active?: boolean;
+
+  @ApiPropertyOptional({ description: 'Se o usuário é um profissional que atende clientes', example: false })
+  @IsBoolean({ message: 'isProfessional deve ser um booleano' })
+  @IsOptional()
+  isProfessional?: boolean;
 }
 
 // DTO para atualizar horario de trabalho

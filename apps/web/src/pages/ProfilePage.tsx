@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, Mail, Phone, Lock, Save, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { User, Mail, Phone, Lock, Save, Loader2, CheckCircle, AlertCircle, Briefcase, Percent } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 
@@ -9,6 +9,8 @@ interface ProfileData {
   email: string;
   phone: string;
   role: string;
+  isProfessional: boolean;
+  commissionRate: number;
 }
 
 export function ProfilePage() {
@@ -25,6 +27,8 @@ export function ProfilePage() {
     email: '',
     phone: '',
     role: '',
+    isProfessional: false,
+    commissionRate: 50,
   });
 
   const [passwords, setPasswords] = useState({
@@ -46,6 +50,8 @@ export function ProfilePage() {
         email: data.email || '',
         phone: data.phone || '',
         role: data.role || '',
+        isProfessional: data.isProfessional || false,
+        commissionRate: data.commissionRate ? parseFloat(data.commissionRate) * 100 : 50,
       });
     } catch (error) {
       setMessage({ type: 'error', text: 'Erro ao carregar perfil' });
@@ -60,11 +66,21 @@ export function ProfilePage() {
     setMessage(null);
 
     try {
+      // Atualizar dados básicos
       await api.patch('/profile', {
         name: profile.name,
         email: profile.email,
         phone: profile.phone,
       });
+
+      // Se for OWNER, também atualizar isProfessional via endpoint de usuário
+      if (profile.role === 'OWNER') {
+        await api.patch(`/users/${profile.id}`, {
+          isProfessional: profile.isProfessional,
+          commissionRate: profile.commissionRate / 100,
+        });
+      }
+
       setMessage({ type: 'success', text: 'Perfil atualizado com sucesso!' });
     } catch (error: any) {
       const errorMsg = error.response?.data?.message || 'Erro ao atualizar perfil';
@@ -192,6 +208,48 @@ export function ProfilePage() {
               </div>
             </div>
           </div>
+
+          {/* Toggle para OWNER ser profissional */}
+          {profile.role === 'OWNER' && (
+            <div className="mt-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
+              <div className="flex items-center gap-3 mb-3">
+                <Briefcase className="w-5 h-5 text-primary-600" />
+                <h3 className="font-semibold text-gray-900">Atendimento</h3>
+              </div>
+
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={profile.isProfessional}
+                  onChange={(e) => setProfile({ ...profile, isProfessional: e.target.checked })}
+                  className="mt-1 w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <div>
+                  <span className="font-medium text-gray-900">Tambem atendo clientes como profissional</span>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Voce aparecera na lista de profissionais disponiveis para agendamento
+                  </p>
+                </div>
+              </label>
+
+              {profile.isProfessional && (
+                <div className="mt-4 pl-8">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <Percent className="w-4 h-4 inline mr-1" />
+                    Comissao (%)
+                  </label>
+                  <input
+                    type="number"
+                    value={profile.commissionRate}
+                    onChange={(e) => setProfile({ ...profile, commissionRate: Number(e.target.value) })}
+                    min="0"
+                    max="100"
+                    className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           <button
             type="submit"

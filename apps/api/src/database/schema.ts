@@ -465,6 +465,7 @@ export const users = pgTable('users', {
   phone: varchar('phone', { length: 20 }),
   role: userRoleEnum('role').default('STYLIST').notNull(),
   commissionRate: decimal('commission_rate', { precision: 5, scale: 2 }).default('0.50'),
+  isProfessional: boolean('is_professional').default(false),
   workSchedule: json('work_schedule').$type<WorkSchedule>(),
   specialties: text('specialties'),
   active: boolean('active').default(true).notNull(),
