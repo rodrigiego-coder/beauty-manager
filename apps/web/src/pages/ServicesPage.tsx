@@ -10,6 +10,10 @@ import {
   RotateCcw,
   FileText,
   Beaker,
+  CheckSquare,
+  Square,
+  Power,
+  PowerOff,
 } from 'lucide-react';
 import api from '../services/api';
 import {
@@ -34,6 +38,10 @@ export function ServicesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<ServiceCategory | ''>('');
   const [showInactive, setShowInactive] = useState(false);
+
+  // Seleção em massa
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   // Modais
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -217,6 +225,37 @@ export function ServicesPage() {
     }
   };
 
+  // Funções de seleção em massa
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filteredServices.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredServices.map((s) => s.id));
+    }
+  };
+
+  const handleBulkStatus = async (active: boolean) => {
+    if (selectedIds.length === 0) return;
+
+    try {
+      setBulkLoading(true);
+      await api.patch('/services/bulk-status', { ids: selectedIds, active });
+      setSelectedIds([]);
+      loadServices();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao atualizar servicos');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   const formatPrice = (price: string) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -292,6 +331,43 @@ export function ServicesPage() {
         </div>
       </div>
 
+      {/* Barra de Ações em Massa */}
+      {selectedIds.length > 0 && (
+        <div className="bg-primary-50 border border-primary-200 rounded-xl p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <CheckSquare className="w-5 h-5 text-primary-600" />
+            <span className="text-primary-700 font-medium">
+              {selectedIds.length} {selectedIds.length === 1 ? 'serviço selecionado' : 'serviços selecionados'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleBulkStatus(true)}
+              disabled={bulkLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+            >
+              <Power className="w-4 h-4" />
+              Ativar
+            </button>
+            <button
+              onClick={() => handleBulkStatus(false)}
+              disabled={bulkLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+            >
+              <PowerOff className="w-4 h-4" />
+              Desativar
+            </button>
+            <button
+              onClick={() => setSelectedIds([])}
+              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-4 h-4" />
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Lista de Serviços */}
       {filteredServices.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
@@ -316,6 +392,19 @@ export function ServicesPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-3 w-12">
+                    <button
+                      onClick={toggleSelectAll}
+                      className="p-1 hover:bg-gray-200 rounded transition-colors"
+                      title={selectedIds.length === filteredServices.length ? 'Desmarcar todos' : 'Selecionar todos'}
+                    >
+                      {selectedIds.length === filteredServices.length && filteredServices.length > 0 ? (
+                        <CheckSquare className="w-5 h-5 text-primary-600" />
+                      ) : (
+                        <Square className="w-5 h-5 text-gray-400" />
+                      )}
+                    </button>
+                  </th>
                   <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Nome
                   </th>
@@ -344,6 +433,18 @@ export function ServicesPage() {
                   const categoryInfo = getCategoryInfo(service.category);
                   return (
                     <tr key={service.id} className={!service.active ? 'bg-gray-50' : ''}>
+                      <td className="px-4 py-4">
+                        <button
+                          onClick={() => toggleSelect(service.id)}
+                          className="p-1 hover:bg-gray-200 rounded transition-colors"
+                        >
+                          {selectedIds.includes(service.id) ? (
+                            <CheckSquare className="w-5 h-5 text-primary-600" />
+                          ) : (
+                            <Square className="w-5 h-5 text-gray-400" />
+                          )}
+                        </button>
+                      </td>
                       <td className="px-6 py-4">
                         <div>
                           <div className="font-medium text-gray-900">{service.name}</div>

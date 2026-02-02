@@ -1,5 +1,5 @@
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
-import { eq, and, ilike, or, desc } from 'drizzle-orm';
+import { eq, and, ilike, or, desc, inArray } from 'drizzle-orm';
 import { services } from '../../database/schema';
 import type { Service } from '../../database/schema';
 import { DATABASE_CONNECTION } from '../../database/database.module';
@@ -198,5 +198,34 @@ export class ServicesService {
         ),
       )
       .orderBy(desc(services.createdAt));
+  }
+
+  /**
+   * Ativa/desativa múltiplos serviços de uma vez
+   */
+  async bulkUpdateStatus(
+    ids: number[],
+    active: boolean,
+    salonId: string,
+  ): Promise<{ updated: number }> {
+    if (!ids || ids.length === 0) {
+      return { updated: 0 };
+    }
+
+    const result = await this.db
+      .update(services)
+      .set({
+        active,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          inArray(services.id, ids),
+          eq(services.salonId, salonId),
+        ),
+      )
+      .returning();
+
+    return { updated: result.length };
   }
 }

@@ -51,6 +51,18 @@ export class ServicesController {
   }
 
   /**
+   * PATCH /services/bulk-status
+   * Ativa/desativa múltiplos serviços de uma vez
+   */
+  @Patch('bulk-status')
+  async bulkUpdateStatus(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: { ids: number[]; active: boolean },
+  ) {
+    return this.servicesService.bulkUpdateStatus(body.ids, body.active, user.salonId);
+  }
+
+  /**
    * GET /services/:id
    * Busca serviço por ID
    */

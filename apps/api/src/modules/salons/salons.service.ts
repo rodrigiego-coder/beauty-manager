@@ -142,10 +142,10 @@ export class SalonsService {
       WHERE salon_id = ${this.TEMPLATE_SALON_ID}::uuid
     `);
 
-    const servicesCount = servicesResult.rowCount || 0;
-    const productsCount = productsResult.rowCount || 0;
+    const servicesCount = Array.isArray(servicesResult) ? servicesResult.length : 0;
+    const productsCount = Array.isArray(productsResult) ? productsResult.length : 0;
 
-    this.logger.log(`Copied ${servicesCount} services and ${productsCount} products to salon ${newSalonId}`);
+    this.logger.log(`Copied template data to salon ${newSalonId}`);
 
     return { services: servicesCount, products: productsCount };
   }
