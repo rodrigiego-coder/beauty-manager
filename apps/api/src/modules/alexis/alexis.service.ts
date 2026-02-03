@@ -72,6 +72,12 @@ export class AlexisService {
     { buffer: string[]; timer: NodeJS.Timeout; resolveOwner: () => void }
   >();
 
+  /** Fallback counter: tracks consecutive fallbacks per conversation to auto-handoff */
+  private fallbackCount = new Map<string, number>();
+
+  /** Last fallback timestamp: prevents sending same fallback within 60s */
+  private lastFallbackAt = new Map<string, number>();
+
   constructor(
     private readonly gemini: GeminiService,
     private readonly contentFilter: ContentFilterService,
@@ -349,7 +355,13 @@ export class AlexisService {
     const history = await this.getRecentHistory(conversation.id, CONVERSATION_HISTORY_LIMIT);
     let aiResponse: string;
 
+    // Check if Gemini is available before trying
+    const geminiAvailable = this.gemini.isAvailable();
+
     try {
+      if (!geminiAvailable) {
+        throw new Error('Gemini API não disponível');
+      }
       if (intent === 'PRODUCT_INFO' || intent === 'PRICE_INFO') {
         aiResponse = await this.handleProductIntent(salonId, mergedText);
       } else {
@@ -357,8 +369,54 @@ export class AlexisService {
           context.salon?.name || 'Salão', mergedText, context, history,
         );
       }
+      // Reset fallback counter on success
+      this.fallbackCount.delete(conversation.id);
     } catch (error: any) {
       this.logger.error('[P0.4-FALLBACK] Gemini falhou, usando fallback premium:', error?.message || error);
+
+      // ========== ANTI-LOOP: Fallback counter + auto-handoff ==========
+      const failures = (this.fallbackCount.get(conversation.id) || 0) + 1;
+      this.fallbackCount.set(conversation.id, failures);
+
+      // Check if we sent fallback recently (within 60s)
+      const lastFallback = this.lastFallbackAt.get(conversation.id) || 0;
+      const now = Date.now();
+      const FALLBACK_COOLDOWN_MS = 60_000;
+
+      if (now - lastFallback < FALLBACK_COOLDOWN_MS) {
+        this.logger.warn(`[ANTI-LOOP] Fallback suprimido para ${clientPhone} (cooldown ativo)`);
+        await this.saveMessage(conversation.id, 'client', mergedText, intent, false, false);
+        return {
+          response: null,
+          intent,
+          blocked: false,
+          shouldSend: false,
+          statusChanged: false,
+        };
+      }
+
+      // After 2 consecutive fallbacks, auto-handoff to human
+      if (failures >= 2) {
+        this.logger.warn(`[AUTO-HANDOFF] ${failures} fallbacks consecutivos para ${clientPhone}, escalando para humano`);
+        await this.handleHumanTakeover(conversation.id, '');
+        this.fallbackCount.delete(conversation.id);
+        this.lastFallbackAt.delete(conversation.id);
+
+        const handoffMessage = 'Um momento, vou te transferir para nossa equipe. 😊';
+        await this.saveMessage(conversation.id, 'client', mergedText, 'AUTO_HANDOFF', false, false);
+        await this.saveMessage(conversation.id, 'ai', handoffMessage, 'AUTO_HANDOFF', false, false);
+
+        return {
+          response: handoffMessage,
+          intent: 'AUTO_HANDOFF',
+          blocked: false,
+          shouldSend: true,
+          statusChanged: true,
+          newStatus: 'HUMAN_ACTIVE',
+        };
+      }
+
+      this.lastFallbackAt.set(conversation.id, now);
       aiResponse = this.gemini.getFallbackResponse();
     }
 

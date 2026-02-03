@@ -49,6 +49,9 @@ async function bootstrap() {
     'https://beautymanager.com.br',
     'http://www.beautymanager.com.br',
     'https://www.beautymanager.com.br',
+    // Z-API (WhatsApp integration webhooks)
+    'https://api.z-api.io',
+    'http://api.z-api.io',
   ];
 
   app.enableCors({
