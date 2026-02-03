@@ -73,6 +73,19 @@ export class ProductsController {
   }
 
   /**
+   * PATCH /products/bulk-status
+   * Ativa/desativa múltiplos produtos de uma vez
+   */
+  @Patch('bulk-status')
+  @Roles('OWNER', 'MANAGER')
+  async bulkUpdateStatus(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: { ids: number[]; active: boolean },
+  ) {
+    return this.productsService.bulkUpdateStatus(body.ids, body.active, user.salonId);
+  }
+
+  /**
    * GET /products/:id
    * Busca produto por ID
    */

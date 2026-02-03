@@ -14,6 +14,10 @@ import {
   Store,
   Scissors,
   ArrowLeftRight,
+  CheckSquare,
+  Square,
+  Power,
+  PowerOff,
 } from 'lucide-react';
 import api from '../services/api';
 import {
@@ -45,6 +49,10 @@ export function ProductsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   const [showLowStockOnly, setShowLowStockOnly] = useState(false);
+
+  // Seleção em massa
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   // Modais
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -452,6 +460,37 @@ export function ProductsPage() {
     return activeTab === 'retail' ? isLowStockRetail(product) : isLowStockInternal(product);
   };
 
+  // Funções de seleção em massa
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filteredProducts.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredProducts.map((p) => p.id));
+    }
+  };
+
+  const handleBulkStatus = async (active: boolean) => {
+    if (selectedIds.length === 0) return;
+
+    try {
+      setBulkLoading(true);
+      await api.patch('/products/bulk-status', { ids: selectedIds, active });
+      setSelectedIds([]);
+      loadProducts();
+      loadStats();
+    } catch (err) {
+      console.error('Erro ao atualizar status em massa:', err);
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -600,6 +639,43 @@ export function ProductsPage() {
         </div>
       </div>
 
+      {/* Barra de Ações em Massa */}
+      {selectedIds.length > 0 && (
+        <div className="bg-primary-50 border border-primary-200 rounded-xl p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <CheckSquare className="w-5 h-5 text-primary-600" />
+            <span className="text-primary-700 font-medium">
+              {selectedIds.length} {selectedIds.length === 1 ? 'produto selecionado' : 'produtos selecionados'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleBulkStatus(true)}
+              disabled={bulkLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+            >
+              <Power className="w-4 h-4" />
+              Ativar
+            </button>
+            <button
+              onClick={() => handleBulkStatus(false)}
+              disabled={bulkLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+            >
+              <PowerOff className="w-4 h-4" />
+              Desativar
+            </button>
+            <button
+              onClick={() => setSelectedIds([])}
+              disabled={bulkLoading}
+              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Lista de Produtos */}
       {filteredProducts.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
@@ -624,6 +700,19 @@ export function ProductsPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="w-12 px-4 py-3">
+                    <button
+                      onClick={toggleSelectAll}
+                      className="p-1 hover:bg-gray-200 rounded transition-colors"
+                      title={selectedIds.length === filteredProducts.length ? 'Desmarcar todos' : 'Selecionar todos'}
+                    >
+                      {selectedIds.length === filteredProducts.length && filteredProducts.length > 0 ? (
+                        <CheckSquare className="w-5 h-5 text-primary-600" />
+                      ) : (
+                        <Square className="w-5 h-5 text-gray-400" />
+                      )}
+                    </button>
+                  </th>
                   <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Nome
                   </th>
@@ -659,6 +748,18 @@ export function ProductsPage() {
 
                   return (
                     <tr key={product.id} className={!product.active ? 'bg-gray-50' : ''}>
+                      <td className="w-12 px-4 py-4">
+                        <button
+                          onClick={() => toggleSelect(product.id)}
+                          className="p-1 hover:bg-gray-200 rounded transition-colors"
+                        >
+                          {selectedIds.includes(product.id) ? (
+                            <CheckSquare className="w-5 h-5 text-primary-600" />
+                          ) : (
+                            <Square className="w-5 h-5 text-gray-400" />
+                          )}
+                        </button>
+                      </td>
                       <td className="px-6 py-4">
                         <div>
                           <div className="font-medium text-gray-900">

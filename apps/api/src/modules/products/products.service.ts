@@ -1,5 +1,5 @@
 import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
-import { eq, and, ilike, or } from 'drizzle-orm';
+import { eq, and, ilike, or, inArray } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.module';
 import {
   Database,
@@ -168,6 +168,35 @@ export class ProductsService {
    */
   async reactivate(id: number): Promise<Product | null> {
     return this.update(id, { active: true });
+  }
+
+  /**
+   * Ativa/desativa múltiplos produtos de uma vez
+   */
+  async bulkUpdateStatus(
+    ids: number[],
+    active: boolean,
+    salonId: string,
+  ): Promise<{ updated: number }> {
+    if (!ids || ids.length === 0) {
+      return { updated: 0 };
+    }
+
+    const result = await this.db
+      .update(products)
+      .set({
+        active,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          inArray(products.id, ids),
+          eq(products.salonId, salonId),
+        ),
+      )
+      .returning();
+
+    return { updated: result.length };
   }
 
   /**
