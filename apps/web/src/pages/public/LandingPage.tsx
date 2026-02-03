@@ -146,7 +146,7 @@ export function LandingPage() {
               },
               {
                 icon: Sparkles,
-                title: 'Alexis IA',
+                title: 'Alexia IA',
                 desc: 'Assistente que responde 24/7, agenda clientes e tira duvidas pelo WhatsApp.',
                 color: 'bg-purple-500',
               },
@@ -237,7 +237,7 @@ export function LandingPage() {
                 <Bot className="w-6 h-6 text-purple-600" />
               </div>
               <h3 className="text-lg font-bold text-gray-900 mb-2">
-                Ative Alexis IA
+                Ative Alexia IA
                 <span className="text-xs font-normal text-gray-500 ml-2">(opcional)</span>
               </h3>
               <p className="text-gray-600 text-sm">
@@ -314,7 +314,7 @@ export function LandingPage() {
                   '10 usuarios',
                   '1.000 clientes',
                   'WhatsApp Automatico',
-                  'Alexis IA',
+                  'Alexia IA',
                   'Comissoes automaticas',
                 ].map((item) => (
                   <li key={item} className="flex items-center gap-2 text-sm text-gray-700">

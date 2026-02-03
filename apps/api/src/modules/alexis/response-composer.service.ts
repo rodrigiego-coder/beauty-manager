@@ -6,7 +6,7 @@ import { eq, and } from 'drizzle-orm';
 /**
  * =====================================================
  * RESPONSE COMPOSER SERVICE (DELTA)
- * Humaniza respostas da Alexis com tom acolhedor
+ * Humaniza respostas da Alexia com tom acolhedor
  * Sem emojis por padrao, profissional e direto
  * =====================================================
  */
@@ -81,10 +81,10 @@ export function getNameQuestion(): string {
 }
 
 /**
- * Gera apresentacao curta da Alexis
+ * Gera apresentacao curta da Alexia
  */
 export function getIntroduction(salonName: string): string {
-  return `Eu sou a Alexis, assistente do ${salonName}.`;
+  return `Eu sou a Alexia, assistente do ${salonName}.`;
 }
 
 /**

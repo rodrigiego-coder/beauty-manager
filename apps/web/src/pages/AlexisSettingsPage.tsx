@@ -156,7 +156,7 @@ export default function AlexisSettingsPage() {
                 value={settings.assistantName}
                 onChange={(e) => updateSetting('assistantName', e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Alexis"
+                placeholder="Alexia"
               />
               <p className="text-xs text-gray-500 mt-1">
                 Nome usado nas apresentacoes e mensagens
@@ -172,7 +172,7 @@ export default function AlexisSettingsPage() {
                 onChange={(e) => updateSetting('greetingMessage', e.target.value)}
                 rows={3}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Ola! Sou a Alexis..."
+                placeholder="Ola! Sou a Alexia..."
               />
             </div>
           </div>

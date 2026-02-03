@@ -73,6 +73,7 @@ interface CommandItem {
   discount: string;
   totalPrice: string;
   performerId?: string;
+  performerName?: string;
   addedAt: string;
   canceledAt?: string;
   // Package fields
@@ -353,6 +354,10 @@ export function CommandPage() {
   const [packageAvailability, setPackageAvailability] = useState<PackageAvailability | null>(null);
   const [loadingPackage, setLoadingPackage] = useState(false);
 
+  // Estado para seleção de profissional que vai executar o serviço
+  const [availableProfessionals, setAvailableProfessionals] = useState<{ id: string; name: string }[]>([]);
+  const [selectedPerformerId, setSelectedPerformerId] = useState<string>('');
+
   // Estados do cliente vinculado
   const [linkedClient, setLinkedClient] = useState<Client | null>(null);
   const [showLinkClientModal, setShowLinkClientModal] = useState(false);
@@ -429,7 +434,16 @@ export function CommandPage() {
       console.error('Erro ao carregar produtos:', err);
     }
   };
-  
+
+  const loadProfessionals = async () => {
+    try {
+      const response = await api.get('/users/professionals');
+      setAvailableProfessionals(response.data);
+    } catch (err) {
+      console.error('Erro ao carregar profissionais:', err);
+    }
+  };
+
   const loadCommand = async () => {
     try {
       setLoading(true);
@@ -957,6 +971,8 @@ export function CommandPage() {
         referenceId: selectedItem.id.toString(),
         // Enviar variantId se serviço tiver variantes selecionada
         variantId: itemType === 'SERVICE' && selectedVariantId ? selectedVariantId : undefined,
+        // Enviar performerId se um profissional foi selecionado (apenas para serviços)
+        performerId: itemType === 'SERVICE' && selectedPerformerId ? selectedPerformerId : undefined,
       });
 
       setShowAddItemModal(false);
@@ -966,6 +982,8 @@ export function CommandPage() {
       // Limpar variantes após adicionar
       setServiceVariants([]);
       setSelectedVariantId(null);
+      // Limpar profissional selecionado
+      setSelectedPerformerId('');
       await loadCommand();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Erro ao adicionar item');
@@ -978,6 +996,8 @@ export function CommandPage() {
   const openAddItemModal = () => {
     loadServices();
     loadProducts();
+    loadProfessionals();
+    setSelectedPerformerId('');
     setShowAddItemModal(true);
   };
 
@@ -1337,6 +1357,9 @@ export function CommandPage() {
                         </td>
                         <td className="py-3 pr-4">
                           <p className="font-medium text-gray-900">{item.description}</p>
+                          {item.performerName && (
+                            <p className="text-xs text-gray-500">Por: {item.performerName}</p>
+                          )}
                           {item.paidByPackage && (
                             <span className="text-xs text-emerald-600 font-medium">🎁 Pacote</span>
                           )}
@@ -1853,6 +1876,27 @@ export function CommandPage() {
               <div className="bg-gray-50 rounded-lg p-4 mb-4">
                 <p className="text-sm text-gray-500 mb-1">Item selecionado:</p>
                 <p className="font-semibold text-gray-900">{selectedItem.name}</p>
+              </div>
+            )}
+
+            {/* Seletor de Profissional - aparece apenas para serviços */}
+            {itemType === 'SERVICE' && selectedItem && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Profissional que vai executar
+                </label>
+                <select
+                  value={selectedPerformerId}
+                  onChange={(e) => setSelectedPerformerId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option value="">Selecione o profissional</option>
+                  {availableProfessionals.map((professional) => (
+                    <option key={professional.id} value={professional.id}>
+                      {professional.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 
@@ -2480,7 +2524,7 @@ export function CommandPage() {
                 Cadastrar Perfil Capilar?
               </h2>
               <p className="text-gray-600 text-sm leading-relaxed">
-                Para que a <span className="font-medium text-purple-600">Alexis</span> (nossa IA) possa fazer recomendações
+                Para que a <span className="font-medium text-purple-600">Alexia</span> (nossa IA) possa fazer recomendações
                 personalizadas de produtos e tratamentos, é importante cadastrar o perfil capilar de{' '}
                 <span className="font-medium">{newlyCreatedClient.name}</span>.
               </p>

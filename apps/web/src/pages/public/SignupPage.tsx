@@ -330,7 +330,7 @@ export function SignupPage() {
               {[
                 'Acesso completo ao sistema',
                 '50 confirmacoes WhatsApp para testar',
-                '300 atendimentos Alexis para testar',
+                '300 atendimentos Alexia para testar',
                 'Sem cartao de credito',
                 'Cancele quando quiser',
               ].map((item, i) => (

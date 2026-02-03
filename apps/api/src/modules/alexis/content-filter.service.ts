@@ -36,15 +36,16 @@ export class ContentFilterService {
   /**
    * Verifica se a mensagem é um comando de controle (#eu ou #ia)
    * IMPORTANTE: Comandos NÃO são enviados ao cliente
+   * Usa startsWith para aceitar "#eu voltei", "#ia pode continuar", etc.
    */
   isCommand(message: string): CommandCheck {
     const trimmed = message.trim().toLowerCase();
 
-    if (trimmed === COMMANDS.HUMAN_TAKEOVER.toLowerCase()) {
+    if (trimmed.startsWith(COMMANDS.HUMAN_TAKEOVER.toLowerCase())) {
       return { isCommand: true, command: 'HUMAN_TAKEOVER' };
     }
 
-    if (trimmed === COMMANDS.AI_RESUME.toLowerCase()) {
+    if (trimmed.startsWith(COMMANDS.AI_RESUME.toLowerCase())) {
       return { isCommand: true, command: 'AI_RESUME' };
     }
 

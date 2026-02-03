@@ -31,7 +31,7 @@ export class GeminiService implements OnModuleInit {
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      this.logger.warn('GEMINI_API_KEY não configurada - Alexis operará em modo limitado');
+      this.logger.warn('GEMINI_API_KEY não configurada - Alexia operará em modo limitado');
       return;
     }
 
@@ -149,7 +149,7 @@ ${data.myAppointmentsToday?.length || 0} clientes agendados hoje.
 Liste os horários e serviços de forma clara.`;
       }
 
-      const fullPrompt = `Você é Alexis, assistente do salão. ${prompt}
+      const fullPrompt = `Você é Alexia, assistente do salão. ${prompt}
 Dados completos: ${JSON.stringify(data)}`;
 
       const result = await this.model.generateContent(fullPrompt);

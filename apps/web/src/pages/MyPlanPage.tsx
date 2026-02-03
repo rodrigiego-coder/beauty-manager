@@ -56,7 +56,7 @@ const FAQ_ITEMS = [
     a: 'Sim! Conectamos seu numero existente. Nao precisa trocar.',
   },
   {
-    q: 'Como funciona a Alexis?',
+    q: 'Como funciona a Alexia?',
     a: 'Ela responde automaticamente pelo WhatsApp 24/7, agenda clientes e tira duvidas.',
   },
   {
@@ -382,7 +382,7 @@ export function MyPlanPage() {
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <FeatureCheck included={plan.hasAI} />
-                    <span className={plan.hasAI ? 'text-gray-700' : 'text-gray-400'}>Alexis IA</span>
+                    <span className={plan.hasAI ? 'text-gray-700' : 'text-gray-400'}>Alexia IA</span>
                   </div>
                 </div>
 
@@ -557,7 +557,7 @@ export function MyPlanPage() {
               <Brain className="w-6 h-6" />
             </div>
             <div className="flex-1">
-              <h2 className="text-2xl font-bold">Alexis - Assistente IA</h2>
+              <h2 className="text-2xl font-bold">Alexia - Assistente IA</h2>
               <p className="text-purple-200">Atendimento 24/7 que converte</p>
             </div>
             {activeAlexis && (
@@ -570,14 +570,14 @@ export function MyPlanPage() {
           {!currentPlan?.hasAI && (
             <div className="flex items-center gap-2 bg-fuchsia-500/20 px-4 py-3 rounded-xl mb-6 mt-4">
               <Sparkles className="w-5 h-5 text-fuchsia-300" />
-              <span className="text-fuchsia-100 font-medium">+ Alexis IA (300 atendimentos gratis por 14 dias) - Faca upgrade!</span>
+              <span className="text-fuchsia-100 font-medium">+ Alexia IA (300 atendimentos gratis por 14 dias) - Faca upgrade!</span>
             </div>
           )}
 
           {!activeWhatsapp && currentPlan?.hasAI && (
             <div className="flex items-center gap-2 bg-white/10 px-4 py-3 rounded-xl mb-6 mt-4">
               <Phone className="w-5 h-5 text-green-300" />
-              <span className="text-purple-100">Ative o WhatsApp primeiro para liberar a Alexis</span>
+              <span className="text-purple-100">Ative o WhatsApp primeiro para liberar a Alexia</span>
             </div>
           )}
 
@@ -622,7 +622,7 @@ export function MyPlanPage() {
                 disabled={!!activatingAddon}
                 className="w-full mt-8 bg-white text-purple-700 py-4 rounded-2xl font-black text-lg hover:bg-purple-50 transition-all active:scale-95 flex items-center justify-center gap-2"
               >
-                {activatingAddon ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Sparkles className="w-5 h-5" /> Ativar Alexis (300 atendimentos gratis)</>}
+                {activatingAddon ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Sparkles className="w-5 h-5" /> Ativar Alexia (300 atendimentos gratis)</>}
               </button>
               <p className="text-xs text-center text-purple-200 mt-2">Teste expira em 30 dias. Depois voce decide.</p>
             </>
@@ -662,7 +662,7 @@ export function MyPlanPage() {
               className="mt-8 w-full bg-white text-purple-700 py-4 rounded-2xl font-black text-lg hover:bg-purple-50 transition-all active:scale-95 flex items-center justify-center gap-2"
             >
               <Rocket className="w-5 h-5" />
-              Fazer Upgrade para ter Alexis
+              Fazer Upgrade para ter Alexia
               <ArrowRight className="w-5 h-5" />
             </button>
           )}
