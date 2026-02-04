@@ -10,6 +10,8 @@ import { AlexisCatalogService } from './alexis-catalog.service';
 import { ResponseComposerService } from './response-composer.service';
 import { ProductInfoService } from './product-info.service';
 import { ConversationStateStore } from './conversation-state.store';
+import { PackageIntelligenceService } from './package-intelligence.service';
+import { AudioTranscriptionService } from './audio-transcription.service';
 import { AppointmentsModule } from '../appointments/appointments.module';
 import { OnlineBookingModule } from '../online-booking/online-booking.module';
 import { SchedulesModule } from '../schedules/schedules.module';
@@ -39,7 +41,9 @@ import { SchedulesModule } from '../schedules/schedules.module';
     ResponseComposerService,
     ProductInfoService,
     ConversationStateStore,
+    PackageIntelligenceService,
+    AudioTranscriptionService,
   ],
-  exports: [AlexisService, AlexisCatalogService, ProductInfoService],
+  exports: [AlexisService, AlexisCatalogService, ProductInfoService, PackageIntelligenceService, AudioTranscriptionService],
 })
 export class AlexisModule {}

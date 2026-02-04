@@ -14,6 +14,8 @@ import {
   professionalAvailabilities,
   professionalBlocks,
   clientNoShows,
+  clientPackages,
+  packages,
   ProfessionalAvailability,
   ProfessionalBlock,
   NewProfessionalBlock,
@@ -22,6 +24,7 @@ import { UsersService } from '../users';
 import { ScheduledMessagesService } from '../notifications';
 import { TriageService } from '../triage/triage.service';
 import { SchedulesService } from '../schedules/schedules.service';
+import { GoogleCalendarService } from '../google-calendar';
 
 // ==================== INTERFACES ====================
 
@@ -105,6 +108,7 @@ export class AppointmentsService {
     private triageService: TriageService,
     @Inject(forwardRef(() => SchedulesService))
     private schedulesService: SchedulesService,
+    private googleCalendarService: GoogleCalendarService,
   ) {}
 
   // ==================== APPOINTMENTS CRUD ====================
@@ -489,6 +493,9 @@ export class AppointmentsService {
       this.logger.error('Erro ao agendar notificações WhatsApp:', error);
     }
 
+    // Google Calendar sync
+    this.syncToGoogleCalendar(data.professionalId!, salonId, appointment.id);
+
     return appointment;
   }
 
@@ -528,30 +535,73 @@ export class AppointmentsService {
       .where(and(eq(appointments.id, id), eq(appointments.salonId, salonId)))
       .returning();
 
-    return result[0] || null;
+    const appointment = result[0];
+
+    // SYNC AUTOMÁTICO: Atualiza no Google Calendar
+    if (appointment) {
+      this.syncToGoogleCalendar(appointment.professionalId, salonId, appointment.id);
+    }
+
+    return appointment || null;
   }
 
   /**
    * Cancela um agendamento
+   *
+   * LOGGING AGRESSIVO: Rodrigo pediu para rastrear problemas de persistência.
+   * Cada etapa é logada para diagnóstico em produção.
    */
   async cancel(id: string, salonId: string, cancelledById: string, reason?: string): Promise<Appointment | null> {
-    const existing = await this.findById(id, salonId);
+    const startTime = Date.now();
+    this.logger.log(`[CANCEL_START] id=${id} salonId=${salonId} by=${cancelledById} reason="${reason || 'N/A'}"`);
 
-    const result = await this.db
-      .update(appointments)
-      .set({
-        status: 'CANCELLED',
-        cancelledById,
-        cancellationReason: reason || null,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(appointments.id, id), eq(appointments.salonId, salonId)))
-      .returning();
+    try {
+      // 1. Busca agendamento existente
+      const existing = await this.findById(id, salonId);
+      if (!existing) {
+        this.logger.warn(`[CANCEL_NOT_FOUND] id=${id} salonId=${salonId} - Agendamento não encontrado`);
+        return null;
+      }
 
-    const appointment = result[0];
+      this.logger.log(`[CANCEL_FOUND] id=${id} status_atual=${existing.status} cliente=${existing.clientPhone || 'N/A'}`);
 
-    if (appointment) {
-      // Cancelar notificações pendentes e agendar notificação de cancelamento
+      // 2. Executa UPDATE no banco
+      const result = await this.db
+        .update(appointments)
+        .set({
+          status: 'CANCELLED',
+          cancelledById,
+          cancellationReason: reason || null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(appointments.id, id), eq(appointments.salonId, salonId)))
+        .returning();
+
+      const appointment = result[0];
+
+      if (!appointment) {
+        this.logger.error(`[CANCEL_UPDATE_FAILED] id=${id} - UPDATE não retornou nenhum registro!`);
+        return null;
+      }
+
+      // 3. Verifica se o status foi realmente alterado
+      this.logger.log(`[CANCEL_UPDATED] id=${id} novo_status=${appointment.status} rowsAffected=1 elapsed=${Date.now() - startTime}ms`);
+
+      // 4. Verifica persistência com SELECT de confirmação
+      const verifyAfter = await this.db
+        .select({ status: appointments.status })
+        .from(appointments)
+        .where(eq(appointments.id, id))
+        .limit(1);
+
+      if (verifyAfter[0]?.status !== 'CANCELLED') {
+        this.logger.error(`[CANCEL_VERIFY_FAILED] id=${id} expected=CANCELLED actual=${verifyAfter[0]?.status} - PERSISTÊNCIA FALHOU!`);
+        // Ainda retorna o appointment para não quebrar o fluxo, mas alerta
+      } else {
+        this.logger.log(`[CANCEL_VERIFIED] id=${id} status=CANCELLED confirmado no banco`);
+      }
+
+      // 5. Cancelar notificações pendentes e agendar notificação de cancelamento
       try {
         await this.scheduledMessagesService.cancelAppointmentNotifications(id);
         if (existing?.clientPhone) {
@@ -562,12 +612,27 @@ export class AppointmentsService {
             clientName: existing.clientName,
           });
         }
-      } catch (error) {
-        console.error('Erro ao processar notificações de cancelamento:', error);
+        this.logger.log(`[CANCEL_NOTIFICATIONS] id=${id} notificações processadas`);
+      } catch (error: any) {
+        this.logger.error(`[CANCEL_NOTIFY_ERROR] id=${id} error=${error?.message}`);
+        // Não falha o cancelamento por erro de notificação
       }
-    }
 
-    return appointment || null;
+      // 6. Google Calendar delete
+      if (existing?.googleEventId) {
+        this.deleteFromGoogleCalendar(existing.professionalId, salonId, existing.googleEventId);
+        this.logger.log(`[CANCEL_GCAL] id=${id} googleEventId=${existing.googleEventId} deleted`);
+      }
+
+      const totalTime = Date.now() - startTime;
+      this.logger.log(`[CANCEL_SUCCESS] id=${id} elapsed=${totalTime}ms`);
+
+      return appointment;
+    } catch (error: any) {
+      const totalTime = Date.now() - startTime;
+      this.logger.error(`[CANCEL_ERROR] id=${id} error=${error?.message} stack=${error?.stack} elapsed=${totalTime}ms`);
+      return null;
+    }
   }
 
   // ==================== STATUS TRANSITIONS ====================
@@ -611,6 +676,10 @@ export class AppointmentsService {
    * Finaliza um atendimento
    */
   async complete(id: string, salonId: string): Promise<Appointment | null> {
+    // Busca appointment completo antes de atualizar (para dados do pacote)
+    const existing = await this.findById(id, salonId);
+    if (!existing) return null;
+
     const result = await this.db
       .update(appointments)
       .set({
@@ -620,7 +689,124 @@ export class AppointmentsService {
       .where(and(eq(appointments.id, id), eq(appointments.salonId, salonId)))
       .returning();
 
-    return result[0] || null;
+    const completed = result[0];
+    if (!completed) return null;
+
+    // Hook: Notificação de contagem regressiva de pacote
+    if (completed.clientPackageId && completed.clientPhone) {
+      await this.schedulePackageSessionCountdown(
+        salonId,
+        completed.id,
+        completed.clientPackageId,
+        completed.clientPhone,
+        completed.clientName,
+      );
+    }
+
+    return completed;
+  }
+
+  /**
+   * Agenda notificação de contagem regressiva após sessão de pacote
+   */
+  private async schedulePackageSessionCountdown(
+    salonId: string,
+    appointmentId: string,
+    clientPackageId: number,
+    clientPhone: string,
+    clientName: string | null,
+  ): Promise<void> {
+    try {
+      // Busca informações do pacote
+      const [pkg] = await this.db
+        .select({
+          id: clientPackages.id,
+          remainingSessions: clientPackages.remainingSessions,
+          packageName: packages.name,
+        })
+        .from(clientPackages)
+        .innerJoin(packages, eq(clientPackages.packageId, packages.id))
+        .where(eq(clientPackages.id, clientPackageId))
+        .limit(1);
+
+      if (!pkg) {
+        this.logger.debug(`Package ${clientPackageId} not found for countdown`);
+        return;
+      }
+
+      // Decrementa sessões restantes (o pacote já foi consumido pela comanda)
+      // Aqui apenas calculamos para a mensagem - o decréscimo real já ocorreu
+      const remainingAfterSession = pkg.remainingSessions;
+
+      // Formata mensagem de contagem regressiva
+      const message = this.formatPackageCountdownMessage(
+        pkg.packageName,
+        remainingAfterSession,
+        clientName,
+      );
+
+      // Agenda para 30 minutos após o término
+      const scheduledFor = new Date(Date.now() + 30 * 60 * 1000);
+      const dedupeKey = `${appointmentId}:PACKAGE_SESSION_COMPLETED`;
+
+      await this.scheduledMessagesService.scheduleCustomNotification({
+        salonId,
+        appointmentId,
+        recipientPhone: this.formatPhone(clientPhone),
+        recipientName: clientName,
+        notificationType: 'PACKAGE_SESSION_COMPLETED',
+        customMessage: message,
+        scheduledFor,
+        dedupeKey,
+      });
+
+      this.logger.log(
+        `Package countdown scheduled: appointment=${appointmentId}, remaining=${remainingAfterSession}`,
+      );
+    } catch (error: any) {
+      // Degradação graciosa - não falha o complete() por erro no countdown
+      this.logger.error(`Error scheduling package countdown: ${error.message}`);
+    }
+  }
+
+  /**
+   * Formata mensagem de contagem regressiva do pacote
+   */
+  private formatPackageCountdownMessage(
+    packageName: string,
+    remainingSessions: number,
+    clientName: string | null,
+  ): string {
+    const greeting = clientName ? `${clientName}, s` : 'S';
+
+    if (remainingSessions === 0) {
+      return `${greeting}essão concluída! ✅
+
+📦 *${packageName}*
+🎉 Parabéns! Você completou todas as sessões do seu pacote!
+
+Esperamos que tenha gostado dos resultados. Até a próxima! 💜`;
+    }
+
+    const plural = remainingSessions > 1 ? 'sessões restantes' : 'sessão restante';
+
+    return `${greeting}essão concluída! ✅
+
+📦 *${packageName}*
+🔢 Você ainda tem *${remainingSessions} ${plural}*
+
+Quer agendar a próxima? Responda *AGENDAR*! 😊`;
+  }
+
+  /**
+   * Formata telefone para padrão internacional
+   */
+  private formatPhone(phone: string): string {
+    let cleaned = phone.replace(/\D/g, '');
+    if (cleaned.length <= 11) {
+      cleaned = '55' + cleaned;
+    }
+    return cleaned;
   }
 
   /**
@@ -752,6 +938,11 @@ export class AppointmentsService {
       } catch (error) {
         console.error('Erro ao processar notificações de reagendamento:', error);
       }
+    }
+
+    // Google Calendar sync (atualiza evento existente)
+    if (appointment) {
+      this.syncToGoogleCalendar(appointment.professionalId, salonId, appointment.id);
     }
 
     return appointment || null;
@@ -1704,5 +1895,36 @@ export class AppointmentsService {
   private calculateEndTime(startTime: string, duration: number): string {
     const startMinutes = this.timeToMinutes(startTime);
     return this.minutesToTime(startMinutes + duration);
+  }
+
+  // ==================== GOOGLE CALENDAR SYNC ====================
+
+  /**
+   * =====================================================
+   * SINCRONIZAÇÃO AUTOMÁTICA COM GOOGLE CALENDAR
+   * Usa tokens do salão (conta principal: salaosanches@gmail.com)
+   * Título no Google: "Serviço - Profissional"
+   * =====================================================
+   */
+  private syncToGoogleCalendar(_professionalId: string, salonId: string, appointmentId: string): void {
+    // USA TOKENS DO SALÃO (não do profissional individual)
+    this.googleCalendarService.syncAppointmentToGoogleBySalon(salonId, appointmentId)
+      .then(result => {
+        if (!result.success) {
+          this.logger.warn(`[SYNC_AUTO_GOOGLE] Skipped ${appointmentId}: ${result.error}`);
+        }
+        // Log de sucesso já é feito no service
+      })
+      .catch(error => this.logger.error(`[SYNC_AUTO_GOOGLE_ERROR] ${appointmentId}: ${error?.message}`));
+  }
+
+  /**
+   * Remove evento do Google Calendar (async, não bloqueia)
+   * Usa tokens do salão (conta principal)
+   */
+  private deleteFromGoogleCalendar(_professionalId: string, salonId: string, eventId: string): void {
+    // USA TOKENS DO SALÃO (não do profissional individual)
+    this.googleCalendarService.deleteEventFromGoogleBySalon(salonId, eventId)
+      .catch(error => this.logger.error(`[SYNC_AUTO_GOOGLE_ERROR] DELETE ${eventId}: ${error?.message}`));
   }
 }

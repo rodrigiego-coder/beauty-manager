@@ -5,7 +5,8 @@ import { ALEXIS_SYSTEM_PROMPT } from './constants/forbidden-terms';
 /**
  * =====================================================
  * GEMINI SERVICE
- * Integração com Google Gemini API
+ * Integração com Google Gemini 2.0 Flash API
+ * Inclui processamento de áudio nativo (sem OpenAI)
  * =====================================================
  */
 
@@ -15,17 +16,28 @@ export interface ConversationTurn {
   content: string;
 }
 
+/** Resultado de transcrição de áudio nativa */
+export interface AudioTranscriptionResult {
+  success: boolean;
+  text?: string;
+  error?: string;
+}
+
 /** Limite de turnos carregados (configurável sem .env) */
 export const CONVERSATION_HISTORY_LIMIT = 8;
 
 /** Tamanho máximo por mensagem no histórico (chars) */
 export const MESSAGE_TRUNCATE_LENGTH = 600;
 
+/** Modelo padrão - Gemini 2.0 Flash (estável, com áudio nativo) */
+const DEFAULT_MODEL = 'gemini-2.0-flash';
+
 @Injectable()
 export class GeminiService implements OnModuleInit {
   private readonly logger = new Logger(GeminiService.name);
   private genAI: GoogleGenerativeAI | null = null;
   private model: GenerativeModel | null = null;
+  private modelName: string = DEFAULT_MODEL;
 
   async onModuleInit() {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -37,12 +49,13 @@ export class GeminiService implements OnModuleInit {
 
     try {
       this.genAI = new GoogleGenerativeAI(apiKey);
+      this.modelName = process.env.GEMINI_MODEL || DEFAULT_MODEL;
       this.model = this.genAI.getGenerativeModel({
-        model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+        model: this.modelName,
       });
-      this.logger.log('Gemini API inicializada com sucesso');
+      this.logger.log(`✅ Gemini API inicializada: modelo=${this.modelName}`);
     } catch (error) {
-      this.logger.error('Erro ao inicializar Gemini API:', error);
+      this.logger.error('❌ Erro ao inicializar Gemini API:', error);
     }
   }
 
@@ -87,7 +100,10 @@ Responda de forma educada, profissional e segura. Lembre-se:
 - NUNCA prometa resultados
 - SOMENTE indique produtos/serviços que estão listados no CONTEXTO acima
 - Mantenha a resposta curta e objetiva (máximo 3 parágrafos)
-- Considere o HISTÓRICO RECENTE acima para manter coerência na conversa`;
+- Considere o HISTÓRICO RECENTE acima para manter coerência na conversa
+- Se o cliente perguntar sobre agendamentos, use SOMENTE os dados de "clientAppointments" do CONTEXTO
+- Se um agendamento aparece como "CANCELLED" no contexto, informe que foi cancelado
+- NUNCA invente agendamentos - use apenas os dados do CONTEXTO`;
 
       const result = await this.model.generateContent(fullPrompt);
       const response = result.response;
