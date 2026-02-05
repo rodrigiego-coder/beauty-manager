@@ -88,12 +88,12 @@ describe('UsersController', () => {
       mockUsersService.findAll.mockResolvedValue(mockUsers);
 
       // Act
-      const result = await controller.findAll(mockAuthUser);
+      const result = await controller.findAll(mockAuthUser, undefined);
 
       // Assert
       expect(result).toEqual(mockUsers);
       expect(result).toHaveLength(2);
-      expect(mockUsersService.findAll).toHaveBeenCalledWith(mockAuthUser.salonId);
+      expect(mockUsersService.findAll).toHaveBeenCalledWith(mockAuthUser.salonId, false);
     });
 
     it('deve retornar lista vazia quando não há usuários', async () => {
@@ -101,7 +101,7 @@ describe('UsersController', () => {
       mockUsersService.findAll.mockResolvedValue([]);
 
       // Act
-      const result = await controller.findAll(mockAuthUser);
+      const result = await controller.findAll(mockAuthUser, undefined);
 
       // Assert
       expect(result).toEqual([]);
@@ -187,8 +187,8 @@ describe('UsersController', () => {
       // Act
       const result = await controller.create(createUserDto as any);
 
-      // Assert
-      expect(result).toEqual(createdUser);
+      // Assert - usar toMatchObject para ignorar campos extras como 'message'
+      expect(result).toMatchObject(createdUser);
       expect(result.name).toBe('Novo Usuário');
       expect(mockUsersService.create).toHaveBeenCalledWith(createUserDto);
     });

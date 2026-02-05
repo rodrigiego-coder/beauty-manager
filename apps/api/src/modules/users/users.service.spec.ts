@@ -1,6 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { UsersService } from './users.service';
 import { DATABASE_CONNECTION } from '../../database/database.module';
+import { WhatsAppService } from '../../whatsapp/whatsapp.service';
+import { SalonsService } from '../salons/salons.service';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -44,6 +47,23 @@ describe('UsersService', () => {
     return mockChain;
   };
 
+  // Mock do ConfigService
+  const mockConfigService = {
+    get: jest.fn().mockReturnValue('mock-value'),
+  };
+
+  // Mock do WhatsAppService
+  const mockWhatsAppService = {
+    sendMessage: jest.fn(),
+    sendDirectMessage: jest.fn(),
+  };
+
+  // Mock do SalonsService
+  const mockSalonsService = {
+    findById: jest.fn(),
+    findByOwnerId: jest.fn(),
+  };
+
   let mockDb: ReturnType<typeof createMockDb>;
 
   beforeEach(async () => {
@@ -55,6 +75,18 @@ describe('UsersService', () => {
         {
           provide: DATABASE_CONNECTION,
           useValue: mockDb,
+        },
+        {
+          provide: ConfigService,
+          useValue: mockConfigService,
+        },
+        {
+          provide: WhatsAppService,
+          useValue: mockWhatsAppService,
+        },
+        {
+          provide: SalonsService,
+          useValue: mockSalonsService,
         },
       ],
     }).compile();
@@ -152,15 +184,13 @@ describe('UsersService', () => {
   // TESTES DO MÉTODO findProfessionals
   // ========================================
   describe('findProfessionals', () => {
-    it('deve retornar apenas usuários com role STYLIST', async () => {
-      // Arrange
-      const allUsers = [
+    it('deve retornar apenas usuários com role STYLIST ou isProfessional', async () => {
+      // Arrange - mock retorna apenas profissionais (como o banco faria após o WHERE)
+      const professionals = [
         mockUser, // STYLIST
-        { ...mockUser, id: '2', role: 'OWNER' },
         { ...mockUser, id: '3', role: 'STYLIST', name: 'Carlos' },
-        { ...mockUser, id: '4', role: 'RECEPTIONIST' },
       ];
-      mockDb.where.mockResolvedValue(allUsers);
+      mockDb.where.mockResolvedValue(professionals);
 
       // Act
       const result = await service.findProfessionals();
@@ -171,12 +201,8 @@ describe('UsersService', () => {
     });
 
     it('deve retornar lista vazia quando não há profissionais', async () => {
-      // Arrange
-      const allUsers = [
-        { ...mockUser, role: 'OWNER' },
-        { ...mockUser, id: '2', role: 'RECEPTIONIST' },
-      ];
-      mockDb.where.mockResolvedValue(allUsers);
+      // Arrange - mock retorna lista vazia (como o banco faria quando não há profissionais)
+      mockDb.where.mockResolvedValue([]);
 
       // Act
       const result = await service.findProfessionals();

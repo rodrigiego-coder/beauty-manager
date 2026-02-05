@@ -3,6 +3,8 @@ import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
+import { SalonsService } from '../salons/salons.service';
+import { SalonSubscriptionsService } from '../subscriptions/salon-subscriptions.service';
 import * as bcrypt from 'bcryptjs';
 
 describe('AuthService', () => {
@@ -23,6 +25,18 @@ describe('AuthService', () => {
   const mockUsersService = {
     findByEmail: jest.fn(),
     findById: jest.fn(),
+  };
+
+  // Mock do SalonsService
+  const mockSalonsService = {
+    findById: jest.fn(),
+    findByOwnerId: jest.fn(),
+  };
+
+  // Mock do SalonSubscriptionsService
+  const mockSalonSubscriptionsService = {
+    getSubscription: jest.fn(),
+    checkFeatureAccess: jest.fn(),
   };
 
   // Mock do JwtService
@@ -52,6 +66,14 @@ describe('AuthService', () => {
         {
           provide: UsersService,
           useValue: mockUsersService,
+        },
+        {
+          provide: SalonsService,
+          useValue: mockSalonsService,
+        },
+        {
+          provide: SalonSubscriptionsService,
+          useValue: mockSalonSubscriptionsService,
         },
         {
           provide: JwtService,
