@@ -472,6 +472,9 @@ export const users = pgTable('users', {
   // Token para criação/reset de senha (enviado via WhatsApp)
   passwordResetToken: varchar('password_reset_token', { length: 64 }).unique(),
   passwordResetExpires: timestamp('password_reset_expires'),
+  // Lead time: aviso prévio mínimo para agendamentos (quando fora do salão)
+  leadTimeEnabled: boolean('lead_time_enabled').default(false),
+  leadTimeMinutes: integer('lead_time_minutes').default(0),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
