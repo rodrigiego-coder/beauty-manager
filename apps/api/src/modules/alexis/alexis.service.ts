@@ -2430,7 +2430,7 @@ Quer agendar? (sim/não ou digite o número)`;
 
       // Filtra pacotes com sessões pendentes para agendar
       const packagesWithPending = activePackages.filter(
-        pkg => pkg.remainingSessions - pkg.scheduledSessions > 0,
+        (pkg: { remainingSessions: number; scheduledSessions: number }) => pkg.remainingSessions - pkg.scheduledSessions > 0,
       );
 
       let responseText: string;

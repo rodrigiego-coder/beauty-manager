@@ -6,8 +6,8 @@
  */
 
 import { db } from '../database/connection';
-import { appointments, googleCalendarTokens, users, clients, salons } from '../database/schema';
-import { eq, and, gte, or, desc } from 'drizzle-orm';
+import { appointments, googleCalendarTokens, users, clients } from '../database/schema';
+import { eq, and, gte, or } from 'drizzle-orm';
 import { google } from 'googleapis';
 import 'dotenv/config';
 
