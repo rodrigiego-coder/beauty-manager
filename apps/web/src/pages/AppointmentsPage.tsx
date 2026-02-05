@@ -318,10 +318,11 @@ export function AppointmentsPage() {
       setServices(servicesRes.data || []);
 
       // Sempre carregar profissionais via /team para garantir lista completa
+      // Inclui STYLIST e qualquer usuário com isProfessional=true (ex: OWNER que também atende)
       try {
         const teamRes = await api.get('/team');
         const activeProfessionals = (teamRes.data || [])
-          .filter((u: any) => u.role === 'STYLIST' && u.active)
+          .filter((u: any) => u.active && (u.role === 'STYLIST' || u.isProfessional === true))
           .map((u: any) => ({ id: u.id, name: u.name }));
         if (activeProfessionals.length > 0) {
           setProfessionals(activeProfessionals);
