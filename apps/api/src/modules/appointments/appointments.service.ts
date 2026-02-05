@@ -565,13 +565,25 @@ export class AppointmentsService {
 
       this.logger.log(`[CANCEL_FOUND] id=${id} status_atual=${existing.status} cliente=${existing.clientPhone || 'N/A'}`);
 
-      // 2. Executa UPDATE no banco
+      // 2. Verifica se cancelledById é um UUID válido (para foreign key constraint)
+      // Se não for UUID (ex: 'ALEXIA_WHATSAPP'), usamos null e incluímos a fonte no motivo
+      const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cancelledById);
+      const actualCancelledById = isValidUuid ? cancelledById : null;
+      const actualReason = isValidUuid
+        ? (reason || null)
+        : `[${cancelledById}] ${reason || 'Cancelado pelo cliente'}`;
+
+      if (!isValidUuid) {
+        this.logger.log(`[CANCEL_NON_UUID] by="${cancelledById}" -> cancelledById=null, reason="${actualReason}"`);
+      }
+
+      // 3. Executa UPDATE no banco
       const result = await this.db
         .update(appointments)
         .set({
           status: 'CANCELLED',
-          cancelledById,
-          cancellationReason: reason || null,
+          cancelledById: actualCancelledById,
+          cancellationReason: actualReason,
           updatedAt: new Date(),
         })
         .where(and(eq(appointments.id, id), eq(appointments.salonId, salonId)))
