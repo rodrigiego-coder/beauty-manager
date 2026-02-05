@@ -5,6 +5,7 @@ import { UsersModule } from '../users';
 import { NotificationsModule } from '../notifications';
 import { TriageModule } from '../triage/triage.module';
 import { SchedulesModule } from '../schedules/schedules.module';
+import { GoogleCalendarModule } from '../google-calendar';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { SchedulesModule } from '../schedules/schedules.module';
     forwardRef(() => NotificationsModule), // Para notificações WhatsApp automáticas (forwardRef para evitar ciclo)
     forwardRef(() => TriageModule), // Para verificar se serviço requer triagem
     forwardRef(() => SchedulesModule), // Para validação de disponibilidade
+    GoogleCalendarModule, // Para sincronização com Google Calendar
   ],
   controllers: [AppointmentsController],
   providers: [AppointmentsService],
