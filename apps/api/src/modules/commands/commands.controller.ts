@@ -9,6 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { CommandsService } from './commands.service';
+import { ScheduledMessagesService } from '../notifications/scheduled-messages.service';
 import {
   OpenCommandDto,
   AddItemDto,
@@ -26,7 +27,10 @@ import { Roles } from '../../common/decorators/roles.decorator';
 
 @Controller('commands')
 export class CommandsController {
-  constructor(private readonly commandsService: CommandsService) {}
+  constructor(
+    private readonly commandsService: CommandsService,
+    private readonly scheduledMessagesService: ScheduledMessagesService,
+  ) {}
 
   /**
    * GET /commands
@@ -42,11 +46,29 @@ export class CommandsController {
 
   /**
    * GET /commands/open
-   * Lista comandas abertas
+   * Lista comandas ativas (OPEN ou IN_SERVICE)
    */
   @Get('open')
   async findOpen(@CurrentUser() user: JwtPayload) {
     return this.commandsService.findOpen(user.salonId);
+  }
+
+  /**
+   * GET /commands/waiting-payment
+   * Lista comandas aguardando pagamento
+   */
+  @Get('waiting-payment')
+  async findWaitingPayment(@CurrentUser() user: JwtPayload) {
+    return this.commandsService.findWaitingPayment(user.salonId);
+  }
+
+  /**
+   * GET /commands/pending-balance
+   * Lista comandas encerradas com saldo pendente (Contas a Receber)
+   */
+  @Get('pending-balance')
+  async findPendingBalance(@CurrentUser() user: JwtPayload) {
+    return this.commandsService.findClosedWithPendingBalance(user.salonId);
   }
 
   /**
@@ -263,6 +285,37 @@ export class CommandsController {
       salonId: user.salonId,
       role: user.role,
     });
+  }
+
+  /**
+   * POST /commands/:id/reminder
+   * Agenda lembrete pós-venda (Alexia)
+   */
+  @Post(':id/reminder')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
+  async scheduleReminder(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() data: { message: string; scheduledFor: string; clientPhone: string; clientName?: string },
+  ) {
+    const command = await this.commandsService.findById(id);
+    if (!command || command.salonId !== user.salonId) {
+      throw new Error('Comanda não encontrada');
+    }
+
+    const dedupeKey = `command:${id}:reminder:${Date.now()}`;
+
+    await this.scheduledMessagesService.scheduleCustomNotification({
+      salonId: user.salonId,
+      recipientPhone: data.clientPhone,
+      recipientName: data.clientName || null,
+      notificationType: 'CUSTOM',
+      customMessage: data.message,
+      scheduledFor: new Date(data.scheduledFor),
+      dedupeKey,
+    });
+
+    return { success: true, message: 'Lembrete agendado com sucesso' };
   }
 
   /**

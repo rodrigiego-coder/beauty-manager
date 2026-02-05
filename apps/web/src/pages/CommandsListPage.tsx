@@ -6,6 +6,8 @@ import {
   Loader2,
   Clock,
   RefreshCw,
+  AlertCircle,
+  Wallet,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -22,7 +24,10 @@ interface Command {
   totalGross: string;
   totalDiscounts: string;
   totalNet: string;
+  totalPaid?: string;
+  remainingBalance?: string;
   openedAt: string;
+  serviceClosedAt?: string;
   itemCount?: number;
 }
 
@@ -30,6 +35,7 @@ const statusConfig: Record<string, { label: string; color: string; bgColor: stri
   OPEN: { label: 'Aberta', color: 'text-blue-700', bgColor: 'bg-blue-100' },
   IN_SERVICE: { label: 'Em Atendimento', color: 'text-purple-700', bgColor: 'bg-purple-100' },
   WAITING_PAYMENT: { label: 'Aguardando Pagamento', color: 'text-orange-700', bgColor: 'bg-orange-100' },
+  PENDING_PAYMENT: { label: 'Aguardando Pagamento', color: 'text-orange-700', bgColor: 'bg-orange-100' },
 };
 
 const formatCurrency = (value: string | number) => {
@@ -37,13 +43,16 @@ const formatCurrency = (value: string | number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num || 0);
 };
 
+type TabType = 'active' | 'waiting';
+
 export function CommandsListPage() {
   const navigate = useNavigate();
-  const [commands, setCommands] = useState<Command[]>([]);
+  const [activeTab, setActiveTab] = useState<TabType>('active');
+  const [activeCommands, setActiveCommands] = useState<Command[]>([]);
+  const [waitingCommands, setWaitingCommands] = useState<Command[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
 
   useEffect(() => {
     loadCommands();
@@ -53,26 +62,31 @@ export function CommandsListPage() {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await api.get('/commands/open');
-      setCommands(Array.isArray(data) ? data : []);
+      const [activeRes, waitingRes] = await Promise.all([
+        api.get('/commands/open'),
+        api.get('/commands/waiting-payment'),
+      ]);
+      setActiveCommands(Array.isArray(activeRes.data) ? activeRes.data : []);
+      setWaitingCommands(Array.isArray(waitingRes.data) ? waitingRes.data : []);
     } catch (err: any) {
       setError(err.response?.data?.message || 'Erro ao carregar comandas');
-      setCommands([]);
+      setActiveCommands([]);
+      setWaitingCommands([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredCommands = commands.filter((cmd) => {
+  const currentCommands = activeTab === 'active' ? activeCommands : waitingCommands;
+
+  const filteredCommands = currentCommands.filter((cmd) => {
     const matchesSearch =
       !search ||
       cmd.cardNumber?.toLowerCase().includes(search.toLowerCase()) ||
       cmd.clientName?.toLowerCase().includes(search.toLowerCase()) ||
       cmd.code?.toLowerCase().includes(search.toLowerCase());
 
-    const matchesStatus = filterStatus === 'all' || cmd.status === filterStatus;
-
-    return matchesSearch && matchesStatus;
+    return matchesSearch;
   });
 
   return (
@@ -81,7 +95,7 @@ export function CommandsListPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Comandas</h1>
-          <p className="text-gray-500 mt-1">Gerencie as comandas abertas</p>
+          <p className="text-gray-500 mt-1">Gerencie as comandas do salão</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -93,6 +107,46 @@ export function CommandsListPage() {
             Atualizar
           </button>
         </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-gray-200">
+        <button
+          onClick={() => setActiveTab('active')}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'active'
+              ? 'border-primary-600 text-primary-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <CreditCard className="w-4 h-4" />
+          Ativas
+          {activeCommands.length > 0 && (
+            <span className={`px-2 py-0.5 text-xs rounded-full ${
+              activeTab === 'active' ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-600'
+            }`}>
+              {activeCommands.length}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('waiting')}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'waiting'
+              ? 'border-orange-500 text-orange-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Wallet className="w-4 h-4" />
+          Aguardando Pagamento
+          {waitingCommands.length > 0 && (
+            <span className={`px-2 py-0.5 text-xs rounded-full ${
+              activeTab === 'waiting' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'
+            }`}>
+              {waitingCommands.length}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Filtros */}
@@ -107,16 +161,6 @@ export function CommandsListPage() {
             className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
           />
         </div>
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-        >
-          <option value="all">Todos os status</option>
-          <option value="OPEN">Aberta</option>
-          <option value="IN_SERVICE">Em Atendimento</option>
-          <option value="WAITING_PAYMENT">Aguardando Pagamento</option>
-        </select>
       </div>
 
       {/* Error */}
@@ -137,7 +181,11 @@ export function CommandsListPage() {
       {!loading && filteredCommands.length === 0 && (
         <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
           <CreditCard className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500">Nenhuma comanda encontrada</p>
+          <p className="text-gray-500">
+            {activeTab === 'active'
+              ? 'Nenhuma comanda ativa'
+              : 'Nenhuma comanda aguardando pagamento'}
+          </p>
         </div>
       )}
 
@@ -145,6 +193,8 @@ export function CommandsListPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredCommands.map((cmd) => {
             const status = statusConfig[cmd.status] || statusConfig.OPEN;
+            const hasRemainingBalance = cmd.remainingBalance && parseFloat(cmd.remainingBalance) > 0;
+
             return (
               <div
                 key={cmd.id}
@@ -177,9 +227,31 @@ export function CommandsListPage() {
                   </p>
                 )}
 
+                {/* Mostrar saldo pendente para comandas aguardando pagamento */}
+                {activeTab === 'waiting' && hasRemainingBalance && (
+                  <div className="flex items-center gap-2 mb-2 p-2 bg-orange-50 rounded-lg">
+                    <AlertCircle className="w-4 h-4 text-orange-600" />
+                    <div className="flex-1">
+                      <p className="text-xs text-orange-600">Saldo Pendente</p>
+                      <p className="text-sm font-bold text-orange-700">{formatCurrency(cmd.remainingBalance!)}</p>
+                    </div>
+                    {cmd.totalPaid && parseFloat(cmd.totalPaid) > 0 && (
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500">Pago</p>
+                        <p className="text-xs text-green-600">{formatCurrency(cmd.totalPaid)}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex items-center gap-1 text-xs text-gray-500">
                   <Clock className="w-3.5 h-3.5" />
-                  Aberta {format(new Date(cmd.openedAt), "dd/MM 'às' HH:mm", { locale: ptBR })}
+                  {activeTab === 'active'
+                    ? `Aberta ${format(new Date(cmd.openedAt), "dd/MM 'às' HH:mm", { locale: ptBR })}`
+                    : cmd.serviceClosedAt
+                      ? `Serviço encerrado ${format(new Date(cmd.serviceClosedAt), "dd/MM 'às' HH:mm", { locale: ptBR })}`
+                      : `Aberta ${format(new Date(cmd.openedAt), "dd/MM 'às' HH:mm", { locale: ptBR })}`
+                  }
                 </div>
               </div>
             );

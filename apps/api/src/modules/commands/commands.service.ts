@@ -131,7 +131,8 @@ export class CommandsService {
   }
 
   /**
-   * Lista comandas abertas (não fechadas/canceladas)
+   * Lista comandas ativas (OPEN ou IN_SERVICE apenas)
+   * Comandas em WAITING_PAYMENT ou CLOSED não aparecem aqui
    */
   async findOpen(salonId: string): Promise<Command[]> {
     return this.db
@@ -140,11 +141,119 @@ export class CommandsService {
       .where(
         and(
           eq(commands.salonId, salonId),
-          ne(commands.status, 'CLOSED'),
-          ne(commands.status, 'CANCELED')
+          inArray(commands.status, ['OPEN', 'IN_SERVICE'])
         )
       )
       .orderBy(desc(commands.openedAt));
+  }
+
+  /**
+   * Lista comandas aguardando pagamento (WAITING_PAYMENT ou PENDING_PAYMENT)
+   */
+  async findWaitingPayment(salonId: string) {
+    const result = await this.db
+      .select({
+        id: commands.id,
+        salonId: commands.salonId,
+        clientId: commands.clientId,
+        cardNumber: commands.cardNumber,
+        code: commands.code,
+        status: commands.status,
+        openedAt: commands.openedAt,
+        serviceClosedAt: commands.serviceClosedAt,
+        totalGross: commands.totalGross,
+        totalDiscounts: commands.totalDiscounts,
+        totalNet: commands.totalNet,
+        clientName: clients.name,
+        clientPhone: clients.phone,
+      })
+      .from(commands)
+      .leftJoin(clients, eq(commands.clientId, clients.id))
+      .where(
+        and(
+          eq(commands.salonId, salonId),
+          inArray(commands.status, ['WAITING_PAYMENT', 'PENDING_PAYMENT'])
+        )
+      )
+      .orderBy(desc(commands.serviceClosedAt));
+
+    // Calculate paid amount for each command
+    const commandsWithBalance = await Promise.all(
+      result.map(async (cmd) => {
+        const payments = await this.db
+          .select({ amount: commandPayments.amount })
+          .from(commandPayments)
+          .where(eq(commandPayments.commandId, cmd.id));
+
+        const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0);
+        const totalNet = parseFloat(cmd.totalNet || '0');
+        const remainingBalance = Math.max(0, totalNet - totalPaid);
+
+        return {
+          ...cmd,
+          totalPaid: totalPaid.toFixed(2),
+          remainingBalance: remainingBalance.toFixed(2),
+        };
+      })
+    );
+
+    return commandsWithBalance;
+  }
+
+  /**
+   * Lista comandas encerradas com saldo pendente (Contas a Receber)
+   * Inclui CLOSED e CASHIER_CLOSED
+   */
+  async findClosedWithPendingBalance(salonId: string) {
+    const result = await this.db
+      .select({
+        id: commands.id,
+        salonId: commands.salonId,
+        clientId: commands.clientId,
+        cardNumber: commands.cardNumber,
+        code: commands.code,
+        status: commands.status,
+        openedAt: commands.openedAt,
+        serviceClosedAt: commands.serviceClosedAt,
+        cashierClosedAt: commands.cashierClosedAt,
+        totalGross: commands.totalGross,
+        totalDiscounts: commands.totalDiscounts,
+        totalNet: commands.totalNet,
+        clientName: clients.name,
+        clientPhone: clients.phone,
+      })
+      .from(commands)
+      .leftJoin(clients, eq(commands.clientId, clients.id))
+      .where(
+        and(
+          eq(commands.salonId, salonId),
+          inArray(commands.status, ['CLOSED', 'CASHIER_CLOSED'])
+        )
+      )
+      .orderBy(desc(commands.cashierClosedAt));
+
+    // Calculate paid amount for each command and filter those with remaining balance
+    const commandsWithBalance = await Promise.all(
+      result.map(async (cmd) => {
+        const payments = await this.db
+          .select({ amount: commandPayments.amount })
+          .from(commandPayments)
+          .where(eq(commandPayments.commandId, cmd.id));
+
+        const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount || '0'), 0);
+        const totalNet = parseFloat(cmd.totalNet || '0');
+        const remainingBalance = Math.max(0, totalNet - totalPaid);
+
+        return {
+          ...cmd,
+          totalPaid: totalPaid.toFixed(2),
+          remainingBalance: remainingBalance.toFixed(2),
+        };
+      })
+    );
+
+    // Only return commands with remaining balance > 0
+    return commandsWithBalance.filter(cmd => parseFloat(cmd.remainingBalance) > 0);
   }
 
   /**
@@ -407,13 +516,18 @@ export class CommandsService {
 
     // ========================================
     // PACOTE: Verificar e consumir sessão do pacote para SERVIÇOS
+    // O frontend pode indicar se deseja usar o pacote via data.paidByPackage
+    // Se não especificado, usa pacote automaticamente quando disponível
     // ========================================
     let clientPackageId: number | null = null;
     let clientPackageUsageId: number | null = null;
     let paidByPackage = false;
     let finalTotalPrice = totalPrice;
 
-    if (data.type === 'SERVICE' && data.referenceId && command.clientId) {
+    // Verifica se frontend indicou explicitamente para NÃO usar pacote
+    const shouldUsePackage = data.paidByPackage !== false;
+
+    if (shouldUsePackage && data.type === 'SERVICE' && data.referenceId && command.clientId) {
       const serviceId = parseInt(data.referenceId, 10);
       if (!isNaN(serviceId)) {
         // Verifica se cliente tem pacote válido para este serviço
