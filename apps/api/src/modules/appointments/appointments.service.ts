@@ -1394,14 +1394,15 @@ Quer agendar a próxima? Responda *AGENDAR*! 😊`;
       ))
       .orderBy(professionalAvailabilities.dayOfWeek);
 
-    // If no custom hours, return default (Mon-Sat 9-18)
+    // If no custom hours, return default (Mon-Sat 9-18, SEM intervalo de almoço)
+    // O salão não tem almoço fixo - horários 12:00-13:00 devem ficar disponíveis
     if (availability.length === 0) {
       return [1, 2, 3, 4, 5, 6].map(day => ({
         dayOfWeek: day,
         startTime: '09:00',
         endTime: '18:00',
-        breakStartTime: '12:00',
-        breakEndTime: '13:00',
+        breakStartTime: null,
+        breakEndTime: null,
         isActive: day !== 0, // Sunday off
       }));
     }
