@@ -393,27 +393,21 @@ Obrigado! 💜`;
       }
 
       case 'APPOINTMENT_REMINDER_24H': {
-        let reminder24Text = `Oi ${vars.nome}! 🕐
-
-Lembrete: *Amanhã* você tem horário!
+        let reminder24Text = `Lembrete: *Amanhã* você tem horário!
 
 📅 ${vars.data} às ${vars.horario}
 ✂️ ${vars.servico}
-💇 ${vars.profissional}`;
+💇 ${vars.profissional}
 
-        if (vars.triagePending && vars.triageLink) {
-          reminder24Text += `
-
-⚠️ *Atenção:* Você ainda não preencheu a pré-avaliação!
-👉 ${vars.triageLink}
-_Preencha antes do seu horário._`;
-        }
-
-        reminder24Text += `
+Sua confirmação é indispensável.
+Esse horário foi reservado exclusivamente para você e a equipe se organiza com antecedência para garantir o atendimento.
+Se precisar cancelar ou reagendar, avise com no mínimo 24h de antecedência.
+A falta de confirmação ou ausência sem aviso compromete a agenda e impede que outra cliente utilize esse horário.
 
 Podemos contar com você?
-👉 *SIM* - Confirmado!
-👉 *NÃO* - Preciso reagendar
+
+👉 *SIM* — Confirmado!
+👉 *NÃO* — Preciso reagendar
 
 Até lá! 💜`;
 
@@ -491,6 +485,48 @@ Até lá! 💜`;
 
       case 'CUSTOM':
         return message.custom_message || '';
+
+      // ========== PACKAGE NOTIFICATIONS ==========
+      case 'PACKAGE_SESSION_COMPLETED':
+        // Usa custom_message se disponível (gerada pelo PackageIntelligenceService)
+        if (message.custom_message) {
+          return message.custom_message;
+        }
+        // Fallback template
+        return `Sessão concluída! ✅
+
+📦 *${vars.pacote || 'Seu Pacote'}*
+🔢 Você ainda tem *${vars.sessoes_restantes || '?'} sessões restantes*
+
+Quer agendar a próxima? Responda *AGENDAR*! 😊`;
+
+      case 'PACKAGE_PENDING_SESSIONS':
+        // Usa custom_message se disponível
+        if (message.custom_message) {
+          return message.custom_message;
+        }
+        // Fallback template
+        return `Oi ${vars.nome}! 👋
+
+Lembrete do seu pacote *${vars.pacote || 'Pacote'}*:
+📦 Você ainda tem *${vars.sessoes_pendentes || '?'} sessões* disponíveis!
+⏰ Validade: ${vars.validade || 'consulte a recepção'}
+
+Vamos agendar? Responda *AGENDAR* 😊`;
+
+      case 'PACKAGE_EXPIRATION_WARNING':
+        // Usa custom_message se disponível
+        if (message.custom_message) {
+          return message.custom_message;
+        }
+        // Fallback template
+        return `Oi ${vars.nome}! ⚠️
+
+Seu pacote *${vars.pacote || 'Pacote'}* expira em breve!
+📆 Validade: ${vars.validade || 'em breve'}
+📦 Sessões restantes: ${vars.sessoes_restantes || '?'}
+
+Agende suas sessões para não perder! Responda *AGENDAR* 😊`;
 
       default:
         return message.custom_message || 'Mensagem do salão';
