@@ -159,6 +159,25 @@ export class SchedulesController {
     await this.schedulesService.deleteProfessionalBlock(blockId);
   }
 
+  // ==================== LEAD TIME ====================
+
+  @Get('my-lead-time')
+  @Roles('OWNER', 'MANAGER', 'STYLIST')
+  @ApiOperation({ summary: 'Obter configuração de lead time do profissional logado' })
+  async getMyLeadTime(@CurrentUser() user: AuthenticatedUser) {
+    return this.schedulesService.getLeadTime(user.id);
+  }
+
+  @Put('my-lead-time')
+  @Roles('OWNER', 'MANAGER', 'STYLIST')
+  @ApiOperation({ summary: 'Atualizar configuração de lead time do profissional logado' })
+  async updateMyLeadTime(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() data: { leadTimeEnabled: boolean; leadTimeMinutes: number },
+  ) {
+    return this.schedulesService.updateLeadTime(user.id, data);
+  }
+
   // ==================== AVAILABILITY CHECK ====================
 
   @Public()

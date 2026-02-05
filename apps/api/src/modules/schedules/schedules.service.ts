@@ -588,4 +588,56 @@ export class SchedulesService {
 
     return slots.slice(0, 6);
   }
+
+  // ==================== LEAD TIME ====================
+
+  /**
+   * Obtém configuração de lead time do profissional
+   */
+  async getLeadTime(professionalId: string) {
+    const [user] = await this.db
+      .select({
+        leadTimeEnabled: schema.users.leadTimeEnabled,
+        leadTimeMinutes: schema.users.leadTimeMinutes,
+      })
+      .from(schema.users)
+      .where(eq(schema.users.id, professionalId))
+      .limit(1);
+
+    if (!user) {
+      throw new NotFoundException('Profissional não encontrado');
+    }
+
+    return {
+      leadTimeEnabled: user.leadTimeEnabled ?? false,
+      leadTimeMinutes: user.leadTimeMinutes ?? 0,
+    };
+  }
+
+  /**
+   * Atualiza configuração de lead time do profissional
+   */
+  async updateLeadTime(
+    professionalId: string,
+    data: { leadTimeEnabled: boolean; leadTimeMinutes: number },
+  ) {
+    // Valida minutos (0-480, ou seja, até 8h)
+    const leadTimeMinutes = Math.min(480, Math.max(0, data.leadTimeMinutes ?? 0));
+    const leadTimeEnabled = data.leadTimeEnabled ?? false;
+
+    await this.db
+      .update(schema.users)
+      .set({
+        leadTimeEnabled,
+        leadTimeMinutes,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.users.id, professionalId));
+
+    return {
+      success: true,
+      leadTimeEnabled,
+      leadTimeMinutes,
+    };
+  }
 }
