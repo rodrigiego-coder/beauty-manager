@@ -4,6 +4,7 @@ import { IS_JEST } from '../common/is-jest';
 import { eq, and, lt } from 'drizzle-orm';
 import { db } from '../database/connection';
 import * as schema from '../database/schema';
+import { GoogleCalendarService } from '../modules/google-calendar';
 
 /**
  * CalendarSyncJob
@@ -13,8 +14,10 @@ import * as schema from '../database/schema';
 export class CalendarSyncJob {
   private readonly logger = new Logger(CalendarSyncJob.name);
 
+  constructor(private googleCalendarService: GoogleCalendarService) {}
+
   /**
-   * Sincronização incremental a cada 15 minutos
+   * Sincronização incremental a cada 30 minutos
    * Sincroniza todas as integrações ativas
    */
   @Cron(CronExpression.EVERY_30_MINUTES, { disabled: IS_JEST })
@@ -23,7 +26,7 @@ export class CalendarSyncJob {
 
     try {
       // Busca integrações ativas
-      const integrations = await db.query.googleIntegrations.findMany({
+      let integrations = await db.query.googleIntegrations.findMany({
         where: and(
           eq(schema.googleIntegrations.syncEnabled, true),
           eq(schema.googleIntegrations.status, 'ACTIVE'),
@@ -58,6 +61,9 @@ export class CalendarSyncJob {
         }
       }
 
+      // Cleanup: libera memória
+      integrations = [];
+
       this.logger.log(
         `Incremental sync completed: ${successCount} success, ${errorCount} errors`,
       );
@@ -75,7 +81,7 @@ export class CalendarSyncJob {
     this.logger.log('Starting full calendar sync...');
 
     try {
-      const integrations = await db.query.googleIntegrations.findMany({
+      let integrations = await db.query.googleIntegrations.findMany({
         where: eq(schema.googleIntegrations.syncEnabled, true),
       });
 
@@ -98,6 +104,9 @@ export class CalendarSyncJob {
           );
         }
       }
+
+      // Cleanup: libera memória
+      integrations = [];
 
       this.logger.log('Full calendar sync completed');
     } catch (error) {
@@ -166,6 +175,64 @@ export class CalendarSyncJob {
       }
     } catch (error) {
       this.logger.error('Token check job failed:', error);
+    }
+  }
+
+  /**
+   * Sincroniza eventos do Google para o sistema (legacy google_calendar_tokens)
+   * Importa eventos como bloqueios na agenda do profissional
+   * Roda a cada 5 minutos
+   */
+  @Cron('*/5 * * * *', { disabled: IS_JEST })
+  async syncLegacyGoogleToSystem(): Promise<void> {
+    if (process.env.NODE_ENV === 'production') {
+      this.logger.log('Starting legacy Google Calendar sync...');
+    }
+
+    try {
+      // Busca tokens ativos (legacy)
+      let tokens = await db.query.googleCalendarTokens.findMany({
+        where: eq(schema.googleCalendarTokens.syncEnabled, true),
+      });
+
+      if (tokens.length === 0) {
+        return; // Nada para sincronizar, sai silenciosamente
+      }
+
+      this.logger.log(`Found ${tokens.length} legacy integrations to sync`);
+
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + 90); // Próximos 90 dias
+
+      for (const token of tokens) {
+        try {
+          const result = await this.googleCalendarService.importGoogleEventsAsBlocks(
+            token.userId,
+            token.salonId,
+            startDate,
+            endDate,
+          );
+          // Só loga se houve alterações (reduz logs em produção)
+          if (result.created > 0 || result.updated > 0 || result.deleted > 0) {
+            this.logger.log(
+              `Synced legacy token ${token.id}: ${result.created} created, ${result.updated} updated, ${result.deleted} deleted`,
+            );
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          this.logger.error(`Failed to sync legacy token ${token.id}: ${errorMessage}`);
+        }
+      }
+
+      // Cleanup: libera memória
+      tokens = [];
+
+      if (process.env.NODE_ENV === 'production') {
+        this.logger.log('Legacy Google Calendar sync completed');
+      }
+    } catch (error) {
+      this.logger.error('Legacy sync job failed:', error);
     }
   }
 
@@ -333,7 +400,7 @@ export class CalendarSyncJob {
     timeMin: Date,
     timeMax: Date,
   ): Promise<GoogleEvent[]> {
-    const events: GoogleEvent[] = [];
+    let events: GoogleEvent[] = [];
     let pageToken: string | undefined;
 
     do {
@@ -365,7 +432,13 @@ export class CalendarSyncJob {
       pageToken = data.nextPageToken;
     } while (pageToken);
 
-    return events.filter((e) => e.status !== 'cancelled');
+    // Filtra e retorna apenas eventos ativos
+    const activeEvents = events.filter((e) => e.status !== 'cancelled');
+
+    // Cleanup: libera array original
+    events = [];
+
+    return activeEvents;
   }
 
   private async syncGoogleToLocal(
@@ -377,7 +450,7 @@ export class CalendarSyncJob {
     let deleted = 0;
 
     // Busca blocks existentes do Google
-    const existingBlocks = await db.query.professionalBlocks.findMany({
+    let existingBlocks = await db.query.professionalBlocks.findMany({
       where: and(
         eq(schema.professionalBlocks.professionalId, integration.professionalId),
         eq(schema.professionalBlocks.externalSource, 'GOOGLE'),
@@ -394,11 +467,13 @@ export class CalendarSyncJob {
       const { startDate, endDate, startTime, endTime, allDay } = this.parseEventDates(event);
 
       if (existing) {
-        // Atualiza se mudou
+        // Atualiza se mudou (incluindo horários para corrigir timezone)
         const needsUpdate =
           existing.title !== event.summary ||
           existing.startDate !== startDate ||
-          existing.endDate !== endDate;
+          existing.endDate !== endDate ||
+          existing.startTime !== startTime ||
+          existing.endTime !== endTime;
 
         if (needsUpdate) {
           await db
@@ -448,6 +523,11 @@ export class CalendarSyncJob {
       }
     }
 
+    // Cleanup: libera memória
+    existingBlocks = [];
+    existingMap.clear();
+    processedIds.clear();
+
     return { created, updated, deleted };
   }
 
@@ -468,14 +548,33 @@ export class CalendarSyncJob {
       };
     }
 
-    const startDt = new Date(event.start.dateTime!);
-    const endDt = new Date(event.end.dateTime!);
+    // Extract local date/time directly from the ISO string to preserve timezone
+    // Google returns format like "2026-02-04T09:00:00-03:00"
+    const startDateTime = event.start.dateTime!;
+    const endDateTime = event.end.dateTime!;
+
+    // Extract date and time from ISO string (YYYY-MM-DDTHH:MM:SS)
+    const startMatch = startDateTime.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+    const endMatch = endDateTime.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+
+    if (!startMatch || !endMatch) {
+      // Fallback to Date parsing if regex fails
+      const startDt = new Date(startDateTime);
+      const endDt = new Date(endDateTime);
+      return {
+        startDate: startDt.toISOString().split('T')[0],
+        endDate: endDt.toISOString().split('T')[0],
+        startTime: startDt.toTimeString().slice(0, 5),
+        endTime: endDt.toTimeString().slice(0, 5),
+        allDay: false,
+      };
+    }
 
     return {
-      startDate: startDt.toISOString().split('T')[0],
-      endDate: endDt.toISOString().split('T')[0],
-      startTime: startDt.toTimeString().slice(0, 5),
-      endTime: endDt.toTimeString().slice(0, 5),
+      startDate: startMatch[1],
+      endDate: endMatch[1],
+      startTime: startMatch[2],
+      endTime: endMatch[2],
       allDay: false,
     };
   }
