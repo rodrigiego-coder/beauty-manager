@@ -3,15 +3,24 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, LogLevel } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import fastifyCookie from '@fastify/cookie';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
+  // Configura níveis de log baseado no ambiente
+  // Produção: apenas 'error', 'warn', 'log'
+  // Desenvolvimento: inclui 'debug' e 'verbose'
+  const isProduction = process.env.NODE_ENV === 'production';
+  const logLevels: LogLevel[] = isProduction
+    ? ['error', 'warn', 'log']
+    : ['error', 'warn', 'log', 'debug', 'verbose'];
+
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
+    { logger: logLevels },
   );
 
   // Registrar suporte a cookies

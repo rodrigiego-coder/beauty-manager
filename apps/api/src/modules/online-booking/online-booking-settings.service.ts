@@ -183,7 +183,7 @@ export class OnlineBookingSettingsService {
   }
 
   /**
-   * Gera link assistido para Alexis enviar ao cliente
+   * Gera link assistido para Alexia enviar ao cliente
    * O link leva direto para a página de agendamento com parâmetros pré-preenchidos
    */
   async generateAssistedLink(dto: GenerateAssistedLinkDto): Promise<AssistedLinkResponse> {
@@ -201,7 +201,7 @@ export class OnlineBookingSettingsService {
     if (dto.serviceId) params.set('service', String(dto.serviceId));
     if (dto.professionalId) params.set('professional', dto.professionalId);
     if (dto.clientPhone) params.set('phone', dto.clientPhone);
-    params.set('source', 'alexis');
+    params.set('source', 'alexia');
 
     const baseUrl = process.env.FRONTEND_URL || 'https://app.beautymanager.com.br';
     const slug = salon.slug || salon.id;

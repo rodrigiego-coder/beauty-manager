@@ -7,14 +7,13 @@ import {
   accountsPayable,
   accountsReceivable,
   AccountPayable,
-  AccountReceivable,
   commands,
   commandItems,
   users,
   products,
   commissions,
 } from '../../database/schema';
-import { eq, and, gte, lte, desc, sql } from 'drizzle-orm';
+import { eq, and, gte, lte, desc, sql, inArray } from 'drizzle-orm';
 
 export interface TransactionExportData {
   [key: string]: number | Date | string | null;
@@ -767,16 +766,18 @@ export class ReportsService {
     }
 
     const receivables = await this.db
-      .select()
+      .select({
+        remainingAmount: accountsReceivable.remainingAmount,
+      })
       .from(accountsReceivable)
       .where(
         and(
           eq(accountsReceivable.salonId, salonId),
-          eq(accountsReceivable.status, 'PENDING'),
+          inArray(accountsReceivable.status, ['OPEN', 'OVERDUE'] as any),
         ),
       );
     const pendingReceivables = receivables.reduce(
-      (sum: number, r: AccountReceivable) => sum + parseFloat(r.amount),
+      (sum, r) => sum + parseFloat(r.remainingAmount),
       0,
     );
 
