@@ -12,6 +12,7 @@ import { db } from '../../database/connection';
 import * as schema from '../../database/schema';
 import { AlexisService } from '../alexis/alexis.service';
 import { WhatsAppService } from './whatsapp.service';
+import { AudioTranscriptionService } from '../alexis/audio-transcription.service';
 
 // =====================================================
 // TYPES
@@ -32,6 +33,11 @@ export interface ZapiPayload {
   type?: string;
   text?: {
     message?: string;
+  };
+  audio?: {
+    audioUrl?: string;
+    mimeType?: string;
+    seconds?: number;
   };
   status?: string;
 }
@@ -109,31 +115,38 @@ export function summarizePayload(payload: ZapiPayload): PayloadSummary {
 }
 
 /**
- * Determines if payload should be ignored (group, newsletter, fromMe, no text)
+ * Determines if payload should be ignored (group, newsletter, fromMe, no content)
  * ALFA.4: Filter noise before processing
+ * Updated: Now accepts audio messages for transcription
  */
-export function shouldIgnorePayload(payload: ZapiPayload): { ignore: boolean; reason: string | null } {
-  // No text message
-  if (!payload.text?.message) {
-    return { ignore: true, reason: 'no_text' };
-  }
-
+export function shouldIgnorePayload(payload: ZapiPayload): { ignore: boolean; reason: string | null; isAudio: boolean } {
   // Sent by us
   if (payload.fromMe === true) {
-    return { ignore: true, reason: 'from_me' };
+    return { ignore: true, reason: 'from_me', isAudio: false };
   }
 
   // Group message
   if (payload.isGroup === true) {
-    return { ignore: true, reason: 'is_group' };
+    return { ignore: true, reason: 'is_group', isAudio: false };
   }
 
   // Newsletter/broadcast
   if (payload.isNewsletter === true) {
-    return { ignore: true, reason: 'is_newsletter' };
+    return { ignore: true, reason: 'is_newsletter', isAudio: false };
   }
 
-  return { ignore: false, reason: null };
+  // Check for audio message
+  const isAudio = payload.type === 'audio' || !!payload.audio?.audioUrl;
+  if (isAudio) {
+    return { ignore: false, reason: null, isAudio: true };
+  }
+
+  // No text message and not audio
+  if (!payload.text?.message) {
+    return { ignore: true, reason: 'no_text', isAudio: false };
+  }
+
+  return { ignore: false, reason: null, isAudio: false };
 }
 
 // =====================================================
@@ -159,6 +172,7 @@ export class ZapiWebhookController {
   constructor(
     private readonly alexisService: AlexisService,
     private readonly whatsappService: WhatsAppService,
+    private readonly audioTranscription: AudioTranscriptionService,
   ) {}
 
   // =====================================================
@@ -233,7 +247,7 @@ export class ZapiWebhookController {
         return { received: true, deduped: true };
       }
 
-      // ALFA.4: Check if should ignore (group, newsletter, fromMe, no text)
+      // ALFA.4: Check if should ignore (group, newsletter, fromMe, no content)
       const ignoreCheck = shouldIgnorePayload(payload);
       if (ignoreCheck.ignore) {
         this.logger.debug(`Ignorando payload: ${ignoreCheck.reason}`);
@@ -241,10 +255,38 @@ export class ZapiWebhookController {
       }
 
       const phone = this.extractPhone(payload.phone || payload.from || '');
-      const message = payload.text!.message!.trim();
       const clientName = payload.senderName || payload.pushName || undefined;
 
-      this.logger.log(`Mensagem de ${phone} (${clientName || 'sem nome'}): "${summary.messagePreview}"`);
+      // ========== PROCESSAMENTO DE ÁUDIO ==========
+      let message: string;
+
+      if (ignoreCheck.isAudio && payload.audio?.audioUrl) {
+        this.logger.log(`Áudio recebido de ${phone}, iniciando transcrição...`);
+
+        const transcription = await this.audioTranscription.transcribeFromUrl(payload.audio.audioUrl);
+
+        if (!transcription.success || !transcription.text) {
+          // Falha na transcrição - envia mensagem amigável
+          this.logger.warn(`Falha ao transcrever áudio: ${transcription.error}`);
+
+          const errorResponse = this.audioTranscription.getAudioErrorResponse();
+
+          // Resolve salonId para enviar resposta
+          const salonId = await this.resolveSalonId();
+          if (salonId) {
+            await this.whatsappService.sendDirectMessage(phone, errorResponse);
+          }
+
+          return { received: true, audioError: transcription.error };
+        }
+
+        message = transcription.text;
+        this.logger.log(`Áudio transcrito de ${phone}: "${message.substring(0, 50)}..."`);
+      } else {
+        message = payload.text!.message!.trim();
+      }
+
+      this.logger.log(`Mensagem de ${phone} (${clientName || 'sem nome'}): "${message.substring(0, 50)}..."`);
 
       // ALFA.3.1: Mark messageId as processed BEFORE calling Alexis
       if (summary.messageId) {

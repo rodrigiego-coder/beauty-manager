@@ -10,6 +10,15 @@ import { eq, and, desc, sql } from 'drizzle-orm';
  * =====================================================
  */
 
+export interface ClientAppointment {
+  id: string;
+  service: string;
+  date: string;
+  time: string;
+  status: string;
+  professionalName?: string;
+}
+
 export interface SalonContext {
   salon: {
     name: string | null;
@@ -42,6 +51,8 @@ export interface SalonContext {
     isReturning: boolean;
     lastVisit: string | null;
   } | null;
+  /** Agendamentos futuros e recentes do cliente (últimos 7 dias) */
+  clientAppointments: ClientAppointment[];
 }
 
 export interface DashboardData {
@@ -89,8 +100,13 @@ export class DataCollectorService {
 
       // Cliente (se existir)
       let clientData = null;
+      let clientAppointments: ClientAppointment[] = [];
 
       if (clientPhone) {
+        // Normaliza telefone para busca
+        const phoneClean = clientPhone.replace(/\D/g, '');
+        const phoneVariants = [phoneClean, phoneClean.replace(/^55/, ''), `55${phoneClean.replace(/^55/, '')}`];
+
         const [client] = await db
           .select()
           .from(clients)
@@ -112,6 +128,58 @@ export class DataCollectorService {
             lastVisit: lastAppointment?.date || null,
           };
         }
+
+        // Busca agendamentos recentes e futuros do cliente (últimos 7 dias até futuro)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+
+        const recentAppointments = await db
+          .select({
+            id: appointments.id,
+            service: appointments.service,
+            date: appointments.date,
+            time: appointments.time,
+            status: appointments.status,
+            professionalId: appointments.professionalId,
+            clientPhone: appointments.clientPhone,
+          })
+          .from(appointments)
+          .where(
+            and(
+              eq(appointments.salonId, salonId),
+              sql`${appointments.date} >= ${sevenDaysAgoStr}`,
+            ),
+          )
+          .orderBy(desc(appointments.date), desc(appointments.time))
+          .limit(20);
+
+        // Filtra por telefone do cliente
+        const clientApts = recentAppointments.filter(apt => {
+          const aptPhone = apt.clientPhone?.replace(/\D/g, '') || '';
+          return phoneVariants.some(p => aptPhone.includes(p) || p.includes(aptPhone));
+        });
+
+        // Busca nomes dos profissionais
+        const professionalIds = [...new Set(clientApts.map(a => a.professionalId).filter(Boolean))];
+        let professionalMap: Record<string, string> = {};
+
+        if (professionalIds.length > 0) {
+          const pros = await db
+            .select({ id: users.id, name: users.name })
+            .from(users)
+            .where(sql`${users.id} IN ${professionalIds}`);
+          professionalMap = Object.fromEntries(pros.map(p => [p.id, p.name || 'Profissional']));
+        }
+
+        clientAppointments = clientApts.map(apt => ({
+          id: apt.id,
+          service: apt.service || 'Serviço',
+          date: apt.date,
+          time: apt.time || '00:00',
+          status: apt.status || 'SCHEDULED',
+          professionalName: apt.professionalId ? professionalMap[apt.professionalId] : undefined,
+        }));
       }
 
       return {
@@ -142,6 +210,7 @@ export class DataCollectorService {
           name: p.name || 'Profissional',
         })),
         client: clientData,
+        clientAppointments,
       };
     } catch (error: any) {
       this.logger.error('Erro ao coletar contexto:', error?.message || error);
@@ -151,6 +220,7 @@ export class DataCollectorService {
         products: [],
         professionals: [],
         client: null,
+        clientAppointments: [],
       };
     }
   }

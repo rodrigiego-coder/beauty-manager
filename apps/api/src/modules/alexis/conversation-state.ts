@@ -5,7 +5,7 @@
  * =====================================================
  */
 
-export type ActiveSkill = 'NONE' | 'SCHEDULING';
+export type ActiveSkill = 'NONE' | 'SCHEDULING' | 'PACKAGE_BATCH_SCHEDULING' | 'CANCELLATION';
 
 export type ScheduleStep =
   | 'NONE'
@@ -13,6 +13,18 @@ export type ScheduleStep =
   | 'AWAITING_PROFESSIONAL'
   | 'AWAITING_DATETIME'
   | 'AWAITING_CONFIRM';
+
+export type CancellationStep =
+  | 'NONE'
+  | 'AWAITING_CANCEL_CONFIRM'   // "Tem certeza que deseja cancelar?"
+  | 'AWAITING_RESCHEDULE';      // "Quer reagendar para outro dia?"
+
+export type PackageBatchStep =
+  | 'NONE'
+  | 'AWAITING_PREFERENCE'    // "Mesmo dia/horário toda semana?"
+  | 'AWAITING_DAY'           // "Qual dia da semana?"
+  | 'AWAITING_TIME'          // "Que horário?"
+  | 'AWAITING_CONFIRM';      // "Confirma X sessões?"
 
 export interface SchedulingSlots {
   serviceId?: string;
@@ -24,10 +36,34 @@ export interface SchedulingSlots {
   lastDeclinedPeriod?: string;
 }
 
+export interface CancellationSlots {
+  appointmentId?: string;
+  serviceLabel?: string;
+  dateISO?: string;
+  time?: string;
+  professionalLabel?: string;
+  /** Horários disponíveis para reagendamento */
+  rescheduleSlots?: Array<{ dateISO: string; time: string; display: string }>;
+}
+
+export interface PackageBatchSlots {
+  clientPackageId?: number;
+  packageName?: string;
+  remainingSessions?: number;
+  preferredDay?: string;         // "monday", "tuesday", etc
+  preferredTime?: string;        // "14:00"
+  sameTimeEveryWeek?: boolean;
+  scheduledDates?: string[];     // ISO dates for batch
+}
+
 export interface ConversationState {
   activeSkill: ActiveSkill;
   step: ScheduleStep;
+  cancellationStep?: CancellationStep;
+  packageBatchStep?: PackageBatchStep;
   slots: SchedulingSlots;
+  cancellationSlots?: CancellationSlots;
+  packageBatchSlots?: PackageBatchSlots;
   userAlreadyGreeted: boolean;
   lastGreetingAt: string | null;
   confusionCount: number;
@@ -39,6 +75,8 @@ export interface ConversationState {
   schedulingCommittedAt?: string;
   /** P0: Idempotência — ID do appointment criado */
   schedulingAppointmentId?: string;
+  /** P0: Idempotência — timestamp do cancelamento */
+  cancellationCommittedAt?: string;
 }
 
 /** Debounce window (ms) */
@@ -57,7 +95,11 @@ export function defaultState(): ConversationState {
   return {
     activeSkill: 'NONE',
     step: 'NONE',
+    cancellationStep: 'NONE',
+    packageBatchStep: 'NONE',
     slots: {},
+    cancellationSlots: {},
+    packageBatchSlots: {},
     userAlreadyGreeted: false,
     lastGreetingAt: null,
     confusionCount: 0,

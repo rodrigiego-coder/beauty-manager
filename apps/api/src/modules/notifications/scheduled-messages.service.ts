@@ -460,6 +460,55 @@ export class ScheduledMessagesService {
     );
   }
 
+  /**
+   * Agenda notificação customizada (genérica)
+   */
+  async scheduleCustomNotification(params: {
+    salonId: string;
+    appointmentId?: string;
+    recipientPhone: string;
+    recipientName: string | null;
+    notificationType: string;
+    customMessage: string;
+    scheduledFor: Date;
+    dedupeKey: string;
+    templateVariables?: Record<string, string>;
+  }): Promise<void> {
+    try {
+      await this.db.insert(appointmentNotifications).values({
+        salonId: params.salonId,
+        appointmentId: params.appointmentId,
+        recipientPhone: this.formatPhone(params.recipientPhone),
+        recipientName: params.recipientName,
+        notificationType: params.notificationType as any,
+        customMessage: params.customMessage,
+        templateVariables: params.templateVariables || {},
+        scheduledFor: params.scheduledFor,
+        status: params.scheduledFor <= new Date() ? 'PENDING' : 'SCHEDULED',
+        dedupeKey: params.dedupeKey,
+      });
+
+      this.logger.log(
+        `Custom notification scheduled: type=${params.notificationType}, phone=${this.maskPhone(params.recipientPhone)}`,
+      );
+    } catch (error: any) {
+      // Ignora duplicação (idempotência)
+      if (error.code === '23505' && error.constraint?.includes('dedupe')) {
+        this.logger.debug(`Notification already exists: ${params.dedupeKey} (idempotent)`);
+        return;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Mascara telefone para logs
+   */
+  private maskPhone(phone: string): string {
+    if (!phone || phone.length < 8) return '***';
+    return `${phone.substring(0, 4)}****${phone.substring(phone.length - 2)}`;
+  }
+
   // ==================== UTILITÁRIOS PRIVADOS ====================
 
   /**

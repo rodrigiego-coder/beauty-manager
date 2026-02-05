@@ -24,6 +24,7 @@ import { DataCollectorService } from './data-collector.service';
 import { AlexisCatalogService } from './alexis-catalog.service';
 import { ProductInfoService } from './product-info.service';
 import { ResponseComposerService } from './response-composer.service';
+import { PackageIntelligenceService } from './package-intelligence.service';
 import { COMMAND_RESPONSES } from './constants/forbidden-terms';
 import { isSchedulePrompt, fuzzyMatchService } from './schedule-continuation';
 import { ConversationStateStore } from './conversation-state.store';
@@ -53,6 +54,116 @@ import { OnlineBookingSettingsService } from '../online-booking/online-booking-s
  * =====================================================
  */
 
+/**
+ * REGRA DOS 3 MUNDOS - Separação de contexto
+ * A = Serviços (agendamentos avulsos)
+ * B = Pacotes (Pacote de Hidratação, Cronograma)
+ * C = Produtos (itens de prateleira: Elixir, shampoos, etc.)
+ *
+ * REGRA: Se a pergunta tiver "Pacote", proibir sugestões do Mundo C
+ */
+export type AlexiaWorld = 'A' | 'B' | 'C' | 'UNKNOWN';
+
+export interface WorldClassification {
+  world: AlexiaWorld;
+  description: string;
+  allowedWorlds: AlexiaWorld[];
+  forbiddenWorlds: AlexiaWorld[];
+}
+
+/**
+ * Classifica o "mundo" baseado no intent e na mensagem
+ */
+export function classifyWorld(intent: string, message: string): WorldClassification {
+  const msgLower = message.toLowerCase();
+
+  // Mundo B: Pacotes (PRIORIDADE MÁXIMA se mencionar "pacote")
+  if (
+    msgLower.includes('pacote') ||
+    intent === 'PACKAGE_QUERY' ||
+    intent === 'PACKAGE_INFO' ||
+    intent === 'PACKAGE_SCHEDULE_ALL'
+  ) {
+    return {
+      world: 'B',
+      description: 'Pacotes',
+      allowedWorlds: ['B', 'A'], // Pode falar de serviços se necessário
+      forbiddenWorlds: ['C'], // NUNCA falar de produtos
+    };
+  }
+
+  // Mundo C: Produtos
+  if (
+    intent === 'PRODUCT_INFO' ||
+    msgLower.includes('produto') ||
+    msgLower.includes('comprar') ||
+    msgLower.includes('elixir') ||
+    msgLower.includes('shampoo') ||
+    msgLower.includes('máscara') ||
+    msgLower.includes('levar pra casa')
+  ) {
+    return {
+      world: 'C',
+      description: 'Produtos',
+      allowedWorlds: ['C'],
+      forbiddenWorlds: ['B'], // Não confundir com pacotes
+    };
+  }
+
+  // Mundo A: Serviços (default para agendamentos)
+  if (
+    intent === 'SCHEDULE' ||
+    intent === 'SERVICE_INFO' ||
+    intent === 'LIST_SERVICES' ||
+    intent === 'PRICE_INFO' ||
+    intent === 'RESCHEDULE' ||
+    intent === 'CANCEL'
+  ) {
+    return {
+      world: 'A',
+      description: 'Serviços',
+      allowedWorlds: ['A', 'B'], // Pode mencionar pacotes se relevante
+      forbiddenWorlds: [],
+    };
+  }
+
+  // Mundo desconhecido
+  return {
+    world: 'UNKNOWN',
+    description: 'Indefinido',
+    allowedWorlds: ['A', 'B', 'C'],
+    forbiddenWorlds: [],
+  };
+}
+
+/**
+ * Gera prefixo de confirmação para a resposta
+ */
+export function getConfirmationPrefix(intent: string, _world: AlexiaWorld): string {
+  const confirmations: Record<string, string> = {
+    PACKAGE_QUERY: 'Entendi: você quer saber sobre nossos pacotes.',
+    PACKAGE_INFO: 'Entendi: você quer saber sobre seu pacote.',
+    PRODUCT_INFO: 'Entendi: você quer saber sobre um produto.',
+    PRICE_INFO: 'Entendi: você quer saber o valor.',
+    SCHEDULE: 'Entendi: você quer agendar um horário.',
+    SERVICE_INFO: 'Entendi: você quer saber sobre um serviço.',
+  };
+
+  return confirmations[intent] || '';
+}
+
+/**
+ * Fallback inteligente quando não há certeza
+ */
+export const SMART_FALLBACK = `Não tenho certeza se entendi. 🤔
+
+Você está procurando:
+1️⃣ Um *serviço* no salão (corte, escova, hidratação)
+2️⃣ Um *pacote* de sessões (ex: 4 sessões de hidratação)
+3️⃣ Um *produto* para levar para casa (shampoo, máscara)
+
+Responda 1, 2 ou 3, ou me conte mais! 😊`;
+
 export interface ProcessMessageResult {
   response: string | null;
   intent: string;
@@ -60,6 +171,7 @@ export interface ProcessMessageResult {
   shouldSend: boolean;
   statusChanged: boolean;
   newStatus?: string;
+  world?: AlexiaWorld;
 }
 
 @Injectable()
@@ -88,6 +200,7 @@ export class AlexisService {
     private readonly productInfo: ProductInfoService,
     private readonly composer: ResponseComposerService,
     private readonly stateStore: ConversationStateStore,
+    private readonly packageIntelligence: PackageIntelligenceService,
     @Inject(forwardRef(() => AppointmentsService))
     private readonly appointmentsService: AppointmentsService,
     private readonly onlineBookingSettings: OnlineBookingSettingsService,
@@ -139,7 +252,7 @@ export class AlexisService {
         }
 
         if (commandCheck.command === 'AI_RESUME') {
-          // #ia - Alexis volta (NÃO envia o comando ao cliente)
+          // #ia - Alexia volta (NÃO envia o comando ao cliente)
           await this.handleAIResume(conversation.id);
 
           // Salva comando como system (isCommand=true)
@@ -278,9 +391,44 @@ export class AlexisService {
     // Classifica intenção
     const intent = this.intentClassifier.classify(mergedText);
 
+    // ========== PACKAGE INTENTS (Package Intelligence) ==========
+    // Consulta sobre pacotes disponíveis para compra
+    if (intent === 'PACKAGE_QUERY') {
+      return this.handlePackageQuery(
+        conversation.id, salonId, clientPhone, mergedText, startTime,
+      );
+    }
+
+    // Informações sobre pacote do cliente (meus pacotes, sessões restantes)
+    if (intent === 'PACKAGE_INFO') {
+      return this.handlePackageInfo(
+        conversation.id, salonId, clientPhone, clientName, mergedText, startTime,
+      );
+    }
+
+    if (intent === 'PACKAGE_SCHEDULE_ALL') {
+      return this.handlePackageScheduleAll(
+        conversation.id, salonId, clientPhone, clientName, mergedText, startTime,
+      );
+    }
+
     // ========== SCHEDULE via FSM (novo fluxo) ==========
     if (intent === 'SCHEDULE') {
       return this.handleFSMStart(
+        conversation.id, salonId, clientPhone, clientName, mergedText, state, startTime,
+      );
+    }
+
+    // ========== CANCEL: Cancelamento com fluxo de retenção ==========
+    if (intent === 'CANCEL') {
+      return this.handleCancelIntent(
+        conversation.id, salonId, clientPhone, clientName, mergedText, state, startTime,
+      );
+    }
+
+    // ========== CANCELLATION FSM ATIVA ==========
+    if (state.activeSkill === 'CANCELLATION' && state.cancellationStep !== 'NONE') {
+      return this.handleCancellationTurn(
         conversation.id, salonId, clientPhone, clientName, mergedText, state, startTime,
       );
     }
@@ -308,6 +456,16 @@ export class AlexisService {
           shouldSend: true,
           statusChanged: false,
         };
+      }
+
+      // P0.6: Se APPOINTMENT_CONFIRM mas não há agendamento pendente,
+      // cliente provavelmente está respondendo "Sim" a "Quer agendar?"
+      // Inicia fluxo de scheduling FSM
+      if (intent === 'APPOINTMENT_CONFIRM') {
+        this.logger.debug(`[Router] APPOINTMENT_CONFIRM sem agendamento pendente, iniciando FSM`);
+        return this.handleFSMStart(
+          conversation.id, salonId, clientPhone, clientName, mergedText, state, startTime,
+        );
       }
     }
 
@@ -618,13 +776,27 @@ export class AlexisService {
       );
 
       if (commitResult.success) {
+        // SUCESSO: Só confirma APÓS ter appointment.id válido
         finalResponse = commitResult.response;
         // Atualiza nextState com marcador de commit
         result.nextState.schedulingCommittedAt = nowIso();
         result.nextState.schedulingAppointmentId = commitResult.appointmentId;
+        this.logger.log(`[CommitScheduling] Sucesso: appointmentId=${commitResult.appointmentId}`);
       } else {
-        // Fallback: erro no commit, mantém resposta original (handover para recepção)
+        // ERRO: Usa mensagem de aguardo ao invés de confirmar algo que não foi gravado
         this.logger.error(`[CommitScheduling] Falha: ${commitResult.error}`);
+
+        // Se temos uma pendingResponse (mensagem de aguardo), usa ela
+        if ('pendingResponse' in commitResult && commitResult.pendingResponse) {
+          finalResponse = commitResult.pendingResponse;
+        } else {
+          // Fallback: mensagem genérica de aguardo
+          finalResponse = 'Estou finalizando o registro do seu agendamento, um momento... 😊\n\nNossa equipe vai confirmar seu horário em breve.';
+        }
+
+        // NÃO marca como commitado - mantém estado para retry ou handover humano
+        result.nextState.handoverSummary = `Erro ao registrar agendamento: ${commitResult.error}. Serviço: ${state.slots.serviceLabel}, Data: ${state.slots.dateISO}, Hora: ${state.slots.time}`;
+        result.nextState.handoverAt = nowIso();
       }
     }
 
@@ -670,6 +842,10 @@ export class AlexisService {
    * =====================================================
    * COMMIT SCHEDULING TRANSACTION (P0)
    * Cria appointment real no banco usando AppointmentsService
+   *
+   * REGRA CRÍTICA: A confirmação SÓ pode ser enviada APÓS
+   * receber o appointment.id de sucesso da API.
+   * OBRIGATÓRIO: Incluir link de confirmação em toda finalização.
    * =====================================================
    */
   private async commitSchedulingTransaction(
@@ -679,7 +855,7 @@ export class AlexisService {
     clientName: string | undefined,
     state: ConversationState,
     context: SkillContext,
-  ): Promise<{ success: true; appointmentId: string; response: string } | { success: false; error: string }> {
+  ): Promise<{ success: true; appointmentId: string; response: string } | { success: false; error: string; pendingResponse?: string }> {
     try {
       // ========== IDEMPOTÊNCIA: verifica se já foi commitado ==========
       const currentState = await this.stateStore.getState(conversationId);
@@ -688,11 +864,14 @@ export class AlexisService {
           `[CommitScheduling] Idempotente: já commitado em ${currentState.schedulingCommittedAt}, ` +
             `appointmentId=${currentState.schedulingAppointmentId}`,
         );
-        // Retorna mensagem de confirmação sem criar novamente
+
+        // Gera link de confirmação obrigatório mesmo para idempotente
+        const confirmLink = await this.generateConfirmationLink(salonId, clientPhone);
+
         return {
           success: true,
           appointmentId: currentState.schedulingAppointmentId,
-          response: 'Seu agendamento já está confirmado! ✅',
+          response: `Seu agendamento já está registrado! ✅\n\n🔗 Confirme aqui: ${confirmLink}`,
         };
       }
 
@@ -728,7 +907,11 @@ export class AlexisService {
       }
 
       if (!professionalId) {
-        return { success: false, error: 'Nenhum profissional disponível' };
+        return {
+          success: false,
+          error: 'Nenhum profissional disponível',
+          pendingResponse: 'Estou verificando a disponibilidade dos profissionais, um momento... 😊',
+        };
       }
 
       // ========== CRIA APPOINTMENT via AppointmentsService ==========
@@ -737,40 +920,64 @@ export class AlexisService {
           `date=${state.slots.dateISO}, time=${state.slots.time}, professional=${professionalName}`,
       );
 
-      const appointment = await this.appointmentsService.create(
-        salonId,
-        {
-          professionalId,
-          service: serviceName,
-          serviceId: serviceId ? parseInt(serviceId, 10) : undefined,
-          date: state.slots.dateISO!,
-          time: state.slots.time!,
-          duration,
-          price,
-          clientName: clientName || 'Cliente WhatsApp',
-          clientPhone,
-          source: 'WHATSAPP',
-          notes: 'Agendado via Alexis (WhatsApp)',
-        },
-        professionalId, // createdById = professional (auto-atribuído)
-      );
+      let appointment;
+      try {
+        appointment = await this.appointmentsService.create(
+          salonId,
+          {
+            professionalId,
+            service: serviceName,
+            serviceId: serviceId ? parseInt(serviceId, 10) : undefined,
+            date: state.slots.dateISO!,
+            time: state.slots.time!,
+            duration,
+            price,
+            clientName: clientName || 'Cliente WhatsApp',
+            clientPhone,
+            source: 'WHATSAPP',
+            notes: 'Agendado via Alexia (WhatsApp)',
+          },
+          professionalId, // createdById = professional (auto-atribuído)
+        );
+      } catch (createError: any) {
+        this.logger.error(`[CommitScheduling] Erro ao criar appointment: ${createError?.message}`);
+        return {
+          success: false,
+          error: createError?.message || 'Erro ao criar agendamento',
+          pendingResponse: 'Estou finalizando o registro do seu horário, um momento... 😊\n\nSe demorar, nossa equipe entrará em contato para confirmar.',
+        };
+      }
+
+      // ========== VERIFICAÇÃO CRÍTICA: appointment.id DEVE existir ==========
+      if (!appointment || !appointment.id) {
+        this.logger.error(`[CommitScheduling] Appointment criado sem ID válido`);
+        return {
+          success: false,
+          error: 'Agendamento não retornou ID válido',
+          pendingResponse: 'Estou registrando seu agendamento, aguarde um momento... 😊\n\nVou te enviar a confirmação em instantes.',
+        };
+      }
 
       this.logger.log(
-        `[CommitScheduling] Appointment criado: id=${appointment.id}, salonId=${salonId}, ` +
+        `[CommitScheduling] Appointment criado COM SUCESSO: id=${appointment.id}, salonId=${salonId}, ` +
           `conversationId=${conversationId}`,
       );
+
+      // ========== GERA LINK DE CONFIRMAÇÃO OBRIGATÓRIO ==========
+      const confirmLink = await this.generateConfirmationLink(salonId, clientPhone, serviceId ? parseInt(serviceId, 10) : undefined);
 
       // ========== BUSCA DADOS DO SALÃO PARA RESPOSTA (endereço, maps) ==========
       const salonInfo = await this.getSalonInfoForConfirmation(salonId);
 
-      // ========== MONTA RESPOSTA DE CONFIRMAÇÃO ==========
+      // ========== MONTA RESPOSTA DE CONFIRMAÇÃO (SÓ APÓS TER appointment.id) ==========
       const dateDisplay = new Date(state.slots.dateISO!).toLocaleDateString('pt-BR', {
         weekday: 'long',
         day: 'numeric',
         month: 'long',
       });
 
-      let confirmationMsg = `Agendamento confirmado! ✅
+      // REGRA: Confirmação só aparece APÓS sucesso da API
+      let confirmationMsg = `Agendamento registrado com sucesso! ✅
 
 📅 *${dateDisplay}* às *${state.slots.time}*
 ✂️ ${serviceName}`;
@@ -778,6 +985,9 @@ export class AlexisService {
       if (professionalName) {
         confirmationMsg += `\n💇 ${professionalName}`;
       }
+
+      // OBRIGATÓRIO: Link de confirmação/pagamento
+      confirmationMsg += `\n\n🔗 *Confirme seu horário:*\n${confirmLink}`;
 
       // Adiciona endereço se disponível
       if (salonInfo.address) {
@@ -800,8 +1010,35 @@ export class AlexisService {
         response: confirmationMsg,
       };
     } catch (error: any) {
-      this.logger.error(`[CommitScheduling] Erro: ${error?.message || error}`);
-      return { success: false, error: error?.message || 'Erro desconhecido' };
+      this.logger.error(`[CommitScheduling] Erro inesperado: ${error?.message || error}`);
+      return {
+        success: false,
+        error: error?.message || 'Erro desconhecido',
+        pendingResponse: 'Estou finalizando o registro, um momento... 😊\n\nAguarde o link de confirmação.',
+      };
+    }
+  }
+
+  /**
+   * Gera link de confirmação/pagamento obrigatório para agendamentos
+   */
+  private async generateConfirmationLink(
+    salonId: string,
+    clientPhone: string,
+    serviceId?: number,
+  ): Promise<string> {
+    try {
+      const result = await this.onlineBookingSettings.generateAssistedLink({
+        salonId,
+        serviceId,
+        clientPhone: clientPhone?.replace(/\D/g, ''),
+      });
+      return result.url;
+    } catch (error) {
+      this.logger.warn(`Erro ao gerar link de confirmação: ${error}`);
+      // Fallback: retorna link genérico do salão
+      const baseUrl = process.env.FRONTEND_URL || 'https://app.beautymanager.com.br';
+      return `${baseUrl}/agendar?phone=${clientPhone?.replace(/\D/g, '')}`;
     }
   }
 
@@ -1101,14 +1338,12 @@ export class AlexisService {
         clientPhone: clientPhone?.replace(/\D/g, ''),
       });
 
-      const serviceText = serviceName ? `*${serviceName}*` : 'o serviço desejado';
+      // Tom de assistente de luxo: direto, eficiente, discreto
+      const serviceText = serviceName ? ` para *${serviceName}*` : '';
 
-      return `Entendi! Você quer agendar ${serviceText} 💇‍♀️
+      return `Perfeito! Confira os horários disponíveis${serviceText} e agende pelo link:
 
-Clique no link abaixo para escolher o melhor horário:
-🔗 ${result.url}
-
-⏰ Link válido por 24 horas.`;
+🔗 ${result.url}`;
     } catch (error) {
       this.logger.error('Erro ao gerar link de agendamento:', error);
       return 'Desculpe, tive um problema ao gerar o link de agendamento. Por favor, entre em contato pelo telefone do salão.';
@@ -1395,6 +1630,596 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
 
   /**
    * =====================================================
+   * CANCEL INTENT — Cancelamento com fluxo de retenção
+   *
+   * FLUXO OBRIGATÓRIO:
+   * 1. Busca agendamento(s) do cliente
+   * 2. Mostra detalhes e pede confirmação
+   * 3. EXECUTA cancelamento via appointmentsService.cancel()
+   * 4. SÓ confirma APÓS sucesso da API
+   * 5. Oferece reagendamento com horários disponíveis
+   * =====================================================
+   */
+  private async handleCancelIntent(
+    conversationId: string,
+    salonId: string,
+    clientPhone: string,
+    _clientName: string | undefined,
+    text: string,
+    _state: ConversationState,
+    startTime: number,
+  ): Promise<ProcessMessageResult> {
+    try {
+      // Busca agendamentos futuros do cliente
+      const upcomingAppointments = await this.findUpcomingAppointmentsByPhone(salonId, clientPhone);
+
+      if (upcomingAppointments.length === 0) {
+        const response = 'Não encontrei agendamentos futuros no seu nome. Se você tem um agendamento recente, pode me dar mais detalhes? 😊';
+
+        await this.saveMessage(conversationId, 'client', text, 'CANCEL', false, false);
+        await this.saveMessage(conversationId, 'ai', response, 'CANCEL', false, false);
+
+        await this.logInteraction(
+          salonId, conversationId, clientPhone,
+          text, response, 'CANCEL',
+          false, undefined, Date.now() - startTime,
+        );
+
+        return {
+          response,
+          intent: 'CANCEL',
+          blocked: false,
+          shouldSend: true,
+          statusChanged: false,
+        };
+      }
+
+      // Se tem apenas 1 agendamento, vai direto para confirmação
+      if (upcomingAppointments.length === 1) {
+        const apt = upcomingAppointments[0];
+        const dateDisplay = new Date(apt.date).toLocaleDateString('pt-BR', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+        });
+
+        // Busca horários disponíveis para oferecer reagendamento
+        const rescheduleSlots = await this.getNextAvailableSlots(salonId, apt.serviceId, 2);
+
+        // Atualiza state para FSM de cancelamento
+        await this.stateStore.updateState(conversationId, {
+          activeSkill: 'CANCELLATION',
+          cancellationStep: 'AWAITING_CANCEL_CONFIRM',
+          cancellationSlots: {
+            appointmentId: apt.id,
+            serviceLabel: apt.service,
+            dateISO: apt.date,
+            time: apt.time,
+            professionalLabel: apt.professionalName,
+            rescheduleSlots,
+          },
+          userAlreadyGreeted: true,
+        });
+
+        const response = `Encontrei seu agendamento:
+
+📅 *${dateDisplay}* às *${apt.time}*
+✂️ ${apt.service}${apt.professionalName ? `\n💇 ${apt.professionalName}` : ''}
+
+Tem certeza que deseja cancelar? (sim/não)`;
+
+        await this.saveMessage(conversationId, 'client', text, 'CANCEL', false, false);
+        await this.saveMessage(conversationId, 'ai', response, 'CANCEL', false, false);
+
+        await this.logInteraction(
+          salonId, conversationId, clientPhone,
+          text, response, 'CANCEL',
+          false, undefined, Date.now() - startTime,
+        );
+
+        return {
+          response,
+          intent: 'CANCEL',
+          blocked: false,
+          shouldSend: true,
+          statusChanged: false,
+        };
+      }
+
+      // Múltiplos agendamentos - lista para o cliente escolher
+      const list = upcomingAppointments.slice(0, 5).map((apt, i) => {
+        const dateDisplay = new Date(apt.date).toLocaleDateString('pt-BR', {
+          day: 'numeric',
+          month: 'short',
+        });
+        return `${i + 1}. ${apt.service} - ${dateDisplay} às ${apt.time}`;
+      }).join('\n');
+
+      const response = `Encontrei ${upcomingAppointments.length} agendamentos futuros:
+
+${list}
+
+Qual você deseja cancelar? (Digite o número)`;
+
+      // Salva lista no state para referência
+      await this.stateStore.updateState(conversationId, {
+        activeSkill: 'CANCELLATION',
+        cancellationStep: 'AWAITING_CANCEL_CONFIRM',
+        cancellationSlots: {
+          // Guarda o primeiro como default se cliente responder "sim" direto
+          appointmentId: upcomingAppointments[0].id,
+          serviceLabel: upcomingAppointments[0].service,
+          dateISO: upcomingAppointments[0].date,
+          time: upcomingAppointments[0].time,
+          professionalLabel: upcomingAppointments[0].professionalName,
+        },
+        userAlreadyGreeted: true,
+      });
+
+      await this.saveMessage(conversationId, 'client', text, 'CANCEL', false, false);
+      await this.saveMessage(conversationId, 'ai', response, 'CANCEL', false, false);
+
+      await this.logInteraction(
+        salonId, conversationId, clientPhone,
+        text, response, 'CANCEL',
+        false, undefined, Date.now() - startTime,
+      );
+
+      return {
+        response,
+        intent: 'CANCEL',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    } catch (error: any) {
+      // LOGGING AGRESSIVO: Captura erro completo
+      this.logger.error(`[ALEXIA_CANCEL_INTENT_ERROR] phone=${clientPhone} salonId=${salonId} error=${error?.message} stack=${error?.stack}`);
+
+      const response = 'Desculpe, tive um problema ao verificar seus agendamentos. Entre em contato com a recepção! 😊';
+
+      await this.saveMessage(conversationId, 'client', text, 'CANCEL', false, false);
+      await this.saveMessage(conversationId, 'ai', response, 'CANCEL', false, false);
+
+      return {
+        response,
+        intent: 'CANCEL',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    }
+  }
+
+  /**
+   * =====================================================
+   * CANCELLATION FSM TURN — Processa turno de cancelamento
+   * =====================================================
+   */
+  private async handleCancellationTurn(
+    conversationId: string,
+    salonId: string,
+    clientPhone: string,
+    _clientName: string | undefined,
+    text: string,
+    state: ConversationState,
+    startTime: number,
+  ): Promise<ProcessMessageResult> {
+    const normalized = text.toLowerCase().trim();
+    const slots = state.cancellationSlots || {};
+
+    // ========== AWAITING_CANCEL_CONFIRM ==========
+    if (state.cancellationStep === 'AWAITING_CANCEL_CONFIRM') {
+      const positives = ['sim', 's', 'confirmo', 'pode', 'ok', 'beleza', 'certo', 'isso', 'quero'];
+      const negatives = ['nao', 'não', 'n', 'desisto', 'deixa', 'esquece', 'mudei de ideia'];
+
+      const isConfirm = positives.some(w => normalized === w || normalized.startsWith(w + ' '));
+      const isDecline = negatives.some(w => normalized === w || normalized.startsWith(w + ' '));
+
+      if (isConfirm && slots.appointmentId) {
+        // ========== EXECUTA CANCELAMENTO VIA appointmentsService ==========
+        // LOGGING AGRESSIVO: Rodrigo pediu para rastrear problemas de persistência
+        const cancelStartTime = Date.now();
+        this.logger.log(`[ALEXIA_CANCEL_START] appointmentId=${slots.appointmentId} phone=${clientPhone} service=${slots.serviceLabel}`);
+
+        try {
+          const cancelled = await this.appointmentsService.cancel(
+            slots.appointmentId,
+            salonId,
+            'ALEXIA_WHATSAPP', // cancelledById
+            'Cancelado pelo cliente via WhatsApp (Alexia)',
+          );
+
+          const cancelElapsed = Date.now() - cancelStartTime;
+
+          if (!cancelled) {
+            // Falha no cancelamento - LOG AGRESSIVO + informa instabilidade
+            this.logger.error(`[ALEXIA_CANCEL_FAILED] appointmentId=${slots.appointmentId} phone=${clientPhone} elapsed=${cancelElapsed}ms - appointmentsService.cancel retornou null!`);
+
+            const errorResponse = 'Houve uma instabilidade no sistema. Nossa secretária entrará em contato para confirmar o cancelamento. 😊';
+
+            await this.stateStore.updateState(conversationId, {
+              activeSkill: 'NONE',
+              cancellationStep: 'NONE',
+              cancellationSlots: {},
+            });
+
+            await this.saveMessage(conversationId, 'client', text, 'CANCEL', false, false);
+            await this.saveMessage(conversationId, 'ai', errorResponse, 'CANCEL', false, false);
+
+            await this.logInteraction(
+              salonId, conversationId, clientPhone,
+              text, errorResponse, 'CANCEL',
+              false, undefined, Date.now() - startTime,
+            );
+
+            return {
+              response: errorResponse,
+              intent: 'CANCEL',
+              blocked: false,
+              shouldSend: true,
+              statusChanged: false,
+            };
+          }
+
+          this.logger.log(`[ALEXIA_CANCEL_SUCCESS] appointmentId=${slots.appointmentId} newStatus=${cancelled.status} phone=${clientPhone} elapsed=${cancelElapsed}ms`);
+
+          // ========== FLUXO DE RETENÇÃO: Oferece reagendamento ==========
+          let response = `Poxa, que pena! 😔 Cancelado com sucesso.
+
+Não quer aproveitar e já deixar reagendado para outro dia? Assim você garante o seu horário!`;
+
+          // Adiciona horários disponíveis se tiver
+          if (slots.rescheduleSlots && slots.rescheduleSlots.length > 0) {
+            const slotList = slots.rescheduleSlots.map((s, i) => `${i + 1}. ${s.display}`).join('\n');
+            response += `
+
+Próximos horários disponíveis para *${slots.serviceLabel}*:
+${slotList}
+
+Quer agendar? (sim/não ou digite o número)`;
+          } else {
+            response += '\n\n(sim/não)';
+          }
+
+          // Transiciona para AWAITING_RESCHEDULE
+          await this.stateStore.updateState(conversationId, {
+            cancellationStep: 'AWAITING_RESCHEDULE',
+            cancellationCommittedAt: nowIso(),
+          });
+
+          await this.saveMessage(conversationId, 'client', text, 'CANCEL', false, false);
+          await this.saveMessage(conversationId, 'ai', response, 'CANCEL', false, false);
+
+          await this.logInteraction(
+            salonId, conversationId, clientPhone,
+            text, response, 'CANCEL',
+            false, undefined, Date.now() - startTime,
+          );
+
+          return {
+            response,
+            intent: 'CANCEL',
+            blocked: false,
+            shouldSend: true,
+            statusChanged: false,
+          };
+        } catch (error: any) {
+          // LOGGING AGRESSIVO: Captura erro completo para diagnóstico
+          this.logger.error(`[ALEXIA_CANCEL_EXCEPTION] appointmentId=${slots.appointmentId} phone=${clientPhone} error=${error?.message} stack=${error?.stack}`);
+
+          const errorResponse = 'Houve uma instabilidade no sistema. Nossa secretária entrará em contato para confirmar o cancelamento. 😊';
+
+          await this.stateStore.updateState(conversationId, {
+            activeSkill: 'NONE',
+            cancellationStep: 'NONE',
+            cancellationSlots: {},
+          });
+
+          await this.saveMessage(conversationId, 'client', text, 'CANCEL', false, false);
+          await this.saveMessage(conversationId, 'ai', errorResponse, 'CANCEL', false, false);
+
+          return {
+            response: errorResponse,
+            intent: 'CANCEL',
+            blocked: false,
+            shouldSend: true,
+            statusChanged: false,
+          };
+        }
+      }
+
+      if (isDecline) {
+        // Cliente desistiu de cancelar
+        const response = 'Ótimo! Seu agendamento continua mantido. Até lá! 😊';
+
+        await this.stateStore.updateState(conversationId, {
+          activeSkill: 'NONE',
+          cancellationStep: 'NONE',
+          cancellationSlots: {},
+        });
+
+        await this.saveMessage(conversationId, 'client', text, 'CANCEL', false, false);
+        await this.saveMessage(conversationId, 'ai', response, 'CANCEL', false, false);
+
+        await this.logInteraction(
+          salonId, conversationId, clientPhone,
+          text, response, 'CANCEL',
+          false, undefined, Date.now() - startTime,
+        );
+
+        return {
+          response,
+          intent: 'CANCEL',
+          blocked: false,
+          shouldSend: true,
+          statusChanged: false,
+        };
+      }
+
+      // Não entendeu
+      const response = 'Desculpa, não entendi. Você quer cancelar o agendamento? (sim/não)';
+
+      await this.saveMessage(conversationId, 'client', text, 'CANCEL', false, false);
+      await this.saveMessage(conversationId, 'ai', response, 'CANCEL', false, false);
+
+      return {
+        response,
+        intent: 'CANCEL',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    }
+
+    // ========== AWAITING_RESCHEDULE ==========
+    if (state.cancellationStep === 'AWAITING_RESCHEDULE') {
+      const positives = ['sim', 's', 'quero', 'pode', 'ok', 'beleza', '1', '2'];
+      const negatives = ['nao', 'não', 'n', 'depois', 'agora não', 'deixa'];
+
+      const isAccept = positives.some(w => normalized === w || normalized.startsWith(w + ' '));
+      const isDecline = negatives.some(w => normalized === w || normalized.startsWith(w + ' '));
+
+      if (isAccept) {
+        // Cliente quer reagendar - redireciona para o link de agendamento
+        await this.stateStore.updateState(conversationId, {
+          activeSkill: 'NONE',
+          cancellationStep: 'NONE',
+          cancellationSlots: {},
+        });
+
+        const response = await this.generateBookingLinkResponse(
+          salonId,
+          clientPhone,
+          slots.serviceLabel ? undefined : undefined, // TODO: passar serviceId se disponível
+          slots.serviceLabel,
+        );
+
+        await this.saveMessage(conversationId, 'client', text, 'CANCEL', false, false);
+        await this.saveMessage(conversationId, 'ai', response, 'CANCEL', false, false);
+
+        await this.logInteraction(
+          salonId, conversationId, clientPhone,
+          text, response, 'CANCEL',
+          false, undefined, Date.now() - startTime,
+        );
+
+        return {
+          response,
+          intent: 'CANCEL',
+          blocked: false,
+          shouldSend: true,
+          statusChanged: false,
+        };
+      }
+
+      if (isDecline) {
+        // Cliente não quer reagendar
+        const response = 'Tudo bem! Quando quiser agendar novamente, é só me chamar. 😊';
+
+        await this.stateStore.updateState(conversationId, {
+          activeSkill: 'NONE',
+          cancellationStep: 'NONE',
+          cancellationSlots: {},
+        });
+
+        await this.saveMessage(conversationId, 'client', text, 'CANCEL', false, false);
+        await this.saveMessage(conversationId, 'ai', response, 'CANCEL', false, false);
+
+        await this.logInteraction(
+          salonId, conversationId, clientPhone,
+          text, response, 'CANCEL',
+          false, undefined, Date.now() - startTime,
+        );
+
+        return {
+          response,
+          intent: 'CANCEL',
+          blocked: false,
+          shouldSend: true,
+          statusChanged: false,
+        };
+      }
+
+      // Não entendeu - repete
+      const response = 'Quer aproveitar e reagendar para outro dia? (sim/não)';
+
+      await this.saveMessage(conversationId, 'client', text, 'CANCEL', false, false);
+      await this.saveMessage(conversationId, 'ai', response, 'CANCEL', false, false);
+
+      return {
+        response,
+        intent: 'CANCEL',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    }
+
+    // Fallback - reseta state
+    await this.stateStore.updateState(conversationId, {
+      activeSkill: 'NONE',
+      cancellationStep: 'NONE',
+      cancellationSlots: {},
+    });
+
+    const response = 'Desculpe, perdi o contexto. Como posso ajudar? 😊';
+
+    await this.saveMessage(conversationId, 'client', text, 'CANCEL', false, false);
+    await this.saveMessage(conversationId, 'ai', response, 'CANCEL', false, false);
+
+    return {
+      response,
+      intent: 'CANCEL',
+      blocked: false,
+      shouldSend: true,
+      statusChanged: false,
+    };
+  }
+
+  /**
+   * Busca agendamentos futuros do cliente pelo telefone
+   */
+  private async findUpcomingAppointmentsByPhone(
+    salonId: string,
+    clientPhone: string,
+  ): Promise<Array<{
+    id: string;
+    service: string;
+    serviceId?: number;
+    date: string;
+    time: string;
+    professionalName?: string;
+  }>> {
+    const phoneClean = clientPhone.replace(/\D/g, '');
+    const phoneVariants = [phoneClean, phoneClean.replace(/^55/, ''), `55${phoneClean.replace(/^55/, '')}`];
+
+    const today = new Date().toISOString().split('T')[0];
+
+    const results = await db
+      .select({
+        id: appointments.id,
+        service: appointments.service,
+        serviceId: appointments.serviceId,
+        date: appointments.date,
+        time: appointments.time,
+        clientPhone: appointments.clientPhone,
+        professionalId: appointments.professionalId,
+      })
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.salonId, salonId),
+          sql`${appointments.date} >= ${today}`,
+          sql`${appointments.status} NOT IN ('CANCELLED', 'COMPLETED', 'NO_SHOW')`,
+        ),
+      )
+      .orderBy(appointments.date, appointments.time)
+      .limit(20);
+
+    // Filtra por telefone (variantes)
+    const matched = results.filter(apt => {
+      const aptPhone = apt.clientPhone?.replace(/\D/g, '') || '';
+      return phoneVariants.some(p => aptPhone.includes(p) || p.includes(aptPhone));
+    });
+
+    // Busca nomes dos profissionais
+    const professionalIds = [...new Set(matched.map(apt => apt.professionalId).filter(Boolean))];
+    let professionalMap: Record<string, string> = {};
+
+    if (professionalIds.length > 0) {
+      const pros = await db
+        .select({ id: users.id, name: users.name })
+        .from(users)
+        .where(sql`${users.id} IN ${professionalIds}`);
+      professionalMap = Object.fromEntries(pros.map(p => [p.id, p.name]));
+    }
+
+    return matched.map(apt => ({
+      id: apt.id,
+      service: apt.service || 'Serviço',
+      serviceId: apt.serviceId ?? undefined,
+      date: apt.date,
+      time: apt.time || '00:00',
+      professionalName: apt.professionalId ? professionalMap[apt.professionalId] : undefined,
+    }));
+  }
+
+  /**
+   * Busca próximos N horários disponíveis para um serviço
+   */
+  private async getNextAvailableSlots(
+    salonId: string,
+    serviceId: number | undefined,
+    count: number,
+  ): Promise<Array<{ dateISO: string; time: string; display: string }>> {
+    try {
+      // Por simplicidade, retorna slots fictícios para amanhã/depois
+      // Em produção, integraria com scheduler.getAvailableSlots
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const dayAfter = new Date();
+      dayAfter.setDate(dayAfter.getDate() + 2);
+
+      const slots: Array<{ dateISO: string; time: string; display: string }> = [];
+
+      // Tenta buscar slots reais se tiver serviceId
+      if (serviceId) {
+        try {
+          const realSlots = await this.scheduler.getAvailableSlots(salonId, serviceId, tomorrow);
+          if (realSlots.length > 0) {
+            const tomorrowDisplay = tomorrow.toLocaleDateString('pt-BR', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+            });
+
+            for (let i = 0; i < Math.min(count, realSlots.length); i++) {
+              slots.push({
+                dateISO: tomorrow.toISOString().split('T')[0],
+                time: realSlots[i].time,
+                display: `${tomorrowDisplay} às ${realSlots[i].time}`,
+              });
+            }
+            return slots;
+          }
+        } catch {
+          // Ignora erro e usa fallback
+        }
+      }
+
+      // Fallback: slots genéricos
+      const tomorrowDisplay = tomorrow.toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      });
+      const dayAfterDisplay = dayAfter.toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      });
+
+      return [
+        {
+          dateISO: tomorrow.toISOString().split('T')[0],
+          time: '14:00',
+          display: `${tomorrowDisplay} às 14h`,
+        },
+        {
+          dateISO: dayAfter.toISOString().split('T')[0],
+          time: '10:00',
+          display: `${dayAfterDisplay} às 10h`,
+        },
+      ].slice(0, count);
+    } catch (error) {
+      this.logger.warn(`Erro ao buscar slots disponíveis: ${error}`);
+      return [];
+    }
+  }
+
+  /**
+   * =====================================================
    * LIST_SERVICES — Lista serviços do salão via DB (P0.5)
    * =====================================================
    */
@@ -1463,6 +2288,225 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
     );
 
     return { response: finalResponse, intent: 'LIST_SERVICES', blocked: false, shouldSend: true, statusChanged: false };
+  }
+
+  /**
+   * =====================================================
+   * PACKAGE_QUERY — Consulta sobre pacotes disponíveis
+   * MUNDO B: Nunca sugerir produtos (Mundo C)
+   * =====================================================
+   */
+  private async handlePackageQuery(
+    conversationId: string,
+    salonId: string,
+    clientPhone: string,
+    text: string,
+    startTime: number,
+  ): Promise<ProcessMessageResult> {
+    try {
+      // Classifica o mundo - PACOTES = Mundo B
+      const worldClass = classifyWorld('PACKAGE_QUERY', text);
+      this.logger.debug(`[PACKAGE_QUERY] Mundo: ${worldClass.world}, Proibidos: ${worldClass.forbiddenWorlds}`);
+
+      // Usa o método do PackageIntelligenceService para buscar e formatar pacotes
+      const packageResponse = await this.packageIntelligence.handlePackageQuery(salonId, text);
+
+      // Adiciona confirmação de entendimento
+      const confirmation = getConfirmationPrefix('PACKAGE_QUERY', worldClass.world);
+      const responseText = confirmation ? `${confirmation}\n\n${packageResponse}` : packageResponse;
+
+      await this.saveMessage(conversationId, 'client', text, 'PACKAGE_QUERY', false, false);
+      await this.saveMessage(conversationId, 'ai', responseText, 'PACKAGE_QUERY', false, false);
+
+      await this.logInteraction(
+        salonId, conversationId, clientPhone,
+        text, responseText, 'PACKAGE_QUERY',
+        false, undefined, Date.now() - startTime,
+      );
+
+      return {
+        response: responseText,
+        intent: 'PACKAGE_QUERY',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+        world: 'B',
+      };
+    } catch (error: any) {
+      this.logger.error(`Error in handlePackageQuery: ${error.message}`);
+
+      const fallbackResponse = 'Desculpe, não consegui verificar nossos pacotes no momento. Entre em contato com a recepção! 😊';
+
+      await this.saveMessage(conversationId, 'client', text, 'PACKAGE_QUERY', false, false);
+      await this.saveMessage(conversationId, 'ai', fallbackResponse, 'PACKAGE_QUERY', false, false);
+
+      return {
+        response: fallbackResponse,
+        intent: 'PACKAGE_QUERY',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+        world: 'B',
+      };
+    }
+  }
+
+  /**
+   * =====================================================
+   * PACKAGE_INFO — Informações sobre pacotes do cliente
+   * =====================================================
+   */
+  private async handlePackageInfo(
+    conversationId: string,
+    salonId: string,
+    clientPhone: string,
+    _clientName: string | undefined,
+    text: string,
+    startTime: number,
+  ): Promise<ProcessMessageResult> {
+    try {
+      // Busca pacotes ativos do cliente pelo telefone
+      const activePackages = await this.packageIntelligence.getActivePackagesByPhone(
+        salonId,
+        clientPhone,
+      );
+
+      // Formata resposta
+      const responseText = this.packageIntelligence.formatPackageInfoResponse(activePackages);
+
+      await this.saveMessage(conversationId, 'client', text, 'PACKAGE_INFO', false, false);
+      await this.saveMessage(conversationId, 'ai', responseText, 'PACKAGE_INFO', false, false);
+
+      await this.logInteraction(
+        salonId, conversationId, clientPhone,
+        text, responseText, 'PACKAGE_INFO',
+        false, undefined, Date.now() - startTime,
+      );
+
+      return {
+        response: responseText,
+        intent: 'PACKAGE_INFO',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    } catch (error: any) {
+      this.logger.error(`Error in handlePackageInfo: ${error.message}`);
+
+      const fallbackResponse = 'Desculpe, não consegui verificar seus pacotes no momento. Entre em contato com a recepção! 😊';
+
+      await this.saveMessage(conversationId, 'client', text, 'PACKAGE_INFO', false, false);
+      await this.saveMessage(conversationId, 'ai', fallbackResponse, 'PACKAGE_INFO', false, false);
+
+      return {
+        response: fallbackResponse,
+        intent: 'PACKAGE_INFO',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    }
+  }
+
+  /**
+   * =====================================================
+   * PACKAGE_SCHEDULE_ALL — Agendamento em lote de pacote
+   * =====================================================
+   */
+  private async handlePackageScheduleAll(
+    conversationId: string,
+    salonId: string,
+    clientPhone: string,
+    _clientName: string | undefined,
+    text: string,
+    startTime: number,
+  ): Promise<ProcessMessageResult> {
+    try {
+      // Busca pacotes ativos do cliente
+      const activePackages = await this.packageIntelligence.getActivePackagesByPhone(
+        salonId,
+        clientPhone,
+      );
+
+      // Filtra pacotes com sessões pendentes para agendar
+      const packagesWithPending = activePackages.filter(
+        (pkg: { remainingSessions: number; scheduledSessions: number }) => pkg.remainingSessions - pkg.scheduledSessions > 0,
+      );
+
+      let responseText: string;
+
+      if (packagesWithPending.length === 0) {
+        // Sem pacotes ou sem sessões pendentes
+        if (activePackages.length === 0) {
+          responseText = `Não encontrei pacotes ativos no seu nome.
+
+Se você adquiriu um pacote recentemente, confirme com a recepção! 😊`;
+        } else {
+          responseText = `Ótimo! Todas as sessões dos seus pacotes já estão agendadas. ✅
+
+Para verificar suas próximas datas, pergunte "meus agendamentos". 😊`;
+        }
+      } else {
+        // Tem sessões para agendar - por enquanto, direciona para o link de agendamento
+        const pkg = packagesWithPending[0];
+        const pendingSessions = pkg.remainingSessions - pkg.scheduledSessions;
+        const plural = pendingSessions > 1 ? 'sessões' : 'sessão';
+
+        responseText = `Encontrei seu pacote *${pkg.packageName}* com *${pendingSessions} ${plural}* para agendar! 📦
+
+Para agendar suas sessões de forma rápida, acesse nosso sistema de agendamento online.`;
+
+        // Gera link de agendamento
+        try {
+          const linkResult = await this.onlineBookingSettings.generateAssistedLink({
+            salonId,
+            clientPhone: clientPhone?.replace(/\D/g, ''),
+          });
+
+          responseText += `
+
+🔗 ${linkResult.url}
+
+Você pode agendar uma sessão por vez ou entrar em contato com a recepção para agendar todas de uma vez! 😊`;
+        } catch {
+          responseText += `
+
+Entre em contato com a recepção para agendar todas as sessões de uma vez! 😊`;
+        }
+      }
+
+      await this.saveMessage(conversationId, 'client', text, 'PACKAGE_SCHEDULE_ALL', false, false);
+      await this.saveMessage(conversationId, 'ai', responseText, 'PACKAGE_SCHEDULE_ALL', false, false);
+
+      await this.logInteraction(
+        salonId, conversationId, clientPhone,
+        text, responseText, 'PACKAGE_SCHEDULE_ALL',
+        false, undefined, Date.now() - startTime,
+      );
+
+      return {
+        response: responseText,
+        intent: 'PACKAGE_SCHEDULE_ALL',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    } catch (error: any) {
+      this.logger.error(`Error in handlePackageScheduleAll: ${error.message}`);
+
+      const fallbackResponse = 'Desculpe, não consegui processar seu pedido de agendamento em lote. Entre em contato com a recepção! 😊';
+
+      await this.saveMessage(conversationId, 'client', text, 'PACKAGE_SCHEDULE_ALL', false, false);
+      await this.saveMessage(conversationId, 'ai', fallbackResponse, 'PACKAGE_SCHEDULE_ALL', false, false);
+
+      return {
+        response: fallbackResponse,
+        intent: 'PACKAGE_SCHEDULE_ALL',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    }
   }
 
   /**
@@ -1805,7 +2849,7 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
       })
       .where(and(eq(aiConversations.id, sessionId), eq(aiConversations.salonId, salonId)));
 
-    return { success: true, message: 'Alexis retomou o atendimento' };
+    return { success: true, message: 'Alexia retomou o atendimento' };
   }
 
   async sendHumanMessage(salonId: string, sessionId: string, message: string, _userId: string) {

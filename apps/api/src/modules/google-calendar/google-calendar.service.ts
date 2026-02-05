@@ -2,7 +2,7 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { google, calendar_v3 } from 'googleapis';
 import { db } from '../../database/connection';
-import { googleCalendarTokens, appointments, clients } from '../../database/schema';
+import { googleCalendarTokens, appointments, clients, professionalBlocks, users } from '../../database/schema';
 import { eq, and } from 'drizzle-orm';
 
 /**
@@ -238,6 +238,64 @@ export class GoogleCalendarService {
   }
 
   /**
+   * =====================================================
+   * TOKEN DE SERVIÇO DO SALÃO
+   * Obtém tokens válidos para o SALÃO (conta principal)
+   * Independente de qual profissional está logado
+   * =====================================================
+   */
+  async getSalonTokens(salonId: string): Promise<{ accessToken: string; refreshToken: string; calendarId: string } | null> {
+    // Busca QUALQUER token válido conectado ao salão (syncEnabled = true)
+    const [token] = await db
+      .select()
+      .from(googleCalendarTokens)
+      .where(and(
+        eq(googleCalendarTokens.salonId, salonId),
+        eq(googleCalendarTokens.syncEnabled, true),
+      ))
+      .limit(1);
+
+    if (!token) {
+      this.logger.debug(`[SALON_TOKEN] Nenhum token encontrado para salonId=${salonId}`);
+      return null;
+    }
+
+    // Verifica se o token expirou (com 5 min de margem)
+    const now = new Date();
+    const expiryWithMargin = new Date(token.tokenExpiry.getTime() - 5 * 60 * 1000);
+
+    if (now >= expiryWithMargin) {
+      // Renova o token
+      const newTokens = await this.refreshTokenIfNeeded(token.refreshToken);
+      if (newTokens) {
+        await db
+          .update(googleCalendarTokens)
+          .set({
+            accessToken: newTokens.accessToken,
+            tokenExpiry: newTokens.expiry,
+            updatedAt: new Date(),
+          })
+          .where(eq(googleCalendarTokens.id, token.id));
+
+        this.logger.debug(`[SALON_TOKEN] Token renovado para salonId=${salonId}`);
+        return {
+          accessToken: newTokens.accessToken,
+          refreshToken: token.refreshToken,
+          calendarId: token.calendarId || 'primary',
+        };
+      }
+      this.logger.warn(`[SALON_TOKEN] Falha ao renovar token para salonId=${salonId}`);
+      return null;
+    }
+
+    return {
+      accessToken: token.accessToken,
+      refreshToken: token.refreshToken,
+      calendarId: token.calendarId || 'primary',
+    };
+  }
+
+  /**
    * Renova o access token usando o refresh token
    */
   async refreshTokenIfNeeded(refreshToken: string): Promise<{ accessToken: string; expiry: Date } | null> {
@@ -367,6 +425,183 @@ export class GoogleCalendarService {
       return { success: true, eventId };
     } catch (error: any) {
       this.logger.error('Erro ao sincronizar com Google:', error?.message);
+      return { success: false, error: error?.message || 'Erro desconhecido' };
+    }
+  }
+
+  /**
+   * =====================================================
+   * SINCRONIZAÇÃO AUTOMÁTICA VIA CONTA DO SALÃO
+   * Usa os tokens do salão principal (salaosanches@gmail.com)
+   * Título: "Serviço - Profissional"
+   * =====================================================
+   */
+  async syncAppointmentToGoogleBySalon(
+    salonId: string,
+    appointmentId: string,
+  ): Promise<SyncResult> {
+    try {
+      const tokens = await this.getSalonTokens(salonId);
+      if (!tokens) {
+        return { success: false, error: 'Google Calendar do salão não conectado' };
+      }
+
+      // Busca o agendamento com dados do profissional
+      const [appointment] = await db
+        .select({
+          id: appointments.id,
+          date: appointments.date,
+          time: appointments.time,
+          startTime: appointments.startTime,
+          endTime: appointments.endTime,
+          duration: appointments.duration,
+          service: appointments.service,
+          status: appointments.status,
+          clientId: appointments.clientId,
+          clientName: appointments.clientName,
+          professionalId: appointments.professionalId,
+          googleEventId: appointments.googleEventId,
+        })
+        .from(appointments)
+        .where(eq(appointments.id, appointmentId))
+        .limit(1);
+
+      if (!appointment) {
+        return { success: false, error: 'Agendamento não encontrado' };
+      }
+
+      // Busca nome do profissional
+      let professionalName = 'Profissional';
+      if (appointment.professionalId) {
+        const [professional] = await db
+          .select({ name: users.name })
+          .from(users)
+          .where(eq(users.id, appointment.professionalId))
+          .limit(1);
+        if (professional?.name) {
+          professionalName = professional.name;
+        }
+      }
+
+      // Busca dados do cliente
+      let clientName = appointment.clientName || 'Cliente';
+      if (appointment.clientId && !appointment.clientName) {
+        const [client] = await db
+          .select({ name: clients.name })
+          .from(clients)
+          .where(eq(clients.id, appointment.clientId))
+          .limit(1);
+        if (client?.name) {
+          clientName = client.name;
+        }
+      }
+
+      // Configura o cliente OAuth
+      this.oauth2Client.setCredentials({
+        access_token: tokens.accessToken,
+        refresh_token: tokens.refreshToken,
+      });
+
+      const calendar = google.calendar({ version: 'v3', auth: this.oauth2Client });
+
+      // Monta o horário do evento
+      const dateStr = appointment.date;
+      const startTime = appointment.startTime || appointment.time;
+      const endTime = appointment.endTime || this.calculateEndTime(startTime!, appointment.duration);
+
+      // TÍTULO: "Serviço - Profissional" (Ex: "Progressiva - Nicole")
+      const eventTitle = `${appointment.service} - ${professionalName}`;
+
+      const event: calendar_v3.Schema$Event = {
+        summary: eventTitle,
+        description: `Agendamento via Beauty Manager\nServiço: ${appointment.service}\nProfissional: ${professionalName}\nCliente: ${clientName}`,
+        start: {
+          dateTime: `${dateStr}T${startTime}:00`,
+          timeZone: 'America/Sao_Paulo',
+        },
+        end: {
+          dateTime: `${dateStr}T${endTime}:00`,
+          timeZone: 'America/Sao_Paulo',
+        },
+        reminders: {
+          useDefault: false,
+          overrides: [
+            { method: 'popup', minutes: 30 },
+            { method: 'popup', minutes: 60 },
+          ],
+        },
+      };
+
+      let eventId: string;
+
+      if (appointment.googleEventId) {
+        // Atualiza evento existente
+        const response = await calendar.events.update({
+          calendarId: tokens.calendarId,
+          eventId: appointment.googleEventId,
+          requestBody: event,
+        });
+        eventId = response.data.id!;
+        this.logger.log(`[SYNC_AUTO_GOOGLE_SUCCESS] UPDATE ${appointmentId} -> ${eventId} (${eventTitle})`);
+      } else {
+        // Cria novo evento
+        const response = await calendar.events.insert({
+          calendarId: tokens.calendarId,
+          requestBody: event,
+        });
+        eventId = response.data.id!;
+
+        // Salva o eventId no agendamento
+        await db
+          .update(appointments)
+          .set({ googleEventId: eventId })
+          .where(eq(appointments.id, appointmentId));
+
+        this.logger.log(`[SYNC_AUTO_GOOGLE_SUCCESS] CREATE ${appointmentId} -> ${eventId} (${eventTitle})`);
+      }
+
+      return { success: true, eventId };
+    } catch (error: any) {
+      this.logger.error(`[SYNC_AUTO_GOOGLE_ERROR] ${appointmentId}: ${error?.message}`);
+      return { success: false, error: error?.message || 'Erro desconhecido' };
+    }
+  }
+
+  /**
+   * Remove evento do Google Calendar usando tokens do salão
+   */
+  async deleteEventFromGoogleBySalon(
+    salonId: string,
+    googleEventId: string,
+  ): Promise<SyncResult> {
+    try {
+      const tokens = await this.getSalonTokens(salonId);
+      if (!tokens) {
+        return { success: false, error: 'Google Calendar do salão não conectado' };
+      }
+
+      this.oauth2Client.setCredentials({
+        access_token: tokens.accessToken,
+        refresh_token: tokens.refreshToken,
+      });
+
+      const calendar = google.calendar({ version: 'v3', auth: this.oauth2Client });
+
+      await calendar.events.delete({
+        calendarId: tokens.calendarId,
+        eventId: googleEventId,
+      });
+
+      this.logger.log(`[SYNC_AUTO_GOOGLE_SUCCESS] DELETE ${googleEventId}`);
+
+      return { success: true };
+    } catch (error: any) {
+      // 404 não é erro - evento já foi removido
+      if (error?.code === 404) {
+        this.logger.debug(`[SYNC_AUTO_GOOGLE_INFO] Evento ${googleEventId} já removido do Google`);
+        return { success: true };
+      }
+      this.logger.error(`[SYNC_AUTO_GOOGLE_ERROR] DELETE ${googleEventId}: ${error?.message}`);
       return { success: false, error: error?.message || 'Erro desconhecido' };
     }
   }
@@ -525,5 +760,181 @@ export class GoogleCalendarService {
     const endHours = Math.floor(totalMinutes / 60);
     const endMinutes = totalMinutes % 60;
     return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+  }
+
+  /**
+   * Importa eventos do Google Calendar como bloqueios na agenda do profissional
+   * Eventos do Beauty Manager (com "Beauty Manager" na descrição) são ignorados
+   */
+  async importGoogleEventsAsBlocks(
+    userId: string,
+    salonId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<{ created: number; updated: number; deleted: number }> {
+    const tokens = await this.getValidTokens(userId, salonId);
+    if (!tokens) {
+      return { created: 0, updated: 0, deleted: 0 };
+    }
+
+    this.oauth2Client.setCredentials({
+      access_token: tokens.accessToken,
+      refresh_token: tokens.refreshToken,
+    });
+
+    const calendar = google.calendar({ version: 'v3', auth: this.oauth2Client });
+
+    const response = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: startDate.toISOString(),
+      timeMax: endDate.toISOString(),
+      singleEvents: true,
+      orderBy: 'startTime',
+      maxResults: 250,
+    });
+
+    const events = response.data.items || [];
+
+    // Filtra eventos que NÃO são do Beauty Manager
+    const externalEvents = events.filter(
+      e => !e.description?.includes('Beauty Manager') && e.status !== 'cancelled'
+    );
+
+    // Busca bloqueios existentes do Google
+    const existingBlocks = await db
+      .select()
+      .from(professionalBlocks)
+      .where(
+        and(
+          eq(professionalBlocks.professionalId, userId),
+          eq(professionalBlocks.salonId, salonId),
+          eq(professionalBlocks.externalSource, 'GOOGLE'),
+        )
+      );
+
+    const existingMap = new Map(existingBlocks.map(b => [b.externalEventId, b]));
+    const processedIds = new Set<string>();
+
+    let created = 0, updated = 0, deleted = 0;
+
+    for (const event of externalEvents) {
+      if (!event.id) continue;
+      processedIds.add(event.id);
+
+      const existing = existingMap.get(event.id);
+      const { startDate: sDate, endDate: eDate, startTime, endTime, allDay } = this.parseEventDates(event);
+
+      if (existing) {
+        // Atualiza se mudou (incluindo horários para corrigir timezone)
+        const needsUpdate =
+          existing.title !== event.summary ||
+          existing.startDate !== sDate ||
+          existing.endDate !== eDate ||
+          existing.startTime !== startTime ||
+          existing.endTime !== endTime;
+
+        if (needsUpdate) {
+          await db.update(professionalBlocks)
+            .set({
+              title: event.summary || 'Evento Google',
+              description: event.description || null,
+              startDate: sDate,
+              endDate: eDate,
+              startTime,
+              endTime,
+              allDay,
+              updatedAt: new Date(),
+            })
+            .where(eq(professionalBlocks.id, existing.id));
+          updated++;
+        }
+      } else {
+        // Cria novo bloqueio
+        await db.insert(professionalBlocks).values({
+          salonId,
+          professionalId: userId,
+          type: 'OTHER',
+          title: event.summary || 'Evento Google',
+          description: event.description || null,
+          startDate: sDate,
+          endDate: eDate,
+          startTime,
+          endTime,
+          allDay,
+          status: 'APPROVED',
+          externalSource: 'GOOGLE',
+          externalEventId: event.id,
+          createdById: userId,
+        });
+        created++;
+      }
+    }
+
+    // Remove bloqueios que não existem mais no Google
+    for (const block of existingBlocks) {
+      if (block.externalEventId && !processedIds.has(block.externalEventId)) {
+        await db.delete(professionalBlocks).where(eq(professionalBlocks.id, block.id));
+        deleted++;
+      }
+    }
+
+    // Atualiza lastSyncAt
+    await db.update(googleCalendarTokens)
+      .set({ lastSyncAt: new Date(), updatedAt: new Date() })
+      .where(and(
+        eq(googleCalendarTokens.userId, userId),
+        eq(googleCalendarTokens.salonId, salonId),
+      ));
+
+    this.logger.log(`Google import: ${created} created, ${updated} updated, ${deleted} deleted`);
+    return { created, updated, deleted };
+  }
+
+  private parseEventDates(event: calendar_v3.Schema$Event): {
+    startDate: string;
+    endDate: string;
+    startTime: string | null;
+    endTime: string | null;
+    allDay: boolean;
+  } {
+    if (event.start?.date) {
+      return {
+        startDate: event.start.date,
+        endDate: event.end?.date || event.start.date,
+        startTime: null,
+        endTime: null,
+        allDay: true,
+      };
+    }
+
+    // Extract local date/time directly from the ISO string to preserve timezone
+    // Google returns format like "2026-02-04T09:00:00-03:00"
+    const startDateTime = event.start!.dateTime!;
+    const endDateTime = event.end!.dateTime!;
+
+    // Extract date and time from ISO string (YYYY-MM-DDTHH:MM:SS)
+    const startMatch = startDateTime.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+    const endMatch = endDateTime.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+
+    if (!startMatch || !endMatch) {
+      // Fallback to Date parsing if regex fails
+      const startDt = new Date(startDateTime);
+      const endDt = new Date(endDateTime);
+      return {
+        startDate: startDt.toISOString().split('T')[0],
+        endDate: endDt.toISOString().split('T')[0],
+        startTime: startDt.toTimeString().slice(0, 5),
+        endTime: endDt.toTimeString().slice(0, 5),
+        allDay: false,
+      };
+    }
+
+    return {
+      startDate: startMatch[1],
+      endDate: endMatch[1],
+      startTime: startMatch[2],
+      endTime: endMatch[2],
+      allDay: false,
+    };
   }
 }

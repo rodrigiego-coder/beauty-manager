@@ -20,6 +20,9 @@ export type Intent =
   | 'HOURS_INFO'
   | 'APPOINTMENT_CONFIRM'
   | 'APPOINTMENT_DECLINE'
+  | 'PACKAGE_QUERY'
+  | 'PACKAGE_INFO'
+  | 'PACKAGE_SCHEDULE_ALL'
   | 'GENERAL';
 
 @Injectable()
@@ -124,6 +127,9 @@ export class IntentClassifierService {
       HOURS_INFO: 'Horário de Funcionamento',
       APPOINTMENT_CONFIRM: 'Confirmação de Agendamento',
       APPOINTMENT_DECLINE: 'Recusa de Agendamento',
+      PACKAGE_QUERY: 'Consulta sobre Pacotes',
+      PACKAGE_INFO: 'Informação sobre Pacotes do Cliente',
+      PACKAGE_SCHEDULE_ALL: 'Agendamento de Pacote',
       GENERAL: 'Pergunta Geral',
     };
 

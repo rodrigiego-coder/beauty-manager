@@ -95,6 +95,27 @@ REGRAS ABSOLUTAS (NUNCA QUEBRE):
 6. Você SEMPRE usa linguagem orientativa e estética, NUNCA clínica.
 7. Você SEMPRE deixa claro que resultados podem variar.
 8. Se não souber, sugira agendar uma avaliação presencial.
+9. NUNCA confirme agendamentos por conta própria. NUNCA diga "seu corte está agendado", "agendamento confirmado" ou similar - o sistema gerencia isso automaticamente com verificação de banco de dados.
+10. NUNCA confirme cancelamentos por conta própria. NUNCA diga "cancelado" ou "seu agendamento foi cancelado" - o sistema gerencia cancelamentos automaticamente com verificação de banco de dados.
+
+FLUXO DE RETENÇÃO (CANCELAMENTOS):
+Quando o cliente pedir para cancelar, o sistema executa o cancelamento real no banco. Você deve:
+1. Lamentar a desistência: "Poxa, que pena!"
+2. SEMPRE oferecer reagendamento: "Não quer aproveitar e já deixar reagendado para outro dia? Assim você garante o seu horário!"
+3. Se o sistema fornecer horários disponíveis, apresente-os para facilitar o reagendamento.
+
+MEMÓRIA DE CURTO PRAZO (CRÍTICO):
+- SEMPRE considere as últimas 5 mensagens da conversa antes de responder.
+- Se você acabou de cancelar um agendamento, LEMBRE-SE disso nas próximas perguntas.
+- Se o cliente perguntou sobre um serviço específico, mantenha o contexto desse serviço.
+- NÃO repita informações já dadas na conversa atual.
+- Se o cliente mencionar "meu horário" ou "meu agendamento", considere os dados da conversa recente.
+
+VERIFICAÇÃO DE AGENDAMENTOS (OBRIGATÓRIO):
+- Quando o cliente perguntar sobre "horários agendados", "meu agendamento" ou similar, o CONTEXTO fornecido contém os agendamentos reais do banco de dados.
+- SEMPRE use os dados do CONTEXTO para responder sobre agendamentos - NUNCA invente.
+- Se o CONTEXTO mostrar que um agendamento foi cancelado, informe isso ao cliente.
+- Se não houver agendamentos no CONTEXTO, diga: "Não encontrei agendamentos futuros no seu nome."
 
 PADRÃO DE INDICAÇÃO DE PRODUTOS/SERVIÇOS:
 - "pode auxiliar na manutenção"
@@ -123,6 +144,54 @@ export const INTENT_KEYWORDS = {
   ],
   RESCHEDULE: ['remarcar', 'reagendar', 'mudar horário', 'trocar horário', 'adiar', 'alterar'],
   CANCEL: ['cancelar', 'desmarcar', 'não vou', 'nao vou', 'não posso', 'nao posso'],
+  // Package intents
+  PACKAGE_INFO: [
+    'meu pacote',
+    'meus pacotes',
+    'quantas sessões',
+    'quantas sessoes',
+    'sessões restantes',
+    'sessoes restantes',
+    'saldo do pacote',
+    'saldo de sessões',
+    'saldo de sessoes',
+    'tenho pacote',
+    'minhas sessões',
+    'minhas sessoes',
+  ],
+  PACKAGE_SCHEDULE_ALL: [
+    'agendar todas',
+    'agendar as sessões',
+    'agendar as sessoes',
+    'garantir os horários',
+    'garantir os horarios',
+    'marcar todas as sessões',
+    'marcar todas as sessoes',
+    'agendar o pacote todo',
+    'reservar todas',
+  ],
+  // Consulta sobre pacotes disponíveis para compra
+  PACKAGE_QUERY: [
+    'pacote de hidratação',
+    'pacote de hidratacao',
+    'pacote hidratação',
+    'pacote hidratacao',
+    'pacotes disponíveis',
+    'pacotes disponiveis',
+    'quais pacotes',
+    'tem pacote',
+    'sobre pacotes',
+    'valor do pacote',
+    'preço do pacote',
+    'preco do pacote',
+    'quanto custa o pacote',
+    'cronograma capilar',
+    'pacote capilar',
+    'comprar pacote',
+    'quero pacote',
+    'pacote de sessões',
+    'pacote de sessoes',
+  ],
   PRODUCT_INFO: [
     'produto',
     'shampoo',
