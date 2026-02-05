@@ -36,6 +36,11 @@ export class CreateServiceDto {
   @Min(0)
   @Max(100)
   commissionPercentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  totalSessions?: number;
 }
 
 export class UpdateServiceDto {
@@ -67,4 +72,9 @@ export class UpdateServiceDto {
   @Min(0)
   @Max(100)
   commissionPercentage?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  totalSessions?: number;
 }
