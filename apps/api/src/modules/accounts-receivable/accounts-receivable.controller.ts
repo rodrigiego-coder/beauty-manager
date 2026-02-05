@@ -6,78 +6,64 @@ import {
   Delete,
   Param,
   Body,
-  NotFoundException,
-  ParseIntPipe,
+  Query,
+  UseGuards,
 } from '@nestjs/common';
-import { AccountsReceivableService } from './accounts-receivable.service';
-import { NewAccountReceivable } from '../../database';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { AccountsReceivableService, SettleAccountDto } from './accounts-receivable.service';
+import { AuthGuard } from '../../common/guards/auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
+interface CurrentUserType {
+  id: string;
+  salonId: string;
+  role: string;
+}
+
+@ApiTags('Contas a Receber')
+@ApiBearerAuth()
 @Controller('accounts-receivable')
+@UseGuards(AuthGuard, RolesGuard)
 export class AccountsReceivableController {
   constructor(private readonly accountsReceivableService: AccountsReceivableService) {}
 
   /**
    * GET /accounts-receivable
-   * Lista todas as contas a receber
+   * Lista todas as contas a receber do salão
    */
   @Get()
-  async findAll() {
-    return this.accountsReceivableService.findAll();
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @ApiOperation({ summary: 'Lista contas a receber' })
+  async findAll(
+    @CurrentUser() user: CurrentUserType,
+    @Query('status') status?: string,
+    @Query('clientId') clientId?: string,
+  ) {
+    return this.accountsReceivableService.findAll(user.salonId, { status, clientId });
   }
 
   /**
-   * GET /accounts-receivable/with-client
-   * Lista contas a receber com dados do cliente
+   * GET /accounts-receivable/summary
+   * Retorna resumo das contas a receber
    */
-  @Get('with-client')
-  async findAllWithClient() {
-    return this.accountsReceivableService.findAllWithClient();
-  }
-
-  /**
-   * GET /accounts-receivable/pending
-   * Lista contas pendentes
-   */
-  @Get('pending')
-  async findPending() {
-    return this.accountsReceivableService.findPending();
-  }
-
-  /**
-   * GET /accounts-receivable/overdue
-   * Lista contas vencidas
-   */
-  @Get('overdue')
-  async findOverdue() {
-    return this.accountsReceivableService.findOverdue();
+  @Get('summary')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @ApiOperation({ summary: 'Resumo de contas a receber' })
+  async getSummary(@CurrentUser() user: CurrentUserType) {
+    return this.accountsReceivableService.getSummary(user.salonId);
   }
 
   /**
    * GET /accounts-receivable/total-pending
-   * Retorna o total a receber
+   * Retorna total de contas pendentes (para dashboard financeiro)
    */
   @Get('total-pending')
-  async getTotalPending() {
-    const total = await this.accountsReceivableService.getTotalPending();
-    return { totalPending: total };
-  }
-
-  /**
-   * GET /accounts-receivable/status/:status
-   * Lista contas por status
-   */
-  @Get('status/:status')
-  async findByStatus(@Param('status') status: 'PENDING' | 'PAID' | 'OVERDUE') {
-    return this.accountsReceivableService.findByStatus(status);
-  }
-
-  /**
-   * GET /accounts-receivable/client/:clientId
-   * Lista contas por cliente
-   */
-  @Get('client/:clientId')
-  async findByClient(@Param('clientId') clientId: string) {
-    return this.accountsReceivableService.findByClient(clientId);
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @ApiOperation({ summary: 'Total de contas pendentes' })
+  async getTotalPending(@CurrentUser() user: CurrentUserType) {
+    return this.accountsReceivableService.getTotalPending(user.salonId);
   }
 
   /**
@@ -85,70 +71,60 @@ export class AccountsReceivableController {
    * Busca conta por ID
    */
   @Get(':id')
-  async findById(@Param('id', ParseIntPipe) id: number) {
-    const account = await this.accountsReceivableService.findById(id);
-
-    if (!account) {
-      throw new NotFoundException('Conta nao encontrada');
-    }
-
-    return account;
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @ApiOperation({ summary: 'Busca conta por ID' })
+  async findById(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserType,
+  ) {
+    return this.accountsReceivableService.findById(id, user.salonId);
   }
 
   /**
-   * POST /accounts-receivable
-   * Cria uma nova conta a receber (fiado)
+   * POST /accounts-receivable/:id/settle
+   * Quita uma conta a receber
    */
-  @Post()
-  async create(@Body() data: NewAccountReceivable) {
-    return this.accountsReceivableService.create(data);
+  @Post(':id/settle')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @ApiOperation({ summary: 'Quita conta a receber' })
+  async settle(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserType,
+    @Body() data?: SettleAccountDto,
+  ) {
+    return this.accountsReceivableService.settle(id, user.salonId, user.id, data);
   }
 
   /**
    * PATCH /accounts-receivable/:id
-   * Atualiza uma conta a receber
+   * Atualiza uma conta (notas, vencimento)
    */
   @Patch(':id')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @ApiOperation({ summary: 'Atualiza conta a receber' })
   async update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() data: Partial<NewAccountReceivable>,
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserType,
+    @Body() data: { notes?: string; dueDate?: string },
   ) {
-    const account = await this.accountsReceivableService.update(id, data);
-
-    if (!account) {
-      throw new NotFoundException('Conta nao encontrada');
-    }
-
-    return account;
+    return this.accountsReceivableService.update(id, user.salonId, {
+      notes: data.notes,
+      dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+    });
   }
 
   /**
-   * PATCH /accounts-receivable/:id/pay
-   * Marca uma conta como recebida
+   * DELETE /accounts-receivable/:id/cancel
+   * Cancela uma conta a receber
    */
-  @Patch(':id/pay')
-  async markAsPaid(@Param('id', ParseIntPipe) id: number) {
-    const account = await this.accountsReceivableService.markAsPaid(id);
-
-    if (!account) {
-      throw new NotFoundException('Conta nao encontrada');
-    }
-
-    return account;
-  }
-
-  /**
-   * DELETE /accounts-receivable/:id
-   * Remove uma conta a receber
-   */
-  @Delete(':id')
-  async delete(@Param('id', ParseIntPipe) id: number) {
-    const deleted = await this.accountsReceivableService.delete(id);
-
-    if (!deleted) {
-      throw new NotFoundException('Conta nao encontrada');
-    }
-
-    return { message: 'Conta removida com sucesso' };
+  @Delete(':id/cancel')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @ApiOperation({ summary: 'Cancela conta a receber' })
+  async cancel(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserType,
+    @Body() data?: { reason?: string },
+  ) {
+    return this.accountsReceivableService.cancel(id, user.salonId, user.id, data?.reason);
   }
 }
