@@ -41,6 +41,8 @@ import {
   SalonSchedulePage,
   MySchedulePage,
   MyBlocksPage,
+  PackagesPage,
+  AccountsReceivablePage,
 } from './pages';
 import AlexisConversationsPage from './pages/AlexisConversationsPage';
 import AlexisSettingsPage from './pages/AlexisSettingsPage';
@@ -140,6 +142,14 @@ function App() {
                 </RoleGuard>
               }
             />
+            <Route
+              path="/pacotes"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <PackagesPage />
+                </RoleGuard>
+              }
+            />
 
             {/* Acesso: OWNER, MANAGER */}
             <Route
@@ -151,10 +161,18 @@ function App() {
               }
             />
             <Route
-              path="/financeiro/*"
+              path="/financeiro"
               element={
                 <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
                   <FinancePage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/financeiro/contas-receber"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <AccountsReceivablePage />
                 </RoleGuard>
               }
             />

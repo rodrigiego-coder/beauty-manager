@@ -36,3 +36,5 @@ export { MyPlanPage } from './MyPlanPage';
 export { default as SalonSchedulePage } from './SalonSchedulePage';
 export { default as MySchedulePage } from './MySchedulePage';
 export { default as MyBlocksPage } from './MyBlocksPage';
+export { default as PackagesPage } from './PackagesPage';
+export { default as AccountsReceivablePage } from './AccountsReceivablePage';
