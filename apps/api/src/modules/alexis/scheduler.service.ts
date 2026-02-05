@@ -111,16 +111,34 @@ export class AlexisSchedulerService {
       // Calcula slots disponíveis (8h às 20h, intervalos de 30min)
       const slots: AvailableSlot[] = [];
       const serviceDuration = service.durationMinutes;
+      const now = new Date();
 
       for (const professional of targetProfessionals) {
+        // Calcula cutoff considerando lead time do profissional
+        const cutoffDate = new Date(now);
+        const leadTimeEnabled = professional.leadTimeEnabled ?? false;
+        const leadTimeMinutes = Math.max(0, professional.leadTimeMinutes ?? 0);
+
+        if (leadTimeEnabled && leadTimeMinutes > 0) {
+          cutoffDate.setMinutes(cutoffDate.getMinutes() + leadTimeMinutes);
+          this.logger.debug({
+            event: 'LEAD_TIME_APPLIED',
+            professionalId: professional.id,
+            salonId,
+            leadTimeMinutes,
+            now: now.toISOString(),
+            cutoff: cutoffDate.toISOString(),
+          });
+        }
+
         for (let hour = 8; hour < 20; hour++) {
           for (const minute of [0, 30]) {
             const slotTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
             const slotDate = new Date(date);
             slotDate.setHours(hour, minute, 0, 0);
 
-            // Verifica se já passou (para o dia atual)
-            if (slotDate < new Date()) {
+            // Verifica se slot está antes do cutoff (now + lead time)
+            if (slotDate < cutoffDate) {
               continue;
             }
 
