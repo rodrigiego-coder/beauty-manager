@@ -266,6 +266,27 @@ export class CommandsController {
   }
 
   /**
+   * POST /commands/:id/close-pending
+   * Fecha comanda com pagamento pendente (gera conta a receber)
+   */
+  @Post(':id/close-pending')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  async closePendingPayment(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() data: { dueDate?: string; notes?: string },
+  ) {
+    return this.commandsService.closePendingPayment(id, {
+      id: user.id,
+      salonId: user.salonId,
+      role: user.role,
+    }, {
+      dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+      notes: data.notes,
+    });
+  }
+
+  /**
    * POST /commands/:id/cancel
    * Cancela comanda (apenas OWNER/MANAGER)
    */

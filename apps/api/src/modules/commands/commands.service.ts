@@ -14,6 +14,7 @@ import {
   paymentMethods,
   paymentDestinations,
   appointments,
+  accountsReceivable,
   Command,
   CommandItem,
   CommandPayment,
@@ -131,7 +132,8 @@ export class CommandsService {
   }
 
   /**
-   * Lista comandas abertas (não fechadas/canceladas)
+   * Lista comandas abertas (operacionais - quem está na cadeira agora)
+   * Exclui: CLOSED, CANCELED e PENDING_PAYMENT (financeiro vai para Contas a Receber)
    */
   async findOpen(salonId: string): Promise<Command[]> {
     return this.db
@@ -141,7 +143,8 @@ export class CommandsService {
         and(
           eq(commands.salonId, salonId),
           ne(commands.status, 'CLOSED'),
-          ne(commands.status, 'CANCELED')
+          ne(commands.status, 'CANCELED'),
+          ne(commands.status, 'PENDING_PAYMENT')
         )
       )
       .orderBy(desc(commands.openedAt));
@@ -168,12 +171,10 @@ export class CommandsService {
   }
 
   /**
-   * Busca comanda por número do cartão
+   * Busca comanda por número do cartão (apenas operacionais)
+   * PENDING_PAYMENT já foi para financeiro, então libera o número do cartão
    */
   async findByCardNumber(salonId: string, cardNumber: string): Promise<Command | null> {
-
-
-
     const result = await this.db
       .select()
       .from(commands)
@@ -182,7 +183,8 @@ export class CommandsService {
           eq(commands.salonId, salonId),
           eq(commands.cardNumber, cardNumber),
           ne(commands.status, 'CLOSED'),
-          ne(commands.status, 'CANCELED')
+          ne(commands.status, 'CANCELED'),
+          ne(commands.status, 'PENDING_PAYMENT')
         )
       )
       .limit(1);
@@ -1330,6 +1332,92 @@ export class CommandsService {
   }
 
   /**
+   * Fecha comanda com pagamento pendente (gera conta a receber)
+   */
+  async closePendingPayment(
+    commandId: string,
+    currentUser: CurrentUser,
+    data: { dueDate?: Date; notes?: string },
+  ): Promise<{ command: Command; accountReceivable: any }> {
+    const command = await this.findById(commandId);
+    if (!command) {
+      throw new NotFoundException('Comanda nao encontrada');
+    }
+
+    if (command.status === 'CLOSED') {
+      throw new BadRequestException('Comanda ja foi fechada');
+    }
+
+    if (command.status === 'CANCELED') {
+      throw new BadRequestException('Comanda foi cancelada');
+    }
+
+    if (command.status === 'PENDING_PAYMENT') {
+      throw new BadRequestException('Comanda ja esta com pagamento pendente');
+    }
+
+    // Calcula valores
+    const payments = await this.getPayments(commandId);
+    const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    const totalNet = parseFloat(command.totalNet || '0');
+    const remainingAmount = totalNet - totalPaid;
+
+    if (remainingAmount <= 0) {
+      throw new BadRequestException('Nao ha valor pendente. Use o fechamento normal.');
+    }
+
+    // Atualiza status da comanda para PENDING_PAYMENT
+    const [updatedCommand] = await this.db
+      .update(commands)
+      .set({
+        status: 'PENDING_PAYMENT',
+        serviceClosedAt: command.serviceClosedAt || new Date(),
+        serviceClosedById: command.serviceClosedById || currentUser.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(commands.id, commandId))
+      .returning();
+
+    // Cria registro em contas a receber
+    const [accountReceivable] = await this.db
+      .insert(accountsReceivable)
+      .values({
+        salonId: command.salonId,
+        clientId: command.clientId || undefined,
+        commandId: command.id,
+        totalAmount: totalNet.toString(),
+        paidAmount: totalPaid.toString(),
+        remainingAmount: remainingAmount.toString(),
+        status: 'OPEN',
+        dueDate: data.dueDate || undefined,
+        notes: data.notes || `Comanda #${command.cardNumber}`,
+        createdById: currentUser.id,
+      })
+      .returning();
+
+    // Registra evento
+    await this.addEvent(commandId, currentUser.id, 'STATUS_CHANGED', {
+      oldStatus: command.status,
+      newStatus: 'PENDING_PAYMENT',
+      totalNet,
+      totalPaid,
+      remainingAmount,
+      accountReceivableId: accountReceivable.id,
+      notes: data.notes,
+    });
+
+    this.logger.log(
+      `Comanda ${commandId} fechada com pagamento pendente: ` +
+      `total=${totalNet}, pago=${totalPaid}, restante=${remainingAmount}`,
+    );
+
+    return {
+      command: updatedCommand,
+      accountReceivable,
+    };
+  }
+
+  /**
    * Cria comissoes para itens de servico da comanda
    */
   private async createCommissionsForCommand(salonId: string, commandId: string): Promise<void> {
@@ -1648,14 +1736,38 @@ export class CommandsService {
   }
 
   /**
-   * Busca itens da comanda
+   * Busca itens da comanda com nome do profissional
    */
-  async getItems(commandId: string): Promise<CommandItem[]> {
-    return this.db
-      .select()
+  async getItems(commandId: string) {
+    const items = await this.db
+      .select({
+        id: commandItems.id,
+        commandId: commandItems.commandId,
+        type: commandItems.type,
+        referenceId: commandItems.referenceId,
+        description: commandItems.description,
+        quantity: commandItems.quantity,
+        unitPrice: commandItems.unitPrice,
+        discount: commandItems.discount,
+        totalPrice: commandItems.totalPrice,
+        performerId: commandItems.performerId,
+        performerName: users.name,
+        variantId: commandItems.variantId,
+        addedById: commandItems.addedById,
+        addedAt: commandItems.addedAt,
+        canceledAt: commandItems.canceledAt,
+        canceledById: commandItems.canceledById,
+        cancelReason: commandItems.cancelReason,
+        paidByPackage: commandItems.paidByPackage,
+        clientPackageId: commandItems.clientPackageId,
+        clientPackageUsageId: commandItems.clientPackageUsageId,
+      })
       .from(commandItems)
+      .leftJoin(users, eq(commandItems.performerId, users.id))
       .where(eq(commandItems.commandId, commandId))
       .orderBy(commandItems.addedAt);
+
+    return items;
   }
 
   /**
@@ -1733,17 +1845,19 @@ export class CommandsService {
 
   /**
    * Gera próximo número sequencial da comanda (1-999)
-   * Pula números que já estão em uso (comandas não fechadas/canceladas)
+   * Pula números que já estão em uso (comandas operacionais)
+   * PENDING_PAYMENT libera o número pois já foi para financeiro
    */
   private async generateNextNumber(salonId: string): Promise<string> {
-    // Busca números de comandas ABERTAS (não CLOSED, não CANCELED) para saber quais pular
+    // Busca números de comandas OPERACIONAIS para saber quais pular
     const openCommands = await this.db
       .select({ cardNumber: commands.cardNumber })
       .from(commands)
       .where(and(
         eq(commands.salonId, salonId),
         ne(commands.status, 'CLOSED'),
-        ne(commands.status, 'CANCELED')
+        ne(commands.status, 'CANCELED'),
+        ne(commands.status, 'PENDING_PAYMENT')
       ));
 
     const usedNumbers = new Set(
