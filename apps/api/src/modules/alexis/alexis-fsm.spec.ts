@@ -175,13 +175,18 @@ describe('scheduling FSM', () => {
       ttlExpiresAt: bumpTTL(),
     };
 
-    it('"sim" => confirms, resets state, handover', () => {
+    it('"sim" => signals processing (not confirmation), handover for commit', () => {
       const result = handleSchedulingTurn(stateAwaitingConfirm, 'sim', { services });
       expect(result.nextState.activeSkill).toBe('NONE');
       expect(result.nextState.step).toBe('NONE');
       expect(result.handover).toBe(true);
       expect(result.nextState.handoverSummary).toContain('Alisamento');
-      expect(result.replyText).toContain('recepção');
+      // P0: Mensagem agora é de processamento, não confirmação (confirmação vem após commit)
+      expect(result.replyText).toContain('Registrando');
+      // Slots devem ser mantidos para o commit transacional
+      expect(result.nextState.slots?.serviceId).toBe('1');
+      expect(result.nextState.slots?.dateISO).toBe('2026-01-28');
+      expect(result.nextState.slots?.time).toBe('10:00');
     });
 
     it('"não" => sales retake: back to AWAITING_DATETIME, keeps service slots', () => {

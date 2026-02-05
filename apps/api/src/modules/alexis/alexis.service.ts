@@ -117,7 +117,8 @@ export function classifyWorld(intent: string, message: string): WorldClassificat
     intent === 'LIST_SERVICES' ||
     intent === 'PRICE_INFO' ||
     intent === 'RESCHEDULE' ||
-    intent === 'CANCEL'
+    intent === 'CANCEL' ||
+    intent === 'MY_APPOINTMENTS'
   ) {
     return {
       world: 'A',
@@ -325,6 +326,15 @@ export class AlexisService {
       );
     }
 
+    // ========== P0: CANCELLATION FSM TEM PRIORIDADE ==========
+    // Se CANCELLATION com step !== 'NONE', vai direto para FSM de cancelamento
+    if (state.activeSkill === 'CANCELLATION' && state.cancellationStep && state.cancellationStep !== 'NONE') {
+      this.logger.log(`[Router] CANCELLATION_FSM_ACTIVE: step=${state.cancellationStep}, conversationId=${conversation.id}`);
+      return this.handleCancellationTurn(
+        conversation.id, salonId, clientPhone, clientName, mergedText, state, startTime,
+      );
+    }
+
     // ========== CONTINUAÇÃO TRANSACIONAL: SCHEDULE (fallback se FSM state perdido) ==========
     // Roda ANTES de resolveRelativeDate para capturar respostas de agendamento
     const scheduleContinuation = await this.checkScheduleContinuation(
@@ -412,6 +422,13 @@ export class AlexisService {
       );
     }
 
+    // ========== MY_APPOINTMENTS: Consulta de agendamentos existentes ==========
+    if (intent === 'MY_APPOINTMENTS') {
+      return this.handleMyAppointmentsIntent(
+        conversation.id, salonId, clientPhone, clientName, mergedText, startTime,
+      );
+    }
+
     // ========== SCHEDULE via FSM (novo fluxo) ==========
     if (intent === 'SCHEDULE') {
       return this.handleFSMStart(
@@ -426,14 +443,8 @@ export class AlexisService {
       );
     }
 
-    // ========== CANCELLATION FSM ATIVA ==========
-    if (state.activeSkill === 'CANCELLATION' && state.cancellationStep !== 'NONE') {
-      return this.handleCancellationTurn(
-        conversation.id, salonId, clientPhone, clientName, mergedText, state, startTime,
-      );
-    }
-
     // ========== CONFIRMAÇÃO/RECUSA DE AGENDAMENTO ==========
+    // NOTA: CANCELLATION FSM já é tratado no início (prioridade absoluta)
     if (intent === 'APPOINTMENT_CONFIRM' || intent === 'APPOINTMENT_DECLINE') {
       const confirmResult = await this.handleAppointmentConfirmation(
         salonId, clientPhone, intent === 'APPOINTMENT_CONFIRM',
@@ -1630,6 +1641,101 @@ Quando quiser, agende novamente! Estamos à disposição. 💜`,
 
   /**
    * =====================================================
+   * MY_APPOINTMENTS INTENT — Consulta de agendamentos existentes
+   *
+   * Responde perguntas como:
+   * - "Eu tenho algum horário agendado?"
+   * - "Meus agendamentos"
+   * - "Qual meu próximo horário?"
+   * =====================================================
+   */
+  private async handleMyAppointmentsIntent(
+    conversationId: string,
+    salonId: string,
+    clientPhone: string,
+    _clientName: string | undefined,
+    text: string,
+    startTime: number,
+  ): Promise<ProcessMessageResult> {
+    try {
+      this.logger.log(`[MY_APPOINTMENTS] Consultando agendamentos para ${clientPhone}`);
+
+      // Busca agendamentos futuros do cliente
+      const upcomingAppointments = await this.findUpcomingAppointmentsByPhone(salonId, clientPhone);
+
+      let response: string;
+
+      if (upcomingAppointments.length === 0) {
+        response = `Olha, não encontrei nenhum agendamento futuro no seu nome. 📅
+
+Quer agendar um horário? É só me dizer o serviço que você deseja! 😊`;
+      } else if (upcomingAppointments.length === 1) {
+        const apt = upcomingAppointments[0];
+        const dateDisplay = new Date(apt.date).toLocaleDateString('pt-BR', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+        });
+
+        response = `Sim! Você tem um agendamento:
+
+📅 *${dateDisplay}* às *${apt.time}*
+✂️ ${apt.service}${apt.professionalName ? `\n💇 com ${apt.professionalName}` : ''}
+
+Posso te ajudar com mais alguma coisa? 😊`;
+      } else {
+        // Múltiplos agendamentos
+        const list = upcomingAppointments.slice(0, 5).map((apt) => {
+          const dateDisplay = new Date(apt.date).toLocaleDateString('pt-BR', {
+            day: 'numeric',
+            month: 'short',
+          });
+          return `📅 ${dateDisplay} às ${apt.time} - ${apt.service}`;
+        }).join('\n');
+
+        response = `Você tem ${upcomingAppointments.length} agendamentos futuros:
+
+${list}
+
+Posso te ajudar com mais alguma coisa? 😊`;
+      }
+
+      await this.saveMessage(conversationId, 'client', text, 'MY_APPOINTMENTS', false, false);
+      await this.saveMessage(conversationId, 'ai', response, 'MY_APPOINTMENTS', false, false);
+
+      await this.logInteraction(
+        salonId, conversationId, clientPhone,
+        text, response, 'MY_APPOINTMENTS',
+        false, undefined, Date.now() - startTime,
+      );
+
+      return {
+        response,
+        intent: 'MY_APPOINTMENTS',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    } catch (error: any) {
+      this.logger.error(`[MY_APPOINTMENTS] Erro: ${error?.message}`);
+
+      const response = 'Desculpe, tive um problema ao verificar seus agendamentos. Pode tentar novamente? 😊';
+
+      await this.saveMessage(conversationId, 'client', text, 'MY_APPOINTMENTS', false, false);
+      await this.saveMessage(conversationId, 'ai', response, 'MY_APPOINTMENTS', false, false);
+
+      return {
+        response,
+        intent: 'MY_APPOINTMENTS',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    }
+  }
+
+  /**
+   * =====================================================
    * CANCEL INTENT — Cancelamento com fluxo de retenção
    *
    * FLUXO OBRIGATÓRIO:
@@ -1862,12 +1968,14 @@ Qual você deseja cancelar? (Digite o número)`;
             };
           }
 
+          // LOG DE AÇÃO EXECUTADA para auditoria
+          this.logger.log(`[ACTION_EXECUTED] CANCEL ID: ${slots.appointmentId} status=${cancelled.status} phone=${clientPhone} elapsed=${cancelElapsed}ms`);
           this.logger.log(`[ALEXIA_CANCEL_SUCCESS] appointmentId=${slots.appointmentId} newStatus=${cancelled.status} phone=${clientPhone} elapsed=${cancelElapsed}ms`);
 
           // ========== FLUXO DE RETENÇÃO: Oferece reagendamento ==========
-          let response = `Poxa, que pena! 😔 Cancelado com sucesso.
+          let response = `Ok, agendamento cancelado com sucesso! ✅
 
-Não quer aproveitar e já deixar reagendado para outro dia? Assim você garante o seu horário!`;
+Inclusive, você não gostaria de já deixar reagendado para outro dia? Assim você garante o seu horário!`;
 
           // Adiciona horários disponíveis se tiver
           if (slots.rescheduleSlots && slots.rescheduleSlots.length > 0) {

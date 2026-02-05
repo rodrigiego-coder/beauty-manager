@@ -603,12 +603,22 @@ function handleAwaitingConfirm(
       nextState: {
         activeSkill: 'NONE',
         step: 'NONE',
-        slots: {},
+        // IMPORTANTE: Mantém slots para o commit transacional
+        slots: {
+          serviceId: state.slots.serviceId,
+          serviceLabel: state.slots.serviceLabel,
+          professionalId: state.slots.professionalId,
+          professionalLabel: state.slots.professionalLabel,
+          dateISO: state.slots.dateISO,
+          time: state.slots.time,
+        },
         confusionCount: 0,
         handoverSummary: summary,
         handoverAt: new Date().toISOString(),
       },
-      replyText: `Anotado! Vou encaminhar para a recepção confirmar seu agendamento de *${state.slots.serviceLabel}* 😊 Pode me dizer seu nome completo, por favor?`,
+      // REGRA: Não confirmar o agendamento aqui - apenas indicar que está processando
+      // A confirmação real vem APÓS o commitSchedulingTransaction retornar sucesso
+      replyText: `Registrando seu horário, um momento... ⏳`,
       handover: true,
     };
   }

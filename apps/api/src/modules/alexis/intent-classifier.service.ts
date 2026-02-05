@@ -13,6 +13,7 @@ export type Intent =
   | 'SCHEDULE'
   | 'RESCHEDULE'
   | 'CANCEL'
+  | 'MY_APPOINTMENTS'  // Consulta de agendamentos existentes
   | 'PRODUCT_INFO'
   | 'SERVICE_INFO'
   | 'LIST_SERVICES'
@@ -20,6 +21,9 @@ export type Intent =
   | 'HOURS_INFO'
   | 'APPOINTMENT_CONFIRM'
   | 'APPOINTMENT_DECLINE'
+  | 'PACKAGE_INFO'
+  | 'PACKAGE_QUERY'
+  | 'PACKAGE_SCHEDULE_ALL'
   | 'GENERAL';
 
 @Injectable()
@@ -41,7 +45,40 @@ export class IntentClassifierService {
       return 'APPOINTMENT_DECLINE';
     }
 
-    // Agendamento
+    // ========== PACKAGE INTENTS (PRIORIDADE MÁXIMA) ==========
+    // Se a mensagem contém "pacote" (exceto "meu pacote"), é PACKAGE_QUERY
+    // Isso garante que "pacote de hidratação" não seja confundido com PRODUCT_INFO
+    if (lower.includes('pacote') && !lower.includes('meu pacote') && !lower.includes('meus pacotes')) {
+      // Verifica se é agendamento em lote
+      if (this.matchesAny(lower, INTENT_KEYWORDS.PACKAGE_SCHEDULE_ALL)) {
+        return 'PACKAGE_SCHEDULE_ALL';
+      }
+      // Qualquer outra menção a "pacote" é consulta sobre pacotes disponíveis
+      return 'PACKAGE_QUERY';
+    }
+
+    // Agendamento em lote de pacote (sem a palavra "pacote" explícita)
+    if (this.matchesAny(lower, INTENT_KEYWORDS.PACKAGE_SCHEDULE_ALL)) {
+      return 'PACKAGE_SCHEDULE_ALL';
+    }
+
+    // Consulta sobre pacotes disponíveis para compra
+    if (this.matchesAny(lower, INTENT_KEYWORDS.PACKAGE_QUERY)) {
+      return 'PACKAGE_QUERY';
+    }
+
+    // Informações sobre pacote do cliente (ex: "meu pacote", "quantas sessões tenho")
+    if (this.matchesAny(lower, INTENT_KEYWORDS.PACKAGE_INFO)) {
+      return 'PACKAGE_INFO';
+    }
+
+    // ========== CONSULTA DE AGENDAMENTOS EXISTENTES (PRIORIDADE sobre SCHEDULE) ==========
+    // Detecta: "tenho horário agendado?", "meus agendamentos", "qual meu próximo horário?"
+    if (this.matchesAny(lower, INTENT_KEYWORDS.MY_APPOINTMENTS)) {
+      return 'MY_APPOINTMENTS';
+    }
+
+    // Agendamento (criar novo)
     if (this.matchesAny(lower, INTENT_KEYWORDS.SCHEDULE)) {
       return 'SCHEDULE';
     }
@@ -117,6 +154,7 @@ export class IntentClassifierService {
       SCHEDULE: 'Agendamento',
       RESCHEDULE: 'Reagendamento',
       CANCEL: 'Cancelamento',
+      MY_APPOINTMENTS: 'Consulta de Agendamentos Existentes',
       PRODUCT_INFO: 'Informação sobre Produtos',
       SERVICE_INFO: 'Informação sobre Serviços',
       LIST_SERVICES: 'Lista de Serviços',
@@ -124,6 +162,9 @@ export class IntentClassifierService {
       HOURS_INFO: 'Horário de Funcionamento',
       APPOINTMENT_CONFIRM: 'Confirmação de Agendamento',
       APPOINTMENT_DECLINE: 'Recusa de Agendamento',
+      PACKAGE_INFO: 'Informação sobre Pacote do Cliente',
+      PACKAGE_QUERY: 'Consulta sobre Pacotes Disponíveis',
+      PACKAGE_SCHEDULE_ALL: 'Agendamento de Pacote em Lote',
       GENERAL: 'Pergunta Geral',
     };
 
