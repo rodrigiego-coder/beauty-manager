@@ -599,6 +599,8 @@ export const services = pgTable('services', {
   maxAdvanceBookingDays: integer('max_advance_booking_days').default(30).notNull(),
   minAdvanceBookingHours: integer('min_advance_booking_hours').default(1).notNull(),
   allowOnlineBooking: boolean('allow_online_booking').default(true).notNull(),
+  // Campo para pacotes: número de sessões incluídas (1 = serviço avulso, >1 = pacote)
+  totalSessions: integer('total_sessions').default(1).notNull(),
   active: boolean('active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -1226,22 +1228,7 @@ export const accountsPayable = pgTable('accounts_payable', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-/**
- * Tabela de contas a receber (Fiado)
- */
-export const accountsReceivable = pgTable('accounts_receivable', {
-  id: serial('id').primaryKey(),
-  salonId: uuid('salon_id').references(() => salons.id),
-  clientId: uuid('client_id')
-    .references(() => clients.id)
-    .notNull(),
-  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
-  dueDate: date('due_date').notNull(),
-  status: accountStatusEnum('status').default('PENDING').notNull(),
-  description: text('description'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+// NOTA: Tabela accounts_receivable movida para o final do arquivo (nova estrutura)
 
 /**
  * Tabela de produtos consumidos em atendimentos (Custo Real)
@@ -1306,6 +1293,10 @@ export const clientPackages = pgTable('client_packages', {
   purchaseDate: timestamp('purchase_date').defaultNow().notNull(),
   expirationDate: date('expiration_date').notNull(),
   active: boolean('active').default(true).notNull(),
+  // Package Intelligence fields
+  clientPhone: varchar('client_phone', { length: 20 }),
+  lastPendingAlertAt: timestamp('last_pending_alert_at'),
+  pendingAlertCount: integer('pending_alert_count').default(0),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -1612,8 +1603,7 @@ export type Transaction = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
 export type AccountPayable = typeof accountsPayable.$inferSelect;
 export type NewAccountPayable = typeof accountsPayable.$inferInsert;
-export type AccountReceivable = typeof accountsReceivable.$inferSelect;
-export type NewAccountReceivable = typeof accountsReceivable.$inferInsert;
+// AccountReceivable types moved to end of file (new schema structure)
 export type ConsumedProduct = typeof consumedProducts.$inferSelect;
 export type NewConsumedProduct = typeof consumedProducts.$inferInsert;
 export type Notification = typeof notifications.$inferSelect;
@@ -1714,9 +1704,20 @@ export type VariantCode = 'DEFAULT' | 'SHORT' | 'MEDIUM' | 'LONG' | 'EXTRA_LONG'
  */
 export const commandStatusEnum = pgEnum('command_status', [
   'OPEN',
-  'IN_SERVICE', 
+  'IN_SERVICE',
   'WAITING_PAYMENT',
+  'PENDING_PAYMENT',
   'CLOSED',
+  'CANCELED'
+]);
+
+/**
+ * Status de Contas a Receber
+ */
+export const accountReceivableStatusEnum = pgEnum('account_receivable_status', [
+  'OPEN',
+  'OVERDUE',
+  'SETTLED',
   'CANCELED'
 ]);
 
@@ -3198,6 +3199,10 @@ export const appointmentNotificationTypeEnum = pgEnum('appointment_notification_
   'TRIAGE_COMPLETED',
   'TRIAGE_REMINDER',
   'CUSTOM',
+  // Package notifications
+  'PACKAGE_SESSION_COMPLETED',    // Contagem regressiva após sessão
+  'PACKAGE_PENDING_SESSIONS',     // Alerta semanal de sessões não agendadas
+  'PACKAGE_EXPIRATION_WARNING',   // Aviso de pacote expirando
 ]);
 
 /**
@@ -4007,3 +4012,77 @@ export const googleCalendarTokens = pgTable('google_calendar_tokens', {
 // Types para Google Calendar
 export type GoogleCalendarToken = typeof googleCalendarTokens.$inferSelect;
 export type NewGoogleCalendarToken = typeof googleCalendarTokens.$inferInsert;
+
+// ==================== AI USAGE LOGS (Monitoramento de Custos) ====================
+
+/**
+ * Logs de uso da IA (Gemini) para relatório de custos
+ * Permite ao Rodrigo ver o custo real em centavos no final do mês
+ */
+export const aiUsageLogs = pgTable('ai_usage_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  salonId: uuid('salon_id').notNull().references(() => salons.id, { onDelete: 'cascade' }),
+
+  // Modelo e tipo de requisição
+  model: varchar('model', { length: 50 }).notNull(),
+  requestType: varchar('request_type', { length: 20 }).notNull(), // 'text' | 'audio'
+
+  // Tokens utilizados
+  inputTokens: integer('input_tokens').default(0).notNull(),
+  outputTokens: integer('output_tokens').default(0).notNull(),
+  totalTokens: integer('total_tokens').default(0).notNull(),
+
+  // Custo calculado (USD)
+  costUsd: decimal('cost_usd', { precision: 12, scale: 8 }).default('0').notNull(),
+
+  // Métricas de performance
+  latencyMs: integer('latency_ms'),
+
+  // Auditoria
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  salonIdx: index('ai_usage_logs_salon_idx').on(table.salonId),
+  createdAtIdx: index('ai_usage_logs_created_at_idx').on(table.createdAt),
+}));
+
+export type AiUsageLog = typeof aiUsageLogs.$inferSelect;
+export type NewAiUsageLog = typeof aiUsageLogs.$inferInsert;
+
+// ==================== CONTAS A RECEBER ====================
+
+/**
+ * Tabela de Contas a Receber
+ * Registra dívidas de clientes quando comanda é fechada com pagamento pendente
+ */
+export const accountsReceivable = pgTable('accounts_receivable', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  salonId: uuid('salon_id').notNull().references(() => salons.id, { onDelete: 'cascade' }),
+  clientId: uuid('client_id').references(() => clients.id),
+  commandId: uuid('command_id').references(() => commands.id),
+
+  // Valores
+  totalAmount: decimal('total_amount', { precision: 10, scale: 2 }).notNull(),
+  paidAmount: decimal('paid_amount', { precision: 10, scale: 2 }).default('0').notNull(),
+  remainingAmount: decimal('remaining_amount', { precision: 10, scale: 2 }).notNull(),
+
+  // Controle
+  status: varchar('status', { length: 20 }).default('OPEN').notNull(),
+  dueDate: timestamp('due_date'),
+  settledAt: timestamp('settled_at'),
+  settledById: uuid('settled_by_id').references(() => users.id),
+
+  // Metadados
+  notes: text('notes'),
+  createdById: uuid('created_by_id').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  salonIdx: index('accounts_receivable_salon_idx').on(table.salonId),
+  clientIdx: index('accounts_receivable_client_idx').on(table.clientId),
+  statusIdx: index('accounts_receivable_status_idx').on(table.status),
+  dueDateIdx: index('accounts_receivable_due_date_idx').on(table.dueDate),
+}));
+
+// Types para Contas a Receber
+export type AccountReceivable = typeof accountsReceivable.$inferSelect;
+export type NewAccountReceivable = typeof accountsReceivable.$inferInsert;
