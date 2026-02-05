@@ -6,6 +6,7 @@ import { ClientPackagesModule } from '../client-packages';
 import { ClientsModule } from '../clients';
 import { CommissionsModule } from '../commissions';
 import { LoyaltyModule } from '../loyalty';
+import { NotificationsModule } from '../notifications';
 import { ProductsModule } from '../products';
 import { RecipesModule } from '../recipes';
 import { ServiceConsumptionsModule } from '../service-consumptions';
@@ -17,6 +18,7 @@ import { ServiceConsumptionsModule } from '../service-consumptions';
     forwardRef(() => ClientsModule),
     forwardRef(() => CommissionsModule),
     forwardRef(() => LoyaltyModule),
+    forwardRef(() => NotificationsModule),
     forwardRef(() => ProductsModule),
     forwardRef(() => RecipesModule),
     forwardRef(() => ServiceConsumptionsModule),

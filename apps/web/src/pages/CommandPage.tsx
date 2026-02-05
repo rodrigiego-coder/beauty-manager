@@ -33,6 +33,7 @@ import {
   Mail,
   ChevronDown,
   ChevronUp,
+  Bell,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -311,6 +312,7 @@ export function CommandPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showReopenModal, setShowReopenModal] = useState(false);
+  const [showCloseServiceModal, setShowCloseServiceModal] = useState(false);
 
   // Payment methods e destinations da API
   const [availablePaymentMethods, setAvailablePaymentMethods] = useState<PaymentMethod[]>([]);
@@ -336,6 +338,15 @@ export function CommandPage() {
   const [itemToRemove, setItemToRemove] = useState<CommandItem | null>(null);
   const [removeReason, setRemoveReason] = useState('');
 
+  // Modal de editar item
+  const [showEditItemModal, setShowEditItemModal] = useState(false);
+  const [editingItem, setEditingItem] = useState<CommandItem | null>(null);
+  const [editItemPrice, setEditItemPrice] = useState('');
+  const [editItemDiscount, setEditItemDiscount] = useState('');
+
+  // Desconto global
+  const [globalDiscount, setGlobalDiscount] = useState('');
+
   // Modal de adicionar item
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [itemType, setItemType] = useState<'SERVICE' | 'PRODUCT'>('SERVICE');
@@ -353,6 +364,7 @@ export function CommandPage() {
   // Estados para pacote de sessões do cliente
   const [packageAvailability, setPackageAvailability] = useState<PackageAvailability | null>(null);
   const [loadingPackage, setLoadingPackage] = useState(false);
+  const [useClientPackage, setUseClientPackage] = useState(true); // Toggle para usar ou não o pacote
 
   // Estado para seleção de profissional que vai executar o serviço
   const [availableProfessionals, setAvailableProfessionals] = useState<{ id: string; name: string }[]>([]);
@@ -390,6 +402,12 @@ export function CommandPage() {
   const [appliedVoucher, setAppliedVoucher] = useState<any>(null);
   const [showPointsEarned, setShowPointsEarned] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
+
+  // Lembrete da Alexia (pós-venda)
+  const [reminderMessage, setReminderMessage] = useState('');
+  const [reminderDateTime, setReminderDateTime] = useState('');
+  const [savingReminder, setSavingReminder] = useState(false);
+  const [reminderSaved, setReminderSaved] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -821,20 +839,45 @@ export function CommandPage() {
     return null;
   };
 
-  // Ação: Encerrar Serviços
+  // Ação: Encerrar Serviços (confirmado pelo modal)
   const handleCloseService = async () => {
     if (!command) return;
-    
-    if (!confirm('Deseja encerrar os serviços desta comanda?')) return;
 
     try {
       setActionLoading(true);
       await api.post(`/commands/${command.id}/close-service`);
+      setShowCloseServiceModal(false);
       await loadCommand();
     } catch (err: any) {
       alert(err.response?.data?.message || 'Erro ao encerrar serviços');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Ação: Agendar Lembrete da Alexia
+  const handleSaveReminder = async () => {
+    if (!command || !linkedClient || !reminderMessage.trim() || !reminderDateTime) {
+      alert('Preencha a mensagem e a data/hora do lembrete');
+      return;
+    }
+
+    try {
+      setSavingReminder(true);
+      await api.post(`/commands/${command.id}/reminder`, {
+        message: reminderMessage.trim(),
+        scheduledFor: reminderDateTime,
+        clientPhone: linkedClient.phone,
+        clientName: linkedClient.name,
+      });
+      setReminderSaved(true);
+      setTimeout(() => setReminderSaved(false), 3000);
+      setReminderMessage('');
+      setReminderDateTime('');
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Erro ao agendar lembrete');
+    } finally {
+      setSavingReminder(false);
     }
   };
 
@@ -962,7 +1005,9 @@ export function CommandPage() {
 
     try {
       setActionLoading(true);
-      await api.post(`/commands/${command.id}/items`, {
+
+      // Prepara dados do item
+      const itemData: Record<string, unknown> = {
         type: itemType,
         description: selectedItem.name,
         quantity: parseInt(itemQuantity),
@@ -973,7 +1018,21 @@ export function CommandPage() {
         variantId: itemType === 'SERVICE' && selectedVariantId ? selectedVariantId : undefined,
         // Enviar performerId se um profissional foi selecionado (apenas para serviços)
         performerId: itemType === 'SERVICE' && selectedPerformerId ? selectedPerformerId : undefined,
-      });
+      };
+
+      // Se tem pacote disponível, envia a escolha do usuário
+      if (itemType === 'SERVICE' && packageAvailability?.hasPackage) {
+        if (useClientPackage) {
+          itemData.clientPackageId = packageAvailability.clientPackageId;
+          itemData.paidByPackage = true;
+          itemData.unitPrice = 0; // Sessão de pacote = R$ 0,00
+        } else {
+          // Usuário optou por NÃO usar pacote - enviar flag explícito
+          itemData.paidByPackage = false;
+        }
+      }
+
+      await api.post(`/commands/${command.id}/items`, itemData);
 
       setShowAddItemModal(false);
       setSelectedItem(null);
@@ -998,6 +1057,7 @@ export function CommandPage() {
     loadProducts();
     loadProfessionals();
     setSelectedPerformerId('');
+    setUseClientPackage(true); // Reset toggle ao abrir modal
     setShowAddItemModal(true);
   };
 
@@ -1092,6 +1152,39 @@ export function CommandPage() {
     setItemToRemove(item);
     setRemoveReason('');
     setShowRemoveItemModal(true);
+  };
+
+  // Abrir modal de editar item
+  const openEditItemModal = (item: CommandItem) => {
+    setEditingItem(item);
+    setEditItemPrice(item.unitPrice.replace('.', ','));
+    setEditItemDiscount(item.discount ? item.discount.replace('.', ',') : '0');
+    setShowEditItemModal(true);
+  };
+
+  // Salvar edição do item
+  const handleEditItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!command || !editingItem) return;
+
+    try {
+      setActionLoading(true);
+      const priceNum = parseFloat(editItemPrice.replace(',', '.')) || 0;
+      const discountNum = parseFloat(editItemDiscount.replace(',', '.')) || 0;
+
+      await api.patch(`/commands/${command.id}/items/${editingItem.id}`, {
+        unitPrice: priceNum.toFixed(2),
+        discount: discountNum.toFixed(2),
+      });
+
+      setShowEditItemModal(false);
+      setEditingItem(null);
+      await loadCommand();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Erro ao editar item');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // Ação: Cancelar Comanda
@@ -1208,7 +1301,8 @@ export function CommandPage() {
               <>
                 {canCloseService && activeItems.length > 0 && (
                   <button
-                    onClick={handleCloseService}
+                    type="button"
+                    onClick={() => setShowCloseServiceModal(true)}
                     disabled={actionLoading}
                     className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium disabled:opacity-50"
                   >
@@ -1382,10 +1476,16 @@ export function CommandPage() {
                         {isEditable && (
                           <td className="py-3 text-center">
                             <div className="flex items-center justify-center gap-1">
-                              <button className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded">
+                              <button
+                                type="button"
+                                onClick={() => openEditItemModal(item)}
+                                className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded"
+                                title="Editar item"
+                              >
                                 <Edit className="w-4 h-4" />
                               </button>
-                              <button 
+                              <button
+                                type="button"
                                 onClick={() => openRemoveItemModal(item)}
                                 className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
                                 title="Remover item"
@@ -1399,6 +1499,41 @@ export function CommandPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {/* Campo de Desconto Global */}
+            {isEditable && activeItems.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Desconto Total (R$)
+                </label>
+                <input
+                  type="text"
+                  value={globalDiscount}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/[^\d,]/g, '');
+                    setGlobalDiscount(value);
+                  }}
+                  placeholder="0,00"
+                  className="w-full px-4 py-3 text-lg border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+                {globalDiscount && parseFloat(globalDiscount.replace(',', '.')) > 0 && (
+                  <div className="mt-2 p-3 bg-green-50 rounded-lg border border-green-200">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-green-700">Desconto aplicado:</span>
+                      <span className="text-lg font-semibold text-green-700">
+                        - R$ {globalDiscount}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center mt-1">
+                      <span className="text-sm font-medium text-green-800">Novo total a pagar:</span>
+                      <span className="text-lg font-bold text-green-800">
+                        {formatCurrency(Math.max(0, totalNet - parseFloat(globalDiscount.replace(',', '.') || '0')))}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1599,6 +1734,77 @@ export function CommandPage() {
               onAddToCommand={isEditable ? handleAddRecommendedProduct : undefined}
               compact
             />
+          )}
+
+          {/* Lembrete da Alexia - só aparece se tem cliente vinculado com telefone */}
+          {linkedClient && linkedClient.phone && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Bell className="w-5 h-5 text-purple-500" />
+                <h2 className="text-lg font-semibold text-gray-900">Lembrete da Alexia</h2>
+              </div>
+
+              <p className="text-sm text-gray-500 mb-4">
+                Agende uma mensagem de pós-venda para {linkedClient.name || 'o cliente'}
+              </p>
+
+              <div className="space-y-4">
+                {/* Campo de mensagem */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Mensagem
+                  </label>
+                  <textarea
+                    value={reminderMessage}
+                    onChange={(e) => setReminderMessage(e.target.value)}
+                    placeholder="Ex: Olá! Como está o cabelo? Precisando de algo?"
+                    rows={3}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                  />
+                </div>
+
+                {/* Seletor de data/hora */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Data e Hora do Envio
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={reminderDateTime}
+                    onChange={(e) => setReminderDateTime(e.target.value)}
+                    min={new Date().toISOString().slice(0, 16)}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  />
+                </div>
+
+                {/* Botão de agendar */}
+                <button
+                  onClick={handleSaveReminder}
+                  disabled={savingReminder || !reminderMessage.trim() || !reminderDateTime}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+                >
+                  {savingReminder ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Agendando...
+                    </>
+                  ) : (
+                    <>
+                      <Bell className="w-4 h-4" />
+                      Agendar Lembrete
+                    </>
+                  )}
+                </button>
+
+                {/* Feedback de sucesso */}
+                {reminderSaved && (
+                  <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm">
+                    <CheckCircle className="w-4 h-4" />
+                    Lembrete agendado com sucesso!
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
           {/* Timeline */}
@@ -1911,35 +2117,68 @@ export function CommandPage() {
                 </div>
               ) : packageAvailability?.hasPackage ? (
                 <div className={`mb-4 p-3 rounded-lg border ${
-                  packageAvailability.remainingSessions === 1
-                    ? 'bg-amber-50 border-amber-300'
-                    : 'bg-emerald-50 border-emerald-200'
+                  useClientPackage
+                    ? packageAvailability.remainingSessions === 1
+                      ? 'bg-amber-50 border-amber-300'
+                      : 'bg-emerald-50 border-emerald-200'
+                    : 'bg-gray-50 border-gray-200'
                 }`}>
-                  {packageAvailability.remainingSessions === 1 ? (
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-amber-600" />
-                      <div>
-                        <p className="font-semibold text-amber-800">
-                          ⚠️ ÚLTIMA SESSÃO
-                        </p>
-                        <p className="text-sm text-amber-700">
-                          Esta é a última sessão disponível no pacote. Será consumida ao adicionar.
-                        </p>
-                      </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 flex-1">
+                      {useClientPackage ? (
+                        packageAvailability.remainingSessions === 1 ? (
+                          <>
+                            <AlertTriangle className="w-5 h-5 text-amber-600" />
+                            <div>
+                              <p className="font-semibold text-amber-800">
+                                ⚠️ ÚLTIMA SESSÃO do pacote
+                              </p>
+                              <p className="text-sm text-amber-700">
+                                Será consumida ao adicionar (R$ 0,00)
+                              </p>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <Gift className="w-5 h-5 text-emerald-600" />
+                            <div>
+                              <p className="font-semibold text-emerald-800">
+                                🎁 PACOTE: {packageAvailability.remainingSessions} sessões
+                              </p>
+                              <p className="text-sm text-emerald-700">
+                                Abater sessão do pacote (R$ 0,00)
+                              </p>
+                            </div>
+                          </>
+                        )
+                      ) : (
+                        <>
+                          <Gift className="w-5 h-5 text-gray-400" />
+                          <div>
+                            <p className="font-semibold text-gray-600">
+                              Pacote disponível ({packageAvailability.remainingSessions} sessões)
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              Não usar pacote - cobrar valor normal
+                            </p>
+                          </div>
+                        </>
+                      )}
                     </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <Gift className="w-5 h-5 text-emerald-600" />
-                      <div>
-                        <p className="font-semibold text-emerald-800">
-                          🎁 PACOTE: {packageAvailability.remainingSessions} sessões disponíveis
-                        </p>
-                        <p className="text-sm text-emerald-700">
-                          Este serviço será pago pelo pacote do cliente (R$ 0,00)
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => setUseClientPackage(!useClientPackage)}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        useClientPackage ? 'bg-emerald-500' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                          useClientPackage ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
                 </div>
               ) : null
             )}
@@ -2081,6 +2320,161 @@ export function CommandPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Editar Item */}
+      {showEditItemModal && editingItem && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-primary-100 rounded-full">
+                <Edit className="w-6 h-6 text-primary-600" />
+              </div>
+              <h2 className="text-lg font-semibold text-gray-900">Editar Item</h2>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+              <p className="text-sm text-gray-500">Item:</p>
+              <p className="font-semibold text-gray-900">{editingItem.description}</p>
+              <p className="text-sm text-gray-600">Quantidade: {editingItem.quantity}</p>
+            </div>
+
+            <form onSubmit={handleEditItem} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Valor Unitário
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">R$</span>
+                  <input
+                    type="text"
+                    value={editItemPrice}
+                    onChange={(e) => setEditItemPrice(e.target.value)}
+                    placeholder="0,00"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Desconto
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">R$</span>
+                  <input
+                    type="text"
+                    value={editItemDiscount}
+                    onChange={(e) => setEditItemDiscount(e.target.value)}
+                    placeholder="0,00"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  />
+                </div>
+              </div>
+
+              {/* Preview do novo valor */}
+              <div className="bg-blue-50 rounded-lg p-3 text-sm">
+                <div className="flex justify-between text-gray-600">
+                  <span>Valor unitário:</span>
+                  <span>R$ {editItemPrice || '0,00'}</span>
+                </div>
+                <div className="flex justify-between text-gray-600">
+                  <span>Desconto:</span>
+                  <span className="text-red-600">- R$ {editItemDiscount || '0,00'}</span>
+                </div>
+                <div className="flex justify-between font-semibold text-gray-900 border-t border-blue-200 pt-2 mt-2">
+                  <span>Total do item:</span>
+                  <span>
+                    {formatCurrency(
+                      (parseFloat(editItemPrice.replace(',', '.')) || 0) *
+                        (parseFloat(editingItem.quantity) || 1) -
+                        (parseFloat(editItemDiscount.replace(',', '.')) || 0)
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditItemModal(false);
+                    setEditingItem(null);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {actionLoading ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Encerrar Serviços */}
+      {showCloseServiceModal && command && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-orange-100 rounded-full">
+                <CheckCircle className="w-6 h-6 text-orange-600" />
+              </div>
+              <h2 className="text-lg font-semibold text-gray-900">Encerrar Serviços</h2>
+            </div>
+
+            <p className="text-gray-600 mb-4">
+              Deseja encerrar os serviços desta comanda?
+            </p>
+
+            <div className="bg-orange-50 rounded-lg p-4 mb-4 border border-orange-200">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-gray-600">Total da comanda:</span>
+                <span className="font-semibold text-gray-900">{formatCurrency(command.totalNet)}</span>
+              </div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-gray-600">Total pago:</span>
+                <span className="font-semibold text-green-600">{formatCurrency(totalPaid)}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t border-orange-200">
+                <span className="font-medium text-gray-700">Saldo restante:</span>
+                <span className={`font-bold text-lg ${remaining > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                  {formatCurrency(remaining)}
+                </span>
+              </div>
+            </div>
+
+            {remaining > 0 && (
+              <p className="text-sm text-orange-600 bg-orange-50 p-3 rounded-lg mb-4">
+                ⚠️ Após encerrar, a comanda ficará aguardando o pagamento de {formatCurrency(remaining)}.
+              </p>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCloseServiceModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleCloseService}
+                disabled={actionLoading}
+                className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+              >
+                {actionLoading ? 'Encerrando...' : 'Confirmar'}
+              </button>
+            </div>
           </div>
         </div>
       )}
