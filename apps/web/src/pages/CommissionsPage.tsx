@@ -97,7 +97,8 @@ export function CommissionsPage() {
 
       setSummary(summaryRes.data);
       setProfessionalSummaries(professionalsRes.data);
-      setTeam(teamRes.data.filter((m: TeamMember) => m.role === 'STYLIST' && m.active));
+      // Inclui STYLIST e qualquer usuário com isProfessional=true (ex: OWNER que também atende)
+      setTeam(teamRes.data.filter((m: TeamMember) => m.active && (m.role === 'STYLIST' || (m as any).isProfessional === true)));
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       setMessage({ type: 'error', text: 'Erro ao carregar dados de comissoes' });
