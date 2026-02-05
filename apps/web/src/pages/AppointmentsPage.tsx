@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Calendar,
   ChevronLeft,
@@ -26,9 +26,13 @@ import {
   Flag,
   CalendarX,
   Search,
+  SlidersHorizontal,
 } from 'lucide-react';
 import api, { getTriageForAppointment } from '../services/api';
 import { TriageSummary } from '../components/TriageSummary';
+import { ActionSheet } from '../components/ActionSheet';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+import { APP_CONFIG } from '../config/app_config';
 
 // ==================== TYPES ====================
 
@@ -202,6 +206,12 @@ export function AppointmentsPage() {
   const [filterProfessional, setFilterProfessional] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
+  // Mobile state
+  const isMobile = useMediaQuery('(max-width: 767px)');
+  const [showFilters, setShowFilters] = useState(false);
+  const [currentScrollIndex, setCurrentScrollIndex] = useState(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -318,11 +328,18 @@ export function AppointmentsPage() {
       setServices(servicesRes.data || []);
 
       // Sempre carregar profissionais via /team para garantir lista completa
-      // Inclui STYLIST e qualquer usuário com isProfessional=true (ex: OWNER que também atende)
+      // Inclui STYLIST, qualquer usuário com isProfessional=true, e IDs blindados em ALWAYS_SHOW_IN_AGENDA
       try {
         const teamRes = await api.get('/team');
         const activeProfessionals = (teamRes.data || [])
-          .filter((u: any) => u.active && (u.role === 'STYLIST' || u.isProfessional === true))
+          .filter((u: any) => {
+            // Sempre incluir IDs blindados (ex: Camila Sanches OWNER)
+            if (APP_CONFIG.ALWAYS_SHOW_IN_AGENDA.includes(u.id)) {
+              return true;
+            }
+            // Incluir STYLIST ou qualquer usuário com isProfessional=true
+            return u.active && (u.role === 'STYLIST' || u.isProfessional === true);
+          })
           .map((u: any) => ({ id: u.id, name: u.name }));
         if (activeProfessionals.length > 0) {
           setProfessionals(activeProfessionals);
@@ -720,110 +737,144 @@ export function AppointmentsPage() {
 
   // ==================== RENDER FUNCTIONS ====================
 
+  // Handle scroll for mobile indicators
+  const handleScroll = () => {
+    if (scrollContainerRef.current && isMobile) {
+      const container = scrollContainerRef.current;
+      const scrollLeft = container.scrollLeft;
+      const columnWidth = container.clientWidth - 64; // Subtract time column width
+      const index = Math.round(scrollLeft / columnWidth);
+      setCurrentScrollIndex(index);
+    }
+  };
+
   const renderDayView = () => {
     const timeSlots = getTimeSlots();
     const pixelsPerHour = 60;
 
     return (
-      <div className="flex overflow-x-auto">
-        {/* Time column */}
-        <div className="flex-shrink-0 w-16 bg-gray-50 border-r">
-          <div className="h-12 border-b" /> {/* Header spacer */}
-          {timeSlots.map(time => (
-            <div
-              key={time}
-              className="h-[30px] text-xs text-gray-500 text-right pr-2 border-b border-gray-100"
-            >
-              {time}
-            </div>
-          ))}
-        </div>
-
-        {/* Professional columns */}
-        {professionals.map(professional => {
-          const profAppointments = filteredAppointments.filter(
-            apt => apt.professionalId === professional.id && apt.date === selectedDate
-          );
-          const profBlocks = blocks.filter(
-            b => b.professionalId === professional.id
-          );
-
-          return (
-            <div key={professional.id} className="flex-1 min-w-[200px] border-r">
-              {/* Header */}
-              <div className="h-12 border-b bg-gray-50 px-2 flex items-center justify-center">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium">
-                    {professional.name.charAt(0)}
-                  </div>
-                  <span className="text-sm font-medium truncate">{professional.name}</span>
-                </div>
+      <div className="relative">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex overflow-x-auto snap-x snap-mandatory md:snap-none"
+        >
+          {/* Time column */}
+          <div className="flex-shrink-0 w-16 bg-gray-50 border-r sticky left-0 z-10">
+            <div className="h-12 border-b bg-gray-50" /> {/* Header spacer */}
+            {timeSlots.map(time => (
+              <div
+                key={time}
+                className="h-[30px] text-xs text-gray-500 text-right pr-2 border-b border-gray-100 bg-gray-50"
+              >
+                {time}
               </div>
+            ))}
+          </div>
 
-              {/* Time grid */}
-              <div className="relative">
-                {timeSlots.map(time => (
-                  <div
-                    key={time}
-                    className="h-[30px] border-b border-gray-100 hover:bg-blue-50 cursor-pointer"
-                    onClick={() => handleTimeSlotClick(professional.id, time)}
-                  />
-                ))}
+          {/* Professional columns */}
+          {professionals.map(professional => {
+            const profAppointments = filteredAppointments.filter(
+              apt => apt.professionalId === professional.id && apt.date === selectedDate
+            );
+            const profBlocks = blocks.filter(
+              b => b.professionalId === professional.id
+            );
 
-                {/* Render blocks */}
-                {profBlocks.map(block => {
-                  if (block.allDay) {
+            return (
+              <div
+                key={professional.id}
+                className="w-[calc(100vw-4rem)] flex-shrink-0 snap-center md:w-auto md:flex-1 md:min-w-[200px] border-r"
+              >
+                {/* Header */}
+                <div className="h-12 border-b bg-gray-50 px-2 flex items-center justify-center">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium">
+                      {professional.name.charAt(0)}
+                    </div>
+                    <span className="text-sm font-medium truncate">{professional.name}</span>
+                  </div>
+                </div>
+
+                {/* Time grid */}
+                <div className="relative">
+                  {timeSlots.map(time => (
+                    <div
+                      key={time}
+                      className="h-[30px] border-b border-gray-100 hover:bg-blue-50 cursor-pointer"
+                      onClick={() => handleTimeSlotClick(professional.id, time)}
+                    />
+                  ))}
+
+                  {/* Render blocks */}
+                  {profBlocks.map(block => {
+                    if (block.allDay) {
+                      return (
+                        <div
+                          key={block.id}
+                          className="absolute left-0 right-0 top-0 bg-gray-200 bg-opacity-50 bg-[repeating-linear-gradient(45deg,transparent,transparent_5px,rgba(0,0,0,0.05)_5px,rgba(0,0,0,0.05)_10px)] z-10 pointer-events-none"
+                          style={{ height: '100%' }}
+                        >
+                          <div className="p-1 text-xs text-gray-600 font-medium">
+                            {block.title}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+
+                  {/* Render appointments */}
+                  {profAppointments.map(apt => {
+                    const startMinutes = timeToMinutes(apt.time) - timeToMinutes('06:00');
+                    const top = minutesToPixels(startMinutes, pixelsPerHour);
+                    const height = minutesToPixels(apt.duration, pixelsPerHour);
+                    const colors = STATUS_COLORS[apt.status] || STATUS_COLORS.SCHEDULED;
+                    const priorityClass = PRIORITY_COLORS[apt.priority] || '';
+
                     return (
                       <div
-                        key={block.id}
-                        className="absolute left-0 right-0 top-0 bg-gray-200 bg-opacity-50 bg-[repeating-linear-gradient(45deg,transparent,transparent_5px,rgba(0,0,0,0.05)_5px,rgba(0,0,0,0.05)_10px)] z-10 pointer-events-none"
-                        style={{ height: '100%' }}
+                        key={apt.id}
+                        className={`absolute left-1 right-1 ${colors.bg} ${colors.border} border rounded-md p-1 cursor-pointer overflow-hidden ${priorityClass}`}
+                        style={{ top: `${top}px`, height: `${Math.max(height, 24)}px` }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAppointmentClick(apt);
+                        }}
+                        title={`${apt.clientName || 'Cliente não informado'} - ${apt.service}\n${apt.time} (${apt.duration}min)`}
                       >
-                        <div className="p-1 text-xs text-gray-600 font-medium">
-                          {block.title}
-                        </div>
+                        <div className="text-xs font-medium truncate">{apt.clientName || 'Cliente'}</div>
+                        {height > 30 && (
+                          <div className="text-xs text-gray-600 truncate">{apt.service}</div>
+                        )}
+                        {height > 50 && (
+                          <div className="text-xs text-gray-500">{apt.time}</div>
+                        )}
+                        {apt.priority === 'VIP' && (
+                          <Flag className="absolute top-1 right-1 w-3 h-3 text-purple-500" />
+                        )}
                       </div>
                     );
-                  }
-                  return null;
-                })}
-
-                {/* Render appointments */}
-                {profAppointments.map(apt => {
-                  const startMinutes = timeToMinutes(apt.time) - timeToMinutes('06:00');
-                  const top = minutesToPixels(startMinutes, pixelsPerHour);
-                  const height = minutesToPixels(apt.duration, pixelsPerHour);
-                  const colors = STATUS_COLORS[apt.status] || STATUS_COLORS.SCHEDULED;
-                  const priorityClass = PRIORITY_COLORS[apt.priority] || '';
-
-                  return (
-                    <div
-                      key={apt.id}
-                      className={`absolute left-1 right-1 ${colors.bg} ${colors.border} border rounded-md p-1 cursor-pointer overflow-hidden ${priorityClass}`}
-                      style={{ top: `${top}px`, height: `${Math.max(height, 24)}px` }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAppointmentClick(apt);
-                      }}
-                      title={`${apt.clientName || 'Cliente não informado'} - ${apt.service}\n${apt.time} (${apt.duration}min)`}
-                    >
-                      <div className="text-xs font-medium truncate">{apt.clientName || 'Cliente'}</div>
-                      {height > 30 && (
-                        <div className="text-xs text-gray-600 truncate">{apt.service}</div>
-                      )}
-                      {height > 50 && (
-                        <div className="text-xs text-gray-500">{apt.time}</div>
-                      )}
-                      {apt.priority === 'VIP' && (
-                        <Flag className="absolute top-1 right-1 w-3 h-3 text-purple-500" />
-                      )}
-                    </div>
-                  );
-                })}
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+
+        {/* Mobile scroll indicators (dots) */}
+        {isMobile && professionals.length > 1 && (
+          <div className="flex justify-center gap-1.5 py-3 md:hidden">
+            {professionals.map((_, index) => (
+              <div
+                key={index}
+                className={`w-2 h-2 rounded-full transition-colors ${
+                  index === currentScrollIndex ? 'bg-primary-600' : 'bg-gray-300'
+                }`}
+              />
+            ))}
+          </div>
+        )}
       </div>
     );
   };
@@ -1731,7 +1782,64 @@ export function AppointmentsPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b px-4 py-3">
-        <div className="flex items-center justify-between flex-wrap gap-4">
+        {/* Mobile Header */}
+        <div className="md:hidden">
+          <div className="flex items-center justify-between mb-3">
+            <h1 className="text-lg font-semibold flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-blue-600" />
+              Agenda
+            </h1>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowFilters(true)}
+                className="p-2 hover:bg-gray-100 rounded-lg border border-gray-200"
+              >
+                <SlidersHorizontal className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => {
+                  setFormData({ ...formData, date: selectedDate });
+                  setShowCreateModal(true);
+                }}
+                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Mobile Navigation */}
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => handleNavigate('prev')}
+              className="p-2 hover:bg-gray-100 rounded-lg"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <div className="text-center">
+              <div className="text-sm font-medium text-gray-900">
+                {viewMode === 'day' && new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })}
+                {viewMode === 'week' && `Semana de ${formatShortDate(selectedDate)}`}
+                {viewMode === 'month' && new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+              </div>
+              <button
+                onClick={() => handleNavigate('today')}
+                className="text-xs text-blue-600"
+              >
+                Ir para hoje
+              </button>
+            </div>
+            <button
+              onClick={() => handleNavigate('next')}
+              className="p-2 hover:bg-gray-100 rounded-lg"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Desktop Header */}
+        <div className="hidden md:flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-4">
             <h1 className="text-xl font-semibold flex items-center gap-2">
               <Calendar className="w-6 h-6 text-blue-600" />
@@ -1866,6 +1974,95 @@ export function AppointmentsPage() {
       {showDetailsModal && renderDetailsModal()}
       {showBlocksModal && renderBlocksModal()}
       {showBlockFormModal && renderBlockFormModal()}
+
+      {/* Mobile Filters ActionSheet */}
+      <ActionSheet
+        isOpen={showFilters}
+        onClose={() => setShowFilters(false)}
+        title="Filtros"
+      >
+        {/* Date Picker */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Data</label>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-4 py-3"
+          />
+        </div>
+
+        {/* View Mode */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Visualizacao</label>
+          <div className="grid grid-cols-3 gap-2">
+            {(['day', 'week', 'month'] as ViewMode[]).map(mode => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                className={`px-4 py-2 text-sm rounded-lg border ${
+                  viewMode === mode
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {mode === 'day' ? 'Dia' : mode === 'week' ? 'Semana' : 'Mes'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Professional Filter */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Profissional</label>
+          <select
+            value={filterProfessional}
+            onChange={(e) => setFilterProfessional(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-4 py-3"
+          >
+            <option value="all">Todos os profissionais</option>
+            {professionals.map(prof => (
+              <option key={prof.id} value={prof.id}>{prof.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Status Filter */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-4 py-3"
+          >
+            <option value="all">Todos os status</option>
+            {Object.entries(STATUS_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+          <button
+            onClick={() => setShowBlocksModal(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg hover:bg-gray-50"
+          >
+            <Settings className="w-4 h-4" />
+            Folgas
+          </button>
+          <button
+            onClick={() => {
+              loadData();
+              setShowFilters(false);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Atualizar
+          </button>
+        </div>
+      </ActionSheet>
     </div>
   );
 }
