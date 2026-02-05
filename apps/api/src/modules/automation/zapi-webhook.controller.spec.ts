@@ -197,41 +197,40 @@ describe('ZapiWebhookController - Pure Functions (ALFA.4)', () => {
       expect(result.reason).toBe('is_newsletter');
     });
 
-    it('should check conditions in priority order (no_text > from_me > is_group > is_newsletter)', () => {
-      // If multiple conditions are true, no_text should be returned first
+    it('should check conditions in priority order (from_me > is_group > is_newsletter > no_text)', () => {
+      // If fromMe is true, return from_me first (regardless of other conditions)
       const payload1: ZapiPayload = {
         fromMe: true,
         isGroup: true,
         isNewsletter: true,
       };
-      expect(shouldIgnorePayload(payload1).reason).toBe('no_text');
+      expect(shouldIgnorePayload(payload1).reason).toBe('from_me');
 
-      // If has text but fromMe, return from_me
+      // If not fromMe but is group, return is_group
       const payload2: ZapiPayload = {
-        text: { message: 'Hi' },
-        fromMe: true,
-        isGroup: true,
-        isNewsletter: true,
-      };
-      expect(shouldIgnorePayload(payload2).reason).toBe('from_me');
-
-      // If has text, not fromMe, but is group, return is_group
-      const payload3: ZapiPayload = {
         text: { message: 'Hi' },
         fromMe: false,
         isGroup: true,
         isNewsletter: true,
       };
-      expect(shouldIgnorePayload(payload3).reason).toBe('is_group');
+      expect(shouldIgnorePayload(payload2).reason).toBe('is_group');
 
-      // If has text, not fromMe, not group, but newsletter, return is_newsletter
-      const payload4: ZapiPayload = {
+      // If not fromMe, not group, but newsletter, return is_newsletter
+      const payload3: ZapiPayload = {
         text: { message: 'Hi' },
         fromMe: false,
         isGroup: false,
         isNewsletter: true,
       };
-      expect(shouldIgnorePayload(payload4).reason).toBe('is_newsletter');
+      expect(shouldIgnorePayload(payload3).reason).toBe('is_newsletter');
+
+      // If none of the above but no text, return no_text
+      const payload4: ZapiPayload = {
+        fromMe: false,
+        isGroup: false,
+        isNewsletter: false,
+      };
+      expect(shouldIgnorePayload(payload4).reason).toBe('no_text');
     });
   });
 });

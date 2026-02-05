@@ -104,9 +104,9 @@ describe('ResponseComposerService - Pure Functions (DELTA)', () => {
   // getIntroduction
   // =====================================================
   describe('getIntroduction', () => {
-    it('should include Alexis and salon name', () => {
+    it('should include Alexia and salon name', () => {
       const intro = getIntroduction('Salao da Maria');
-      expect(intro).toContain('Alexis');
+      expect(intro).toContain('Alexia');
       expect(intro).toContain('Salao da Maria');
     });
   });
