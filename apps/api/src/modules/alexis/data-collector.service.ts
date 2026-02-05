@@ -92,11 +92,15 @@ export class DataCollectorService {
         .from(products)
         .where(and(eq(products.salonId, salonId), eq(products.active, true)));
 
-      // Profissionais ativos
+      // Profissionais ativos (STYLIST ou isProfessional=true)
       const professionals = await db
         .select({ id: users.id, name: users.name })
         .from(users)
-        .where(and(eq(users.salonId, salonId), eq(users.role, 'STYLIST'), eq(users.active, true)));
+        .where(and(
+          eq(users.salonId, salonId),
+          eq(users.active, true),
+          sql`(${users.role} = 'STYLIST' OR ${users.isProfessional} = true)`
+        ));
 
       // Cliente (se existir)
       let clientData = null;

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
+import { APP_CONFIG } from '../config/app_config';
 
 interface Commission {
   id: string;
@@ -97,8 +98,11 @@ export function CommissionsPage() {
 
       setSummary(summaryRes.data);
       setProfessionalSummaries(professionalsRes.data);
-      // Inclui STYLIST e qualquer usuário com isProfessional=true (ex: OWNER que também atende)
-      setTeam(teamRes.data.filter((m: TeamMember) => m.active && (m.role === 'STYLIST' || (m as any).isProfessional === true)));
+      // Inclui STYLIST, isProfessional=true, e IDs blindados em ALWAYS_SHOW_IN_AGENDA
+      setTeam(teamRes.data.filter((m: TeamMember) => {
+        if (APP_CONFIG.ALWAYS_SHOW_IN_AGENDA.includes(m.id)) return true;
+        return m.active && (m.role === 'STYLIST' || (m as any).isProfessional === true);
+      }));
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       setMessage({ type: 'error', text: 'Erro ao carregar dados de comissoes' });

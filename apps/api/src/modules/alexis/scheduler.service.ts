@@ -1,7 +1,7 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { db } from '../../database/connection';
 import { appointments, services, users, clients, professionalServices } from '../../database/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { SchedulesService, AvailabilityResult } from '../schedules/schedules.service';
 
 /**
@@ -60,11 +60,15 @@ export class AlexisSchedulerService {
         return [];
       }
 
-      // Busca profissionais ativos do salão
+      // Busca profissionais ativos do salão (STYLIST ou isProfessional=true)
       const allProfessionals = await db
         .select()
         .from(users)
-        .where(and(eq(users.salonId, salonId), eq(users.role, 'STYLIST'), eq(users.active, true)));
+        .where(and(
+          eq(users.salonId, salonId),
+          eq(users.active, true),
+          sql`(${users.role} = 'STYLIST' OR ${users.isProfessional} = true)`
+        ));
 
       // Filtra por professional_services (se houver assignments para o serviço)
       const enabledIds = await db

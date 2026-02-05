@@ -139,23 +139,36 @@ export class AppointmentsController {
 
   /**
    * POST /appointments - Criar agendamento
+   * STYLIST pode criar agendamentos para si mesmo
    */
   @Post()
-  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
   async create(@CurrentUser() user: any, @Body() dto: CreateAppointmentDto) {
+    // STYLISTs só podem criar agendamentos para si mesmos
+    if (user.role === 'STYLIST' && dto.professionalId !== user.id) {
+      dto.professionalId = user.id;
+    }
     return this.appointmentsService.create(user.salonId, dto as any, user.id);
   }
 
   /**
    * PATCH /appointments/:id - Atualizar agendamento
+   * STYLIST pode atualizar seus próprios agendamentos
    */
   @Patch(':id')
-  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
   async update(
     @CurrentUser() user: any,
     @Param('id') id: string,
     @Body() dto: UpdateAppointmentDto,
   ) {
+    // STYLIST só pode atualizar seus próprios agendamentos
+    if (user.role === 'STYLIST') {
+      const apt = await this.appointmentsService.findById(id, user.salonId);
+      if (apt && apt.professionalId !== user.id) {
+        throw new NotFoundException('Agendamento não encontrado');
+      }
+    }
     const result = await this.appointmentsService.update(id, user.salonId, dto as any, user.id);
     if (!result) {
       throw new NotFoundException('Agendamento não encontrado');
@@ -165,14 +178,22 @@ export class AppointmentsController {
 
   /**
    * DELETE /appointments/:id - Cancelar agendamento
+   * STYLIST pode cancelar seus próprios agendamentos
    */
   @Delete(':id')
-  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
   async cancel(
     @CurrentUser() user: any,
     @Param('id') id: string,
     @Body() dto: CancelAppointmentDto,
   ) {
+    // STYLIST só pode cancelar seus próprios agendamentos
+    if (user.role === 'STYLIST') {
+      const apt = await this.appointmentsService.findById(id, user.salonId);
+      if (apt && apt.professionalId !== user.id) {
+        throw new NotFoundException('Agendamento não encontrado');
+      }
+    }
     const result = await this.appointmentsService.cancel(id, user.salonId, user.id, dto.reason);
     if (!result) {
       throw new NotFoundException('Agendamento não encontrado');
@@ -205,7 +226,7 @@ export class AppointmentsController {
    * POST /appointments/check-availability - Verificar disponibilidade
    */
   @Post('check-availability')
-  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
   async checkAvailability(@CurrentUser() user: any, @Body() dto: CheckAvailabilityDto) {
     return this.appointmentsService.checkAvailability(
       user.salonId,
@@ -220,7 +241,7 @@ export class AppointmentsController {
    * GET /appointments/next-available/:serviceId - Próximo horário disponível
    */
   @Get('next-available/:serviceId')
-  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
   async findNextAvailable(
     @CurrentUser() user: any,
     @Param('serviceId', ParseIntPipe) serviceId: number,
@@ -235,7 +256,7 @@ export class AppointmentsController {
    * POST /appointments/:id/confirm - Confirmar agendamento
    */
   @Post(':id/confirm')
-  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
   async confirm(
     @CurrentUser() user: any,
     @Param('id') id: string,
@@ -278,7 +299,7 @@ export class AppointmentsController {
    * POST /appointments/:id/no-show - Marcar como não compareceu
    */
   @Post(':id/no-show')
-  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
   async noShow(@CurrentUser() user: any, @Param('id') id: string) {
     const result = await this.appointmentsService.noShow(id, user.salonId);
     if (!result) {
@@ -291,7 +312,7 @@ export class AppointmentsController {
    * POST /appointments/:id/reschedule - Reagendar
    */
   @Post(':id/reschedule')
-  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
   async reschedule(
     @CurrentUser() user: any,
     @Param('id') id: string,
@@ -315,7 +336,7 @@ export class AppointmentsController {
    * POST /appointments/:id/convert-to-command - Converter em comanda
    */
   @Post(':id/convert-to-command')
-  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
   async convertToCommand(@CurrentUser() user: any, @Param('id') id: string) {
     return this.appointmentsService.convertToCommand(id, user.salonId, user.id);
   }

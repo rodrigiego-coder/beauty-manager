@@ -178,11 +178,17 @@ export class AppointmentsService {
   async findByDay(salonId: string, date: string): Promise<DaySchedule> {
     const dayAppointments = await this.findAll(salonId, { date });
 
-    // Get all active professionals
+    // Get all active professionals (STYLIST role OR isProfessional=true for OWNERs who also work)
     const professionals = await this.db
       .select({ id: users.id, name: users.name })
       .from(users)
-      .where(and(eq(users.salonId, salonId), eq(users.role, 'STYLIST'), eq(users.active, true)));
+      .where(
+        and(
+          eq(users.salonId, salonId),
+          eq(users.active, true),
+          sql`(${users.role} = 'STYLIST' OR ${users.isProfessional} = true)`
+        )
+      );
 
     // Get blocks for this day
     const blocks = await this.getBlocksForDate(salonId, date);
@@ -206,11 +212,17 @@ export class AppointmentsService {
 
     const weekAppointments = await this.findAll(salonId, { startDate, endDate });
 
-    // Get professionals once
+    // Get professionals once (STYLIST role OR isProfessional=true)
     const professionals = await this.db
       .select({ id: users.id, name: users.name })
       .from(users)
-      .where(and(eq(users.salonId, salonId), eq(users.role, 'STYLIST'), eq(users.active, true)));
+      .where(
+        and(
+          eq(users.salonId, salonId),
+          eq(users.active, true),
+          sql`(${users.role} = 'STYLIST' OR ${users.isProfessional} = true)`
+        )
+      );
 
     // Get all blocks for the week
     const allBlocks = await this.getBlocksForDateRange(salonId, startDate, endDate);
@@ -1143,13 +1155,14 @@ Quer agendar a próxima? Responda *AGENDAR*! 😊`;
         .limit(1);
       professionals = prof;
     } else {
+      // Include STYLIST role OR isProfessional=true
       professionals = await this.db
         .select({ id: users.id, name: users.name })
         .from(users)
         .where(and(
           eq(users.salonId, salonId),
-          eq(users.role, 'STYLIST'),
           eq(users.active, true),
+          sql`(${users.role} = 'STYLIST' OR ${users.isProfessional} = true)`,
         ));
     }
 
