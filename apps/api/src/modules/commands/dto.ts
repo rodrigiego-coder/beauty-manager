@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsNumberString,
   IsEnum,
+  IsBoolean,
   Min,
   ValidateIf,
   Matches,
@@ -105,6 +106,12 @@ export class AddItemDto {
   @Matches(UUID_REGEX, { message: 'ID da variante deve ser um UUID valido' })
   @IsOptional()
   variantId?: string;
+
+  // Controle de pacote de sessões
+  @ApiPropertyOptional({ description: 'Indica se deve usar sessão do pacote do cliente (default: auto-detecta)', example: true })
+  @IsBoolean({ message: 'paidByPackage deve ser um booleano' })
+  @IsOptional()
+  paidByPackage?: boolean;
 }
 
 // DTO para atualizar item
