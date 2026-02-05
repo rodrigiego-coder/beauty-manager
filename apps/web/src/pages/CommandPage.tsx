@@ -311,6 +311,11 @@ export function CommandPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showReopenModal, setShowReopenModal] = useState(false);
+  const [showPendingPaymentModal, setShowPendingPaymentModal] = useState(false);
+
+  // Form de pagamento pendente
+  const [pendingDueDate, setPendingDueDate] = useState('');
+  const [pendingNotes, setPendingNotes] = useState('');
 
   // Payment methods e destinations da API
   const [availablePaymentMethods, setAvailablePaymentMethods] = useState<PaymentMethod[]>([]);
@@ -955,6 +960,38 @@ export function CommandPage() {
     }
   };
 
+  // Ação: Fechar com Pagamento Pendente
+  const handleClosePendingPayment = async () => {
+    if (!command) return;
+
+    const paidAmount = command.payments?.reduce((sum, p) => sum + parseFloat(p.amount), 0) || 0;
+    const remaining = parseFloat(command.totalNet) - paidAmount;
+    if (remaining <= 0) {
+      alert('Nao ha valor pendente. Use o fechamento normal.');
+      return;
+    }
+
+    if (!confirm(`Deseja fechar esta comanda com pagamento pendente de R$ ${remaining.toFixed(2).replace('.', ',')}? Sera gerada uma conta a receber.`)) return;
+
+    try {
+      setActionLoading(true);
+      await api.post(`/commands/${command.id}/close-pending`, {
+        dueDate: pendingDueDate || null,
+        notes: pendingNotes || null,
+      });
+
+      setShowPendingPaymentModal(false);
+      setPendingDueDate('');
+      setPendingNotes('');
+      await loadCommand();
+      alert('Comanda fechada com pagamento pendente. Uma conta a receber foi gerada.');
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Erro ao fechar comanda com pagamento pendente');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Ação: Adicionar Item
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1222,6 +1259,17 @@ export function CommandPage() {
                     className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50"
                   >
                     Fechar Comanda
+                  </button>
+                )}
+                {/* Botão Pagamento Pendente - só aparece se há valor restante */}
+                {(command.status === 'IN_SERVICE' || command.status === 'WAITING_PAYMENT') &&
+                 parseFloat(command.totalNet) > totalPaid && (
+                  <button
+                    onClick={() => setShowPendingPaymentModal(true)}
+                    disabled={actionLoading}
+                    className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm font-medium disabled:opacity-50"
+                  >
+                    Pgto Pendente
                   </button>
                 )}
               </>
@@ -2566,6 +2614,78 @@ export function CommandPage() {
           onSave={handleSaveHairProfile}
           existingProfile={clientHairProfile}
         />
+      )}
+
+      {/* Modal Pagamento Pendente */}
+      {showPendingPaymentModal && command && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-yellow-100 rounded-full">
+                <Receipt className="w-6 h-6 text-yellow-600" />
+              </div>
+              <h2 className="text-lg font-semibold text-gray-900">Pagamento Pendente</h2>
+            </div>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+              <p className="text-yellow-800 font-medium">
+                Valor pendente: R$ {(parseFloat(command.totalNet) - totalPaid).toFixed(2).replace('.', ',')}
+              </p>
+              <p className="text-yellow-700 text-sm mt-1">
+                Uma conta a receber sera gerada para este valor.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Data de Vencimento (opcional)
+                </label>
+                <input
+                  type="date"
+                  value={pendingDueDate}
+                  onChange={(e) => setPendingDueDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Observacoes (opcional)
+                </label>
+                <textarea
+                  value={pendingNotes}
+                  onChange={(e) => setPendingNotes(e.target.value)}
+                  placeholder="Observacoes sobre o pagamento pendente..."
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPendingPaymentModal(false);
+                  setPendingDueDate('');
+                  setPendingNotes('');
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleClosePendingPayment}
+                disabled={actionLoading}
+                className="flex-1 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50"
+              >
+                {actionLoading ? 'Processando...' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal Reabrir Comanda */}

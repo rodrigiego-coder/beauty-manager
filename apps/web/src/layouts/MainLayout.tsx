@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
+import { BottomNavigation } from '../components/BottomNavigation';
 import { SupportModeBanner } from '../components/SupportModeBanner';
 import { ApiRetryBanner } from '../components/ApiRetryBanner';
-import { Bell, LogOut, User, Settings, ChevronDown } from 'lucide-react';
+import { Bell, LogOut, User, Settings, ChevronDown, Menu } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export function MainLayout() {
@@ -11,6 +12,7 @@ export function MainLayout() {
   const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const getInitials = (name: string) => {
     return name
@@ -54,13 +56,24 @@ export function MainLayout() {
     <div className="min-h-screen bg-gray-50">
       <SupportModeBanner />
       <ApiRetryBanner />
-      <Sidebar />
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <div className="pl-64">
+      {/* Conteúdo principal - padding responsivo */}
+      <div className="lg:pl-64">
         <header className="sticky top-0 z-40 bg-white border-b border-gray-200">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div></div>
-            <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between px-4 sm:px-6 py-4">
+            {/* Botão hamburger - visível apenas em mobile */}
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors lg:hidden"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+
+            {/* Espaço vazio em desktop */}
+            <div className="hidden lg:block"></div>
+
+            <div className="flex items-center gap-2 sm:gap-4">
               <button className="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="w-5 h-5" />
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
@@ -69,7 +82,7 @@ export function MainLayout() {
               <div className="relative">
                 <button
                   onClick={() => setShowMenu(!showMenu)}
-                  className="flex items-center gap-3 p-1 pr-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="flex items-center gap-2 sm:gap-3 p-1 pr-2 rounded-lg hover:bg-gray-100 transition-colors"
                 >
                   <div className="text-right hidden sm:block">
                     <p className="text-sm font-medium text-gray-900">{userName}</p>
@@ -78,7 +91,7 @@ export function MainLayout() {
                   <div className="w-9 h-9 bg-primary-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
                     {userInitials}
                   </div>
-                  <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${showMenu ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform hidden sm:block ${showMenu ? 'rotate-180' : ''}`} />
                 </button>
 
                 {showMenu && (
@@ -129,10 +142,14 @@ export function MainLayout() {
           </div>
         </header>
 
-        <main className="p-6">
+        {/* Main content - padding bottom em mobile para não sobrepor bottom nav */}
+        <main className="p-4 sm:p-6 pb-20 lg:pb-6">
           <Outlet />
         </main>
       </div>
+
+      {/* Bottom Navigation - apenas mobile */}
+      <BottomNavigation onMenuClick={() => setSidebarOpen(true)} />
     </div>
   );
 }

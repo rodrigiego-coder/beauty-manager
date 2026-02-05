@@ -28,8 +28,10 @@ import {
   Bot,
   User,
   Clock,
+  Receipt,
   CalendarOff,
   ClipboardList,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
@@ -43,6 +45,11 @@ interface NavItem {
   roles: UserRole[]; // Roles que podem ver este item
 }
 
+interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST'] },
   { name: 'Meu Painel', href: '/meu-painel', icon: User, roles: ['STYLIST', 'MANAGER', 'OWNER'] },
@@ -54,6 +61,7 @@ const navigation: NavItem[] = [
   { name: 'Servicos', href: '/servicos', icon: Scissors, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
   { name: 'Comissoes', href: '/comissoes', icon: Percent, roles: ['OWNER', 'MANAGER'] },
   { name: 'Financeiro', href: '/financeiro', icon: DollarSign, roles: ['OWNER', 'MANAGER'] },
+  { name: 'Contas a Receber', href: '/contas-a-receber', icon: Receipt, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
   { name: 'Produtos', href: '/produtos', icon: Package, roles: ['OWNER', 'MANAGER'] },
   { name: 'Assinaturas', href: '/assinaturas-produtos', icon: Repeat, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST'] },
   { name: 'Entregas', href: '/assinaturas-produtos/entregas', icon: Truck, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
@@ -79,7 +87,7 @@ const bottomNavigation: NavItem[] = [
   { name: 'Configuracoes', href: '/configuracoes', icon: Settings, roles: ['OWNER', 'MANAGER'] },
 ];
 
-export function Sidebar() {
+export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [cashOpen, setCashOpen] = useState<boolean | null>(null);
@@ -103,6 +111,11 @@ export function Sidebar() {
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const handleNavClick = () => {
+    // Fecha o menu em mobile ao clicar em um link
+    onClose();
   };
 
   const getUserInitials = () => {
@@ -136,81 +149,110 @@ export function Sidebar() {
   const filteredBottomNav = bottomNavigation.filter((item) => item.roles.includes(userRole));
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 text-white flex flex-col">
-      <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-800">
-        <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center">
-          <Sparkles className="w-6 h-6 text-white" />
-        </div>
-        <div>
-          <h1 className="font-bold text-lg">Beauty Manager</h1>
-          <p className="text-xs text-gray-400">Gestao Inteligente</p>
-        </div>
-      </div>
+    <>
+      {/* Backdrop para mobile */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={onClose}
+        />
+      )}
 
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {filteredNavigation.map((item) => (
-          <NavLink
-            key={item.name}
-            to={item.href}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-primary-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-              }`
-            }
-          >
-            <item.icon className="w-5 h-5" />
-            {item.name}
-            {item.name === 'Caixa' && cashOpen !== null && (
-              <span
-                className={`ml-auto w-2.5 h-2.5 rounded-full ${
-                  cashOpen ? 'bg-green-500' : 'bg-red-500'
-                }`}
-                title={cashOpen ? 'Caixa aberto' : 'Caixa fechado'}
-              />
-            )}
-          </NavLink>
-        ))}
-      </nav>
-
-      <div className="px-3 py-4 border-t border-gray-800 space-y-1">
-        {filteredBottomNav.map((item) => (
-          <NavLink
-            key={item.name}
-            to={item.href}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full ${
-                isActive
-                  ? 'bg-primary-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-              }`
-            }
-          >
-            <item.icon className="w-5 h-5" />
-            {item.name}
-          </NavLink>
-        ))}
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors w-full"
-        >
-          <LogOut className="w-5 h-5" />
-          Sair
-        </button>
-      </div>
-
-      <div className="px-4 py-4 border-t border-gray-800">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary-600 rounded-full flex items-center justify-center text-sm font-bold">
-            {getUserInitials()}
+      {/* Sidebar */}
+      <aside
+        className={`
+          fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 text-white flex flex-col
+          transform transition-transform duration-300 ease-in-out
+          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+          lg:translate-x-0
+        `}
+      >
+        {/* Header com botão de fechar em mobile */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center">
+              <Sparkles className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="font-bold text-lg">Beauty Manager</h1>
+              <p className="text-xs text-gray-400">Gestao Inteligente</p>
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{user?.name || 'Usuario'}</p>
-            <p className="text-xs text-gray-400 truncate">{getRoleLabel()}</p>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-gray-800 transition-colors lg:hidden"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          {filteredNavigation.map((item) => (
+            <NavLink
+              key={item.name}
+              to={item.href}
+              onClick={handleNavClick}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-primary-600 text-white'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                }`
+              }
+            >
+              <item.icon className="w-5 h-5" />
+              {item.name}
+              {item.name === 'Caixa' && cashOpen !== null && (
+                <span
+                  className={`ml-auto w-2.5 h-2.5 rounded-full ${
+                    cashOpen ? 'bg-green-500' : 'bg-red-500'
+                  }`}
+                  title={cashOpen ? 'Caixa aberto' : 'Caixa fechado'}
+                />
+              )}
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="px-3 py-4 border-t border-gray-800 space-y-1">
+          {filteredBottomNav.map((item) => (
+            <NavLink
+              key={item.name}
+              to={item.href}
+              onClick={handleNavClick}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors w-full ${
+                  isActive
+                    ? 'bg-primary-600 text-white'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                }`
+              }
+            >
+              <item.icon className="w-5 h-5" />
+              {item.name}
+            </NavLink>
+          ))}
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white transition-colors w-full"
+          >
+            <LogOut className="w-5 h-5" />
+            Sair
+          </button>
+        </div>
+
+        <div className="px-4 py-4 border-t border-gray-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-primary-600 rounded-full flex items-center justify-center text-sm font-bold">
+              {getUserInitials()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{user?.name || 'Usuario'}</p>
+              <p className="text-xs text-gray-400 truncate">{getRoleLabel()}</p>
+            </div>
           </div>
         </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }

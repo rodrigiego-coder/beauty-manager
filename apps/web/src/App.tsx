@@ -51,6 +51,7 @@ import { LandingPage } from './pages/public/LandingPage';
 import { SignupPage } from './pages/public/SignupPage';
 import { MyDashboardPage } from './pages/MyDashboardPage';
 import { CommandsListPage } from './pages/CommandsListPage';
+import { AccountsReceivablePage } from './pages/AccountsReceivablePage';
 
 type UserRole = 'OWNER' | 'MANAGER' | 'RECEPTIONIST' | 'STYLIST' | 'SUPER_ADMIN';
 
@@ -155,6 +156,14 @@ function App() {
               element={
                 <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
                   <FinancePage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/contas-a-receber"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER', 'RECEPTIONIST']}>
+                  <AccountsReceivablePage />
                 </RoleGuard>
               }
             />

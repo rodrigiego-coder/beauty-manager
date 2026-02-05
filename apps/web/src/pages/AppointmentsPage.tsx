@@ -318,10 +318,11 @@ export function AppointmentsPage() {
       setServices(servicesRes.data || []);
 
       // Sempre carregar profissionais via /team para garantir lista completa
+      // Inclui STYLIST e qualquer role com isProfessional=true (ex: OWNER cabeleireiro)
       try {
         const teamRes = await api.get('/team');
         const activeProfessionals = (teamRes.data || [])
-          .filter((u: any) => u.role === 'STYLIST' && u.active)
+          .filter((u: any) => (u.role === 'STYLIST' || u.isProfessional) && u.active)
           .map((u: any) => ({ id: u.id, name: u.name }));
         if (activeProfessionals.length > 0) {
           setProfessionals(activeProfessionals);
@@ -724,14 +725,14 @@ export function AppointmentsPage() {
     const pixelsPerHour = 60;
 
     return (
-      <div className="flex overflow-x-auto">
+      <div className="flex overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         {/* Time column */}
-        <div className="flex-shrink-0 w-16 bg-gray-50 border-r">
+        <div className="flex-shrink-0 w-12 sm:w-16 bg-gray-50 border-r">
           <div className="h-12 border-b" /> {/* Header spacer */}
           {timeSlots.map(time => (
             <div
               key={time}
-              className="h-[30px] text-xs text-gray-500 text-right pr-2 border-b border-gray-100"
+              className="h-[30px] text-xs text-gray-500 text-right pr-1 sm:pr-2 border-b border-gray-100"
             >
               {time}
             </div>
@@ -744,18 +745,19 @@ export function AppointmentsPage() {
             apt => apt.professionalId === professional.id && apt.date === selectedDate
           );
           const profBlocks = blocks.filter(
-            b => b.professionalId === professional.id
+            b => b.professionalId === professional.id &&
+                 b.startDate <= selectedDate && b.endDate >= selectedDate
           );
 
           return (
-            <div key={professional.id} className="flex-1 min-w-[200px] border-r">
+            <div key={professional.id} className="flex-1 min-w-[160px] sm:min-w-[200px] border-r">
               {/* Header */}
-              <div className="h-12 border-b bg-gray-50 px-2 flex items-center justify-center">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium">
+              <div className="h-12 border-b bg-gray-50 px-1 sm:px-2 flex items-center justify-center">
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs sm:text-sm font-medium">
                     {professional.name.charAt(0)}
                   </div>
-                  <span className="text-sm font-medium truncate">{professional.name}</span>
+                  <span className="text-xs sm:text-sm font-medium truncate max-w-[80px] sm:max-w-none">{professional.name}</span>
                 </div>
               </div>
 
@@ -764,7 +766,7 @@ export function AppointmentsPage() {
                 {timeSlots.map(time => (
                   <div
                     key={time}
-                    className="h-[30px] border-b border-gray-100 hover:bg-blue-50 cursor-pointer"
+                    className="h-[30px] border-b border-gray-100 hover:bg-blue-50 active:bg-blue-100 cursor-pointer"
                     onClick={() => handleTimeSlotClick(professional.id, time)}
                   />
                 ))}
@@ -784,6 +786,41 @@ export function AppointmentsPage() {
                       </div>
                     );
                   }
+
+                  // Render time-specific blocks (e.g., Google Calendar events)
+                  if (block.startTime && block.endTime) {
+                    const startMinutes = timeToMinutes(block.startTime) - timeToMinutes('06:00');
+                    const endMinutes = timeToMinutes(block.endTime) - timeToMinutes('06:00');
+                    // Use minimum 30min duration for display if start equals end
+                    const durationMinutes = Math.max(endMinutes - startMinutes, 30);
+
+                    // Skip if outside visible range
+                    if (startMinutes < 0) return null;
+
+                    const top = minutesToPixels(startMinutes, pixelsPerHour);
+                    const height = minutesToPixels(durationMinutes, pixelsPerHour);
+                    const BlockIcon = BLOCK_TYPE_ICONS[block.type] || Briefcase;
+
+                    return (
+                      <div
+                        key={block.id}
+                        className="absolute left-1 right-1 bg-slate-200 border border-slate-400 border-l-4 border-l-slate-500 rounded-md p-1 overflow-hidden z-5"
+                        style={{ top: `${top}px`, height: `${Math.max(height, 24)}px` }}
+                        title={`${block.title}\n${block.startTime} - ${block.endTime}`}
+                      >
+                        <div className="flex items-center gap-1">
+                          <BlockIcon className="w-3 h-3 text-slate-600 flex-shrink-0" />
+                          <span className="text-xs font-medium text-slate-700 truncate">{block.title}</span>
+                        </div>
+                        {height > 30 && (
+                          <div className="text-xs text-slate-500 truncate">
+                            {block.startTime} - {block.endTime}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
                   return null;
                 })}
 
@@ -841,54 +878,56 @@ export function AppointmentsPage() {
     }
 
     return (
-      <div className="grid grid-cols-7 gap-1">
-        {days.map(day => {
-          const dayApts = filteredAppointments.filter(a => a.date === day);
-          const isToday = day === new Date().toISOString().split('T')[0];
-          const isSelected = day === selectedDate;
+      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="grid grid-cols-7 gap-1 min-w-[600px] sm:min-w-0">
+          {days.map(day => {
+            const dayApts = filteredAppointments.filter(a => a.date === day);
+            const isToday = day === new Date().toISOString().split('T')[0];
+            const isSelected = day === selectedDate;
 
-          return (
-            <div
-              key={day}
-              className={`border rounded-lg overflow-hidden ${isToday ? 'border-blue-500' : ''} ${isSelected ? 'ring-2 ring-blue-300' : ''}`}
-            >
+            return (
               <div
-                className={`p-2 text-center cursor-pointer hover:bg-gray-100 ${isToday ? 'bg-blue-50' : 'bg-gray-50'}`}
-                onClick={() => {
-                  setSelectedDate(day);
-                  setViewMode('day');
-                }}
+                key={day}
+                className={`border rounded-lg overflow-hidden ${isToday ? 'border-blue-500' : ''} ${isSelected ? 'ring-2 ring-blue-300' : ''}`}
               >
-                <div className="text-xs text-gray-500 uppercase">{getDayName(day)}</div>
-                <div className={`text-lg font-medium ${isToday ? 'text-blue-600' : ''}`}>
-                  {new Date(day + 'T00:00:00').getDate()}
+                <div
+                  className={`p-1 sm:p-2 text-center cursor-pointer hover:bg-gray-100 ${isToday ? 'bg-blue-50' : 'bg-gray-50'}`}
+                  onClick={() => {
+                    setSelectedDate(day);
+                    setViewMode('day');
+                  }}
+                >
+                  <div className="text-xs text-gray-500 uppercase">{getDayName(day)}</div>
+                  <div className={`text-base sm:text-lg font-medium ${isToday ? 'text-blue-600' : ''}`}>
+                    {new Date(day + 'T00:00:00').getDate()}
+                  </div>
+                </div>
+                <div className="p-1 space-y-1 max-h-[200px] sm:max-h-[300px] overflow-y-auto">
+                  {dayApts.slice(0, 5).map(apt => {
+                    const colors = STATUS_COLORS[apt.status] || STATUS_COLORS.SCHEDULED;
+                    return (
+                      <div
+                        key={apt.id}
+                        className={`p-1 rounded text-xs ${colors.bg} ${colors.text} cursor-pointer truncate`}
+                        onClick={() => handleAppointmentClick(apt)}
+                      >
+                        <span className="font-medium">{apt.time}</span> {apt.clientName?.split(' ')[0] || 'Cliente'}
+                      </div>
+                    );
+                  })}
+                  {dayApts.length > 5 && (
+                    <div className="text-xs text-gray-500 text-center">
+                      +{dayApts.length - 5} mais
+                    </div>
+                  )}
+                  {dayApts.length === 0 && (
+                    <div className="text-xs text-gray-400 text-center p-2">Sem agendamentos</div>
+                  )}
                 </div>
               </div>
-              <div className="p-1 space-y-1 max-h-[300px] overflow-y-auto">
-                {dayApts.slice(0, 5).map(apt => {
-                  const colors = STATUS_COLORS[apt.status] || STATUS_COLORS.SCHEDULED;
-                  return (
-                    <div
-                      key={apt.id}
-                      className={`p-1 rounded text-xs ${colors.bg} ${colors.text} cursor-pointer truncate`}
-                      onClick={() => handleAppointmentClick(apt)}
-                    >
-                      <span className="font-medium">{apt.time}</span> {apt.clientName?.split(' ')[0] || 'Cliente'}
-                    </div>
-                  );
-                })}
-                {dayApts.length > 5 && (
-                  <div className="text-xs text-gray-500 text-center">
-                    +{dayApts.length - 5} mais
-                  </div>
-                )}
-                {dayApts.length === 0 && (
-                  <div className="text-xs text-gray-400 text-center p-2">Sem agendamentos</div>
-                )}
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     );
   };
@@ -919,54 +958,56 @@ export function AppointmentsPage() {
     }
 
     return (
-      <div>
-        {/* Day headers */}
-        <div className="grid grid-cols-7 gap-1 mb-1">
-          {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
-            <div key={d} className="text-center text-xs font-medium text-gray-500 py-2">
-              {d}
-            </div>
-          ))}
-        </div>
-
-        {/* Calendar grid */}
-        <div className="grid grid-cols-7 gap-1">
-          {cells.map((cell, index) => {
-            if (!cell.date) {
-              return <div key={index} className="h-24 bg-gray-50 rounded" />;
-            }
-
-            const dayApts = filteredAppointments.filter(a => a.date === cell.date);
-            const isToday = cell.date === new Date().toISOString().split('T')[0];
-            const isPast = new Date(cell.date + 'T00:00:00') < new Date(new Date().toISOString().split('T')[0] + 'T00:00:00');
-
-            // Calculate occupancy
-            let occupancyClass = 'bg-green-50';
-            if (dayApts.length > 10) occupancyClass = 'bg-red-50';
-            else if (dayApts.length > 5) occupancyClass = 'bg-yellow-50';
-
-            return (
-              <div
-                key={index}
-                className={`h-24 border rounded cursor-pointer hover:border-blue-300 ${isPast ? 'opacity-60' : ''} ${isToday ? 'border-blue-500 border-2' : ''} ${occupancyClass}`}
-                onClick={() => {
-                  setSelectedDate(cell.date!);
-                  setViewMode('day');
-                }}
-              >
-                <div className={`text-sm font-medium p-1 ${isToday ? 'text-blue-600' : ''}`}>
-                  {cell.day}
-                </div>
-                <div className="px-1">
-                  {dayApts.length > 0 && (
-                    <div className="text-xs text-gray-600">
-                      {dayApts.length} agend.
-                    </div>
-                  )}
-                </div>
+      <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div className="min-w-[320px] sm:min-w-0">
+          {/* Day headers */}
+          <div className="grid grid-cols-7 gap-1 mb-1">
+            {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
+              <div key={d} className="text-center text-xs font-medium text-gray-500 py-2">
+                {d}
               </div>
-            );
-          })}
+            ))}
+          </div>
+
+          {/* Calendar grid */}
+          <div className="grid grid-cols-7 gap-1">
+            {cells.map((cell, index) => {
+              if (!cell.date) {
+                return <div key={index} className="h-16 sm:h-24 bg-gray-50 rounded" />;
+              }
+
+              const dayApts = filteredAppointments.filter(a => a.date === cell.date);
+              const isToday = cell.date === new Date().toISOString().split('T')[0];
+              const isPast = new Date(cell.date + 'T00:00:00') < new Date(new Date().toISOString().split('T')[0] + 'T00:00:00');
+
+              // Calculate occupancy
+              let occupancyClass = 'bg-green-50';
+              if (dayApts.length > 10) occupancyClass = 'bg-red-50';
+              else if (dayApts.length > 5) occupancyClass = 'bg-yellow-50';
+
+              return (
+                <div
+                  key={index}
+                  className={`h-16 sm:h-24 border rounded cursor-pointer hover:border-blue-300 ${isPast ? 'opacity-60' : ''} ${isToday ? 'border-blue-500 border-2' : ''} ${occupancyClass}`}
+                  onClick={() => {
+                    setSelectedDate(cell.date!);
+                    setViewMode('day');
+                  }}
+                >
+                  <div className={`text-xs sm:text-sm font-medium p-1 ${isToday ? 'text-blue-600' : ''}`}>
+                    {cell.day}
+                  </div>
+                  <div className="px-1">
+                    {dayApts.length > 0 && (
+                      <div className="text-xs text-gray-600">
+                        {dayApts.length} <span className="hidden sm:inline">agend.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     );
@@ -975,16 +1016,17 @@ export function AppointmentsPage() {
   // ==================== MODALS ====================
 
   const renderCreateModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="p-4 border-b flex justify-between items-center">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] flex flex-col">
+        <div className="p-3 sm:p-4 border-b flex justify-between items-center flex-shrink-0">
           <h2 className="text-lg font-semibold">Novo Agendamento</h2>
           <button onClick={() => { setShowCreateModal(false); resetForm(); }}>
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="p-3 sm:p-4 space-y-4 overflow-y-auto flex-1">
           {/* Client Section */}
           <div className="space-y-3">
             <label className="block text-sm font-medium text-gray-700">Cliente</label>
@@ -1271,12 +1313,14 @@ export function AppointmentsPage() {
             />
           </div>
 
-          {/* Actions */}
-          <div className="flex justify-end gap-2 pt-4 border-t">
+          </div>
+
+          {/* Actions - fixed at bottom */}
+          <div className="flex justify-end gap-2 p-3 sm:p-4 border-t bg-gray-50 flex-shrink-0">
             <button
               type="button"
               onClick={() => { setShowCreateModal(false); resetForm(); }}
-              className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              className="px-4 py-2 border rounded-lg hover:bg-gray-100 bg-white"
             >
               Cancelar
             </button>
@@ -1298,9 +1342,9 @@ export function AppointmentsPage() {
     const colors = STATUS_COLORS[apt.status] || STATUS_COLORS.SCHEDULED;
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
-          <div className="p-4 border-b flex justify-between items-center">
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+        <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[95vh] sm:max-h-[90vh] flex flex-col">
+          <div className="p-3 sm:p-4 border-b flex justify-between items-center flex-shrink-0">
             <div className="flex items-center gap-2">
               <span className={`px-2 py-1 rounded text-sm ${colors.bg} ${colors.text}`}>
                 {STATUS_LABELS[apt.status]}
@@ -1312,7 +1356,7 @@ export function AppointmentsPage() {
             </button>
           </div>
 
-          <div className="p-4 space-y-4">
+          <div className="p-3 sm:p-4 space-y-4 overflow-y-auto flex-1">
             {/* Client info */}
             <div className="flex items-start gap-3">
               <User className="w-5 h-5 text-gray-400 mt-0.5" />
@@ -1518,16 +1562,16 @@ export function AppointmentsPage() {
   };
 
   const renderBlocksModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="p-4 border-b flex justify-between items-center">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] flex flex-col">
+        <div className="p-3 sm:p-4 border-b flex justify-between items-center flex-shrink-0">
           <h2 className="text-lg font-semibold">Folgas e Bloqueios</h2>
           <button onClick={() => setShowBlocksModal(false)}>
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-4">
+        <div className="p-3 sm:p-4 overflow-y-auto flex-1">
           <button
             onClick={() => {
               setBlockFormData({ ...blockFormData, startDate: selectedDate, endDate: selectedDate });
@@ -1583,16 +1627,17 @@ export function AppointmentsPage() {
   );
 
   const renderBlockFormModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
-        <div className="p-4 border-b flex justify-between items-center">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[95vh] sm:max-h-[90vh] flex flex-col">
+        <div className="p-3 sm:p-4 border-b flex justify-between items-center flex-shrink-0">
           <h2 className="text-lg font-semibold">Nova Folga/Bloqueio</h2>
           <button onClick={() => { setShowBlockFormModal(false); resetBlockForm(); }}>
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleCreateBlock} className="p-4 space-y-4">
+        <form onSubmit={handleCreateBlock} className="flex flex-col flex-1 min-h-0">
+          <div className="p-3 sm:p-4 space-y-4 overflow-y-auto flex-1">
           <div>
             <label className="block text-sm font-medium mb-1">Profissional *</label>
             <select
@@ -1704,11 +1749,14 @@ export function AppointmentsPage() {
             />
           </div>
 
-          <div className="flex justify-end gap-2 pt-4 border-t">
+          </div>
+
+          {/* Actions - fixed at bottom */}
+          <div className="flex justify-end gap-2 p-3 sm:p-4 border-t bg-gray-50 flex-shrink-0">
             <button
               type="button"
               onClick={() => { setShowBlockFormModal(false); resetBlockForm(); }}
-              className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              className="px-4 py-2 border rounded-lg hover:bg-gray-100 bg-white"
             >
               Cancelar
             </button>
@@ -1729,63 +1777,65 @@ export function AppointmentsPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b px-4 py-3">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-semibold flex items-center gap-2">
-              <Calendar className="w-6 h-6 text-blue-600" />
+      <div className="bg-white border-b px-3 sm:px-4 py-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          {/* Left section: Title, Navigation, Date */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <h1 className="text-lg sm:text-xl font-semibold flex items-center gap-2">
+              <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
               Agenda
             </h1>
 
             {/* Navigation */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2">
               <button
                 onClick={() => handleNavigate('prev')}
-                className="p-2 hover:bg-gray-100 rounded"
+                className="p-2 hover:bg-gray-100 rounded min-h-[44px] min-w-[44px] flex items-center justify-center"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
               <button
                 onClick={() => handleNavigate('today')}
-                className="px-3 py-1 text-sm border rounded hover:bg-gray-100"
+                className="px-3 py-2 text-sm border rounded hover:bg-gray-100 min-h-[44px]"
               >
                 Hoje
               </button>
               <button
                 onClick={() => handleNavigate('next')}
-                className="p-2 hover:bg-gray-100 rounded"
+                className="p-2 hover:bg-gray-100 rounded min-h-[44px] min-w-[44px] flex items-center justify-center"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
             </div>
 
             {/* Current date display */}
-            <span className="font-medium text-gray-700">
+            <span className="font-medium text-gray-700 text-sm sm:text-base">
               {viewMode === 'day' && formatDate(selectedDate)}
               {viewMode === 'week' && `Semana de ${formatShortDate(selectedDate)}`}
               {viewMode === 'month' && new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Right section: View toggle, Filters, Actions */}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {/* View toggle */}
             <div className="flex border rounded overflow-hidden">
               {(['day', 'week', 'month'] as ViewMode[]).map(mode => (
                 <button
                   key={mode}
                   onClick={() => setViewMode(mode)}
-                  className={`px-3 py-1 text-sm ${viewMode === mode ? 'bg-blue-600 text-white' : 'hover:bg-gray-100'}`}
+                  className={`px-3 py-2 text-sm min-h-[44px] ${viewMode === mode ? 'bg-blue-600 text-white' : 'hover:bg-gray-100'}`}
                 >
                   {mode === 'day' ? 'Dia' : mode === 'week' ? 'Semana' : 'Mês'}
                 </button>
               ))}
             </div>
 
-            {/* Filters */}
+            {/* Filters - hidden on small mobile, shown on larger screens */}
             <select
               value={filterProfessional}
               onChange={(e) => setFilterProfessional(e.target.value)}
-              className="border rounded px-2 py-1 text-sm"
+              className="border rounded px-2 py-2 text-sm min-h-[44px] hidden sm:block"
             >
               <option value="all">Todos os profissionais</option>
               {professionals.map(prof => (
@@ -1796,7 +1846,7 @@ export function AppointmentsPage() {
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="border rounded px-2 py-1 text-sm"
+              className="border rounded px-2 py-2 text-sm min-h-[44px] hidden sm:block"
             >
               <option value="all">Todos os status</option>
               {Object.entries(STATUS_LABELS).map(([key, label]) => (
@@ -1807,7 +1857,7 @@ export function AppointmentsPage() {
             {/* Actions */}
             <button
               onClick={loadData}
-              className="p-2 hover:bg-gray-100 rounded"
+              className="p-2 hover:bg-gray-100 rounded min-h-[44px] min-w-[44px] flex items-center justify-center"
               title="Atualizar"
             >
               <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
@@ -1815,9 +1865,9 @@ export function AppointmentsPage() {
 
             <button
               onClick={() => setShowBlocksModal(true)}
-              className="flex items-center gap-1 px-3 py-2 border rounded hover:bg-gray-100"
+              className="flex items-center gap-1 px-3 py-2 border rounded hover:bg-gray-100 min-h-[44px] hidden md:flex"
             >
-              <Settings className="w-4 h-4" /> Folgas
+              <Settings className="w-4 h-4" /> <span className="hidden lg:inline">Folgas</span>
             </button>
 
             <button
@@ -1825,28 +1875,60 @@ export function AppointmentsPage() {
                 setFormData({ ...formData, date: selectedDate });
                 setShowCreateModal(true);
               }}
-              className="flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              className="flex items-center gap-1 px-3 sm:px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 min-h-[44px]"
             >
-              <Plus className="w-4 h-4" /> Novo Agendamento
+              <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo</span>
             </button>
           </div>
+        </div>
+
+        {/* Mobile filters row */}
+        <div className="flex gap-2 mt-3 sm:hidden overflow-x-auto pb-1">
+          <select
+            value={filterProfessional}
+            onChange={(e) => setFilterProfessional(e.target.value)}
+            className="border rounded px-2 py-2 text-sm min-h-[44px] flex-1 min-w-0"
+          >
+            <option value="all">Todos profissionais</option>
+            {professionals.map(prof => (
+              <option key={prof.id} value={prof.id}>{prof.name}</option>
+            ))}
+          </select>
+
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="border rounded px-2 py-2 text-sm min-h-[44px] flex-1 min-w-0"
+          >
+            <option value="all">Todos status</option>
+            {Object.entries(STATUS_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+
+          <button
+            onClick={() => setShowBlocksModal(true)}
+            className="flex items-center justify-center px-3 py-2 border rounded hover:bg-gray-100 min-h-[44px]"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
       {/* Message */}
       {message && (
-        <div className={`mx-4 mt-4 p-3 rounded-lg flex justify-between items-center ${
+        <div className={`mx-3 sm:mx-4 mt-3 sm:mt-4 p-3 rounded-lg flex justify-between items-center gap-2 ${
           message.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
         }`}>
-          <span>{message.text}</span>
-          <button onClick={() => setMessage(null)}>
+          <span className="text-sm sm:text-base">{message.text}</span>
+          <button onClick={() => setMessage(null)} className="p-1 min-w-[32px] min-h-[32px] flex items-center justify-center">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
       {/* Content */}
-      <div className="p-4">
+      <div className="p-3 sm:p-4">
         {loading ? (
           <div className="flex justify-center items-center h-64">
             <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
