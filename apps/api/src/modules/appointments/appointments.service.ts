@@ -174,9 +174,14 @@ export class AppointmentsService {
 
   /**
    * Busca agendamentos por data (dia específico)
+   * Exclui CANCELLED e NO_SHOW por padrão (não devem bloquear horários na agenda)
    */
   async findByDay(salonId: string, date: string): Promise<DaySchedule> {
-    const dayAppointments = await this.findAll(salonId, { date });
+    const allAppointments = await this.findAll(salonId, { date });
+    // Filtrar CANCELLED e NO_SHOW - esses status não devem aparecer como ocupados na agenda
+    const dayAppointments = allAppointments.filter(
+      apt => apt.status !== 'CANCELLED' && apt.status !== 'NO_SHOW'
+    );
 
     // Get all active professionals (STYLIST role OR isProfessional=true for OWNERs who also work)
     const professionals = await this.db
@@ -203,6 +208,7 @@ export class AppointmentsService {
 
   /**
    * Busca agendamentos da semana
+   * Exclui CANCELLED e NO_SHOW por padrão (não devem bloquear horários na agenda)
    */
   async findByWeek(salonId: string, startDate: string): Promise<WeekSchedule> {
     const start = new Date(startDate);
@@ -210,7 +216,11 @@ export class AppointmentsService {
     end.setDate(end.getDate() + 6);
     const endDate = end.toISOString().split('T')[0];
 
-    const weekAppointments = await this.findAll(salonId, { startDate, endDate });
+    const allAppointments = await this.findAll(salonId, { startDate, endDate });
+    // Filtrar CANCELLED e NO_SHOW - esses status não devem aparecer como ocupados na agenda
+    const weekAppointments = allAppointments.filter(
+      apt => apt.status !== 'CANCELLED' && apt.status !== 'NO_SHOW'
+    );
 
     // Get professionals once (STYLIST role OR isProfessional=true)
     const professionals = await this.db
@@ -252,13 +262,18 @@ export class AppointmentsService {
 
   /**
    * Busca agendamentos do mês
+   * Exclui CANCELLED e NO_SHOW por padrão (não devem bloquear horários na agenda)
    */
   async findByMonth(salonId: string, year: number, month: number): Promise<MonthSchedule> {
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
     const lastDay = new Date(year, month, 0).getDate();
     const endDate = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
 
-    const monthAppointments = await this.findAll(salonId, { startDate, endDate });
+    const allAppointments = await this.findAll(salonId, { startDate, endDate });
+    // Filtrar CANCELLED e NO_SHOW - esses status não devem aparecer como ocupados na agenda
+    const monthAppointments = allAppointments.filter(
+      apt => apt.status !== 'CANCELLED' && apt.status !== 'NO_SHOW'
+    );
     const allBlocks = await this.getBlocksForDateRange(salonId, startDate, endDate);
 
     // Get max slots per day (based on professionals and working hours)
@@ -1379,14 +1394,15 @@ Quer agendar a próxima? Responda *AGENDAR*! 😊`;
       ))
       .orderBy(professionalAvailabilities.dayOfWeek);
 
-    // If no custom hours, return default (Mon-Sat 9-18)
+    // If no custom hours, return default (Mon-Sat 9-18, SEM intervalo de almoço)
+    // O salão não tem almoço fixo - horários 12:00-13:00 devem ficar disponíveis
     if (availability.length === 0) {
       return [1, 2, 3, 4, 5, 6].map(day => ({
         dayOfWeek: day,
         startTime: '09:00',
         endTime: '18:00',
-        breakStartTime: '12:00',
-        breakEndTime: '13:00',
+        breakStartTime: null,
+        breakEndTime: null,
         isActive: day !== 0, // Sunday off
       }));
     }

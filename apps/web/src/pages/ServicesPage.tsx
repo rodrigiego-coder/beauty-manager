@@ -58,6 +58,7 @@ export function ServicesPage() {
     durationMinutes: 60,
     basePrice: 0,
     commissionPercentage: 0,
+    totalSessions: 1,
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -119,6 +120,7 @@ export function ServicesPage() {
       durationMinutes: 60,
       basePrice: 0,
       commissionPercentage: 0,
+      totalSessions: 1,
     });
     setFormErrors({});
     setShowCreateModal(true);
@@ -133,6 +135,7 @@ export function ServicesPage() {
       durationMinutes: service.durationMinutes,
       basePrice: parseFloat(service.basePrice),
       commissionPercentage: parseFloat(service.commissionPercentage),
+      totalSessions: service.totalSessions || 1,
     });
     setFormErrors({});
     setEditTab('dados');
@@ -184,6 +187,9 @@ export function ServicesPage() {
       }
       if (formData.commissionPercentage !== parseFloat(selectedService.commissionPercentage)) {
         updateData.commissionPercentage = formData.commissionPercentage;
+      }
+      if (formData.totalSessions !== (selectedService.totalSessions || 1)) {
+        updateData.totalSessions = formData.totalSessions;
       }
 
       await api.patch(`/services/${selectedService.id}`, updateData);
@@ -447,7 +453,14 @@ export function ServicesPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div>
-                          <div className="font-medium text-gray-900">{service.name}</div>
+                          <div className="font-medium text-gray-900">
+                            {service.name}
+                            {service.totalSessions > 1 && (
+                              <span className="ml-2 inline-flex px-1.5 py-0.5 text-[10px] font-semibold rounded bg-emerald-100 text-emerald-700">
+                                {service.totalSessions} sess.
+                              </span>
+                            )}
+                          </div>
                           {service.description && (
                             <div className="text-sm text-gray-500 truncate max-w-xs">
                               {service.description}
@@ -633,6 +646,25 @@ export function ServicesPage() {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Qtd. de Sessoes
+                </label>
+                <input
+                  type="number"
+                  value={formData.totalSessions || 1}
+                  onChange={(e) => setFormData({ ...formData, totalSessions: parseInt(e.target.value) || 1 })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  min="1"
+                  step="1"
+                />
+                {(formData.totalSessions || 1) > 1 && (
+                  <p className="text-xs text-emerald-600 mt-1 font-medium">
+                    Pacote com {formData.totalSessions} sessoes
+                  </p>
+                )}
+              </div>
+
               {formErrors.submit && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
                   {formErrors.submit}
@@ -804,6 +836,25 @@ export function ServicesPage() {
                       max="100"
                       step="1"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Qtd. de Sessoes
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.totalSessions || 1}
+                      onChange={(e) => setFormData({ ...formData, totalSessions: parseInt(e.target.value) || 1 })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      min="1"
+                      step="1"
+                    />
+                    {(formData.totalSessions || 1) > 1 && (
+                      <p className="text-xs text-emerald-600 mt-1 font-medium">
+                        Pacote com {formData.totalSessions} sessoes
+                      </p>
+                    )}
                   </div>
 
                   {formErrors.submit && (

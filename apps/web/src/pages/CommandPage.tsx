@@ -1,3 +1,21 @@
+/**
+ * @stable - PROTECTED - CONSULT BEFORE CHANGE
+ * ============================================
+ * MÓDULO CRÍTICO: COMANDA (Command Detail)
+ * Status: ESTÁVEL desde 2026-02-06
+ *
+ * FUNCIONALIDADES PROTEGIDAS:
+ * - Fluxo: OPEN → IN_SERVICE → WAITING_PAYMENT → CLOSED
+ * - Pacotes de sessões (session packages)
+ * - Lembrete Alexia (reminder)
+ * - Pagamentos múltiplos
+ * - Reabrir comanda
+ *
+ * ⚠️  ANTES DE MODIFICAR: Consulte STABLE_MODULES.md
+ * ⚠️  QUALQUER ALTERAÇÃO PODE QUEBRAR FUNCIONALIDADES CRÍTICAS
+ * ============================================
+ */
+
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -88,6 +106,7 @@ interface PackageAvailability {
   hasPackage: boolean;
   clientPackageId?: number;
   remainingSessions?: number;
+  totalSessions?: number;
   packageName?: string;
 }
 
@@ -1109,6 +1128,7 @@ export function CommandPage() {
               hasPackage: true,
               clientPackageId: response.data.clientPackage?.id,
               remainingSessions: response.data.remainingSessions,
+              totalSessions: response.data.balance?.totalSessions,
             });
           } else {
             setPackageAvailability({ hasPackage: false });
@@ -2134,7 +2154,7 @@ export function CommandPage() {
                                 ⚠️ ÚLTIMA SESSÃO do pacote
                               </p>
                               <p className="text-sm text-amber-700">
-                                Será consumida ao adicionar (R$ 0,00)
+                                Sessao {(packageAvailability.totalSessions || 1)} de {(packageAvailability.totalSessions || 1)} (R$ 0,00)
                               </p>
                             </div>
                           </>
@@ -2143,10 +2163,10 @@ export function CommandPage() {
                             <Gift className="w-5 h-5 text-emerald-600" />
                             <div>
                               <p className="font-semibold text-emerald-800">
-                                🎁 PACOTE: {packageAvailability.remainingSessions} sessões
+                                Lancar Sessao {((packageAvailability.totalSessions || 0) - (packageAvailability.remainingSessions || 0)) + 1} de {packageAvailability.totalSessions || '?'}
                               </p>
                               <p className="text-sm text-emerald-700">
-                                Abater sessão do pacote (R$ 0,00)
+                                Restam {packageAvailability.remainingSessions} sessoes - Abater do pacote (R$ 0,00)
                               </p>
                             </div>
                           </>
@@ -2156,10 +2176,10 @@ export function CommandPage() {
                           <Gift className="w-5 h-5 text-gray-400" />
                           <div>
                             <p className="font-semibold text-gray-600">
-                              Pacote disponível ({packageAvailability.remainingSessions} sessões)
+                              Pacote disponivel ({packageAvailability.remainingSessions}/{packageAvailability.totalSessions || '?'} sessoes)
                             </p>
                             <p className="text-sm text-gray-500">
-                              Não usar pacote - cobrar valor normal
+                              Nao usar pacote - cobrar valor normal
                             </p>
                           </div>
                         </>
