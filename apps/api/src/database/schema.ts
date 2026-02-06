@@ -589,6 +589,8 @@ export const services = pgTable('services', {
   durationMinutes: integer('duration_minutes').default(60).notNull(),
   basePrice: decimal('base_price', { precision: 10, scale: 2 }).notNull(),
   commissionPercentage: decimal('commission_percentage', { precision: 5, scale: 2 }).default('0').notNull(),
+  // Campo para pacotes: número de sessões incluídas (1 = serviço avulso, >1 = pacote)
+  totalSessions: integer('total_sessions').default(1).notNull(),
   // Novos campos para agendamento v3.0
   bufferBefore: integer('buffer_before').default(0).notNull(),
   bufferAfter: integer('buffer_after').default(0).notNull(),
