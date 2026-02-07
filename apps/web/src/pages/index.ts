@@ -38,3 +38,4 @@ export { default as MySchedulePage } from './MySchedulePage';
 export { default as MyBlocksPage } from './MyBlocksPage';
 export { default as PackagesPage } from './PackagesPage';
 export { default as AccountsReceivablePage } from './AccountsReceivablePage';
+export { default as StockPage } from './StockPage';
