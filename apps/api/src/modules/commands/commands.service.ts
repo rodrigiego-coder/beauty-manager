@@ -501,17 +501,32 @@ export class CommandsService {
       }
 
       // Baixar estoque RETAIL (loja)
-      await this.productsService.adjustStockWithLocation({
-        productId,
-        salonId: command.salonId,
-        userId: currentUser.id,
-        quantity: -quantity, // negativo = saída
-        locationType: 'RETAIL', // estoque da LOJA (venda)
-        movementType: 'SALE',
-        reason: `Venda - Comanda ${command.cardNumber}`,
-        referenceType: 'command',
-        referenceId: command.id,
-      });
+      if (product.kind === 'KIT') {
+        // KIT: baixa atômica de todos os componentes
+        await this.productsService.deductKitStock({
+          kitProductId: productId,
+          salonId: command.salonId,
+          userId: currentUser.id,
+          kitQty: quantity,
+          locationType: 'RETAIL',
+          referenceType: 'command',
+          referenceId: command.id,
+          reason: `Venda KIT - Comanda ${command.cardNumber}`,
+        });
+      } else {
+        // SIMPLE: baixa direta (fluxo original)
+        await this.productsService.adjustStockWithLocation({
+          productId,
+          salonId: command.salonId,
+          userId: currentUser.id,
+          quantity: -quantity, // negativo = saída
+          locationType: 'RETAIL', // estoque da LOJA (venda)
+          movementType: 'SALE',
+          reason: `Venda - Comanda ${command.cardNumber}`,
+          referenceType: 'command',
+          referenceId: command.id,
+        });
+      }
     }
 
     // ========================================
