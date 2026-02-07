@@ -12,6 +12,9 @@ import {
   TrendingUp,
   Warehouse,
   Store,
+  Download,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -102,6 +105,29 @@ function thirtyDaysAgoSP(): string {
     month: '2-digit',
     day: '2-digit',
   }).format(d);
+}
+
+function exportMovementsCsv(movements: StockMovement[]) {
+  const header = 'Data/Hora;Produto;Tipo;Local;Qtd;Motivo;Grupo';
+  const rows = movements.map((m) =>
+    [
+      formatDateTimeSP(m.createdAt),
+      `"${m.productName}"`,
+      MOVEMENT_TYPE_LABELS[m.movementType] || m.movementType,
+      LOCATION_LABELS[m.locationType] || m.locationType,
+      m.delta,
+      `"${(m.reason || '').replace(/"/g, '""')}"`,
+      m.movementGroupId || '',
+    ].join(';'),
+  );
+  const csv = [header, ...rows].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `movimentacoes-estoque-${todaySP()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ─── Component ───────────────────────────────────────────────────────
@@ -475,6 +501,16 @@ function MovementsTab() {
         >
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
+        {data.length > 0 && (
+          <button
+            onClick={() => exportMovementsCsv(data)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            title="Exportar CSV com filtros atuais"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Exportar CSV
+          </button>
+        )}
       </div>
 
       {/* Error */}
@@ -512,6 +548,7 @@ function MovementsTab() {
                   <th className="text-center px-4 py-3 font-medium text-gray-600">Local</th>
                   <th className="text-center px-4 py-3 font-medium text-gray-600">Qtd</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Motivo</th>
+                  <th className="text-center px-4 py-3 font-medium text-gray-600">Grupo</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -589,6 +626,9 @@ function MovementRow({ movement: m }: { movement: StockMovement }) {
       <td className="px-4 py-2.5 text-gray-500 max-w-[200px] truncate" title={m.reason || ''}>
         {m.reason || '-'}
       </td>
+      <td className="px-4 py-2.5 text-center">
+        {m.movementGroupId ? <GroupIdChip groupId={m.movementGroupId} /> : <span className="text-xs text-gray-300">-</span>}
+      </td>
     </tr>
   );
 }
@@ -643,8 +683,11 @@ function GroupRows({
         <td className="px-4 py-2.5 text-center">
           <DeltaBadge delta={totalDelta} />
         </td>
-        <td className="px-4 py-2.5 text-gray-500 text-xs">
-          {groupId.slice(0, 8)}...
+        <td className="px-4 py-2.5 text-gray-500 text-xs truncate max-w-[180px]" title={firstItem.reason || ''}>
+          {firstItem.reason || '-'}
+        </td>
+        <td className="px-4 py-2.5 text-center">
+          <GroupIdChip groupId={groupId} />
         </td>
       </tr>
 
@@ -668,6 +711,7 @@ function GroupRows({
             <td className="px-4 py-2 text-gray-400 text-xs truncate max-w-[180px]" title={m.reason || ''}>
               {m.reason || '-'}
             </td>
+            <td className="px-4 py-2 text-center text-gray-300 text-xs">-</td>
           </tr>
         ))}
     </>
@@ -723,6 +767,30 @@ function DeltaBadge({ delta }: { delta: number }) {
     );
   }
   return <span className="text-xs text-gray-400">0</span>;
+}
+
+// ─── GroupId Chip (copy-to-clipboard) ────────────────────────────────
+function GroupIdChip({ groupId }: { groupId: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(groupId).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      title={`Copiar: ${groupId}`}
+      className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors"
+    >
+      <span className="font-mono">{groupId.slice(0, 8)}</span>
+      {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+    </button>
+  );
 }
 
 // ─── Grouping helper ─────────────────────────────────────────────────
