@@ -60,6 +60,7 @@ import { BillingModule } from './modules/billing';
 import { TriageModule } from './modules/triage/triage.module';
 import { SchedulesModule } from './modules/schedules/schedules.module';
 import { OnlineBookingModule } from './modules/online-booking/online-booking.module';
+import { StockModule } from './modules/stock/stock.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -159,7 +160,9 @@ import { OnlineBookingModule } from './modules/online-booking/online-booking.mod
     PackagesModule,
     ClientPackagesModule,
     // Módulo de Agendamento Online
-    OnlineBookingModule],
+    OnlineBookingModule,
+    // Módulo de Estoque (summary + movimentações)
+    StockModule],
   controllers: [AppController],
   providers: [
     // Interceptor global de auditoria
