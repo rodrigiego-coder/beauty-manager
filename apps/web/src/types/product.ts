@@ -1,4 +1,5 @@
 export type ProductUnit = 'UN' | 'ML' | 'KG' | 'L' | 'G';
+export type ProductKind = 'SIMPLE' | 'KIT';
 
 export interface Product {
   id: number;
@@ -7,6 +8,7 @@ export interface Product {
   description: string | null;
   costPrice: string;
   salePrice: string;
+  kind: ProductKind;
   // Dual stock system
   stockRetail: number;
   stockInternal: number;
@@ -24,6 +26,16 @@ export interface Product {
   updatedAt: string;
 }
 
+export interface KitComponentData {
+  id?: string;
+  componentProductId: number;
+  quantity: number;
+  productName?: string;
+  stockRetail?: number;
+  stockInternal?: number;
+  unit?: string;
+}
+
 export interface CreateProductData {
   name: string;
   description?: string;
@@ -36,6 +48,7 @@ export interface CreateProductData {
   unit?: ProductUnit;
   isRetail?: boolean;
   isBackbar?: boolean;
+  kind?: ProductKind;
 }
 
 export interface UpdateProductData {
@@ -51,6 +64,7 @@ export interface UpdateProductData {
   active?: boolean;
   isRetail?: boolean;
   isBackbar?: boolean;
+  kind?: ProductKind;
 }
 
 export interface AdjustStockData {
