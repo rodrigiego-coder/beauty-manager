@@ -1212,6 +1212,7 @@ export class CommandsService {
           command.salonId,
           payment.method || 'OTHER',
           parseFloat(payment.netAmount || payment.amount),
+          currentUser.id,
         );
       }
     } catch (err) {
@@ -1387,6 +1388,7 @@ export class CommandsService {
           command.salonId,
           payment.method || 'OTHER',
           parseFloat(payment.netAmount || payment.amount),
+          currentUser.id,
         );
       }
     } catch (err) {
