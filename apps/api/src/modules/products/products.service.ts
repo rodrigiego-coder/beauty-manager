@@ -1,15 +1,17 @@
-import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
-import { eq, and, ilike, or, inArray } from 'drizzle-orm';
+import { Injectable, Inject, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { eq, and, ilike, or, inArray, sql } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.module';
 import {
   Database,
   products,
   stockAdjustments,
   stockMovements,
+  kitComponents,
   Product,
   NewProduct,
   StockAdjustment,
   StockMovement,
+  KitComponent,
   LocationType,
   MovementType,
 } from '../../database';
@@ -42,6 +44,7 @@ export interface AdjustStockParams {
   referenceType?: string;
   referenceId?: string;
   transferGroupId?: string;
+  movementGroupId?: string;
 }
 
 @Injectable()
@@ -216,6 +219,7 @@ export class ProductsService {
       referenceType,
       referenceId,
       transferGroupId,
+      movementGroupId,
     } = params;
 
     // Buscar produto atual
@@ -261,6 +265,7 @@ export class ProductsService {
         referenceType: referenceType || null,
         referenceId: referenceId || null,
         transferGroupId: transferGroupId || null,
+        movementGroupId: movementGroupId || null,
         reason: reason || null,
         createdByUserId: userId,
       })
@@ -270,6 +275,121 @@ export class ProductsService {
       product: updatedProduct!,
       movement,
     };
+  }
+
+  /**
+   * Deduz estoque de todos os componentes de um KIT de forma atômica.
+   * Usa SELECT ... FOR UPDATE para evitar corrida e garante all-or-nothing.
+   * Retorna os movimentos gerados com o mesmo movementGroupId.
+   */
+  async deductKitStock(params: {
+    kitProductId: number;
+    salonId: string;
+    userId: string;
+    kitQty: number;
+    locationType: LocationType;
+    referenceType?: string;
+    referenceId?: string;
+    reason?: string;
+  }): Promise<{ movementGroupId: string; movements: StockMovement[] }> {
+    const { kitProductId, salonId, userId, kitQty, locationType, referenceType, referenceId, reason } = params;
+
+    // 1. Carregar componentes do kit
+    const components = await this.db
+      .select()
+      .from(kitComponents)
+      .where(
+        and(
+          eq(kitComponents.kitProductId, kitProductId),
+          eq(kitComponents.salonId, salonId),
+        ),
+      );
+
+    if (components.length === 0) {
+      throw new BadRequestException(`Produto KIT ID ${kitProductId} não tem componentes cadastrados`);
+    }
+
+    // 2. Executar dentro de transação com lock
+    const result = await this.db.transaction(async (tx: any) => {
+      const movementGroupId = crypto.randomUUID();
+      const isRetail = locationType === 'RETAIL';
+      const stockCol = isRetail ? 'stock_retail' : 'stock_internal';
+      const movements: StockMovement[] = [];
+
+      // Lock e validação de todos os componentes
+      for (const comp of components) {
+        const requiredQty = Math.ceil(parseFloat(comp.quantity) * kitQty);
+
+        // SELECT ... FOR UPDATE para lock na linha do produto
+        const rows = await tx.execute(sql`
+          SELECT id, name, ${sql.raw(stockCol)} AS current_stock
+          FROM products
+          WHERE id = ${comp.componentProductId} AND salon_id = ${salonId}
+          FOR UPDATE
+        `);
+
+        const row = rows?.rows?.[0] || rows?.[0];
+        if (!row) {
+          throw new ConflictException(
+            `Componente ID ${comp.componentProductId} não encontrado no salão`,
+          );
+        }
+
+        const currentStock = parseInt(row.current_stock, 10);
+        if (currentStock < requiredQty) {
+          throw new ConflictException(
+            `Estoque insuficiente para o kit: faltou "${row.name}" ` +
+            `(necessário ${requiredQty}, disponível ${currentStock})`,
+          );
+        }
+
+        // Decrementar estoque
+        await tx.execute(sql`
+          UPDATE products
+          SET ${sql.raw(stockCol)} = ${sql.raw(stockCol)} - ${requiredQty},
+              updated_at = NOW()
+          WHERE id = ${comp.componentProductId}
+        `);
+
+        // Registrar movimento
+        const [movement] = await tx
+          .insert(stockMovements)
+          .values({
+            productId: comp.componentProductId,
+            salonId,
+            locationType,
+            delta: -requiredQty,
+            movementType: 'SALE' as MovementType,
+            referenceType: referenceType || 'command',
+            referenceId: referenceId || null,
+            movementGroupId,
+            reason: reason || `Venda KIT (produtoId=${kitProductId})`,
+            createdByUserId: userId,
+          })
+          .returning();
+
+        movements.push(movement);
+      }
+
+      return { movementGroupId, movements };
+    });
+
+    return result;
+  }
+
+  /**
+   * Retorna os componentes de um produto KIT.
+   */
+  async getKitComponents(kitProductId: number, salonId: string): Promise<KitComponent[]> {
+    return this.db
+      .select()
+      .from(kitComponents)
+      .where(
+        and(
+          eq(kitComponents.kitProductId, kitProductId),
+          eq(kitComponents.salonId, salonId),
+        ),
+      );
   }
 
   /**
