@@ -393,6 +393,83 @@ export class ProductsService {
   }
 
   /**
+   * Reverte todos os movimentos de estoque de um KIT de forma atômica.
+   * Usa SELECT ... FOR UPDATE para consistência (mesmo padrão de deductKitStock).
+   * Retorna o novo movementGroupId dos movimentos RETURN gerados.
+   */
+  async reverseKitStock(params: {
+    movementGroupId: string;
+    userId: string;
+    reason?: string;
+    referenceType?: string;
+    referenceId?: string;
+  }): Promise<{ returnGroupId: string; movements: StockMovement[] }> {
+    const { movementGroupId, userId, reason, referenceType, referenceId } = params;
+
+    // 1. Buscar movimentos originais do grupo (SALE com delta negativo)
+    const originalMovements = await this.db
+      .select()
+      .from(stockMovements)
+      .where(eq(stockMovements.movementGroupId, movementGroupId));
+
+    if (originalMovements.length === 0) {
+      throw new NotFoundException(
+        `Nenhum movimento encontrado para movementGroupId=${movementGroupId}`,
+      );
+    }
+
+    // 2. Transação atômica com lock
+    const result = await this.db.transaction(async (tx: any) => {
+      const returnGroupId = crypto.randomUUID();
+      const returnMovements: StockMovement[] = [];
+
+      for (const orig of originalMovements) {
+        const reverseQty = Math.abs(orig.delta);
+        const isRetail = orig.locationType === 'RETAIL';
+        const stockCol = isRetail ? 'stock_retail' : 'stock_internal';
+
+        // Lock na linha do produto (consistência)
+        await tx.execute(sql`
+          SELECT id FROM products
+          WHERE id = ${orig.productId} AND salon_id = ${orig.salonId}
+          FOR UPDATE
+        `);
+
+        // Incrementar estoque (devolução)
+        await tx.execute(sql`
+          UPDATE products
+          SET ${sql.raw(stockCol)} = ${sql.raw(stockCol)} + ${reverseQty},
+              updated_at = NOW()
+          WHERE id = ${orig.productId}
+        `);
+
+        // Registrar movimento RETURN
+        const [movement] = await tx
+          .insert(stockMovements)
+          .values({
+            productId: orig.productId,
+            salonId: orig.salonId,
+            locationType: orig.locationType,
+            delta: reverseQty,
+            movementType: 'RETURN' as MovementType,
+            referenceType: referenceType || orig.referenceType,
+            referenceId: referenceId || orig.referenceId,
+            movementGroupId: returnGroupId,
+            reason: reason || `Reversão KIT (grupo original: ${movementGroupId})`,
+            createdByUserId: userId,
+          })
+          .returning();
+
+        returnMovements.push(movement);
+      }
+
+      return { returnGroupId, movements: returnMovements };
+    });
+
+    return result;
+  }
+
+  /**
    * Ajusta o estoque de um produto (MÉTODO LEGADO - mantido para compatibilidade)
    * Por padrão, usa RETAIL e ADJUSTMENT
    */
