@@ -229,16 +229,35 @@ export class CashRegistersService {
   /**
    * Atualiza totais do caixa ao receber pagamento
    * Chamado pelo CommandsService ao fechar comanda
+   * ========== PROTEGIDO - AUDITORIA FINANCEIRA ==========
+   * Se não existe caixa aberto, auto-abre um com saldo 0
+   * para nunca perder o registro da venda.
+   * ======================================================
    */
   async addSale(
     salonId: string,
     paymentMethod: string,
     amount: number,
+    userId?: string,
   ): Promise<void> {
-    const cashRegister = await this.getCurrent(salonId);
+    let cashRegister = await this.getCurrent(salonId);
     if (!cashRegister) {
-      // Se não tem caixa aberto, apenas ignora (permite fechar comanda sem caixa)
-      return;
+      if (!userId) {
+        // Sem userId, não pode auto-abrir (openedById é NOT NULL)
+        console.warn(`[addSale] Sem caixa aberto e sem userId para auto-abrir (salon=${salonId})`);
+        return;
+      }
+      // Auto-abrir caixa para não perder a venda
+      const [newRegister] = await this.db
+        .insert(cashRegisters)
+        .values({
+          salonId,
+          openingBalance: '0',
+          openedById: userId,
+          status: 'OPEN',
+        })
+        .returning();
+      cashRegister = newRegister;
     }
 
     const currentSales = parseFloat(cashRegister.totalSales || '0');
