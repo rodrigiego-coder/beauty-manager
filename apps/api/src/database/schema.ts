@@ -1835,10 +1835,13 @@ export const commandItems = pgTable('command_items', {
   clientPackageUsageId: integer('client_package_usage_id'), // FK managed at app level (avoids circular ref)
   paidByPackage: boolean('paid_by_package').default(false),
 
+  // KIT: ID do grupo de movimentos de estoque (para reversão atômica)
+  movementGroupId: uuid('movement_group_id'),
+
   canceledAt: timestamp('canceled_at'),
   canceledById: uuid('canceled_by_id').references(() => users.id),
   cancelReason: text('cancel_reason'),
-  
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
