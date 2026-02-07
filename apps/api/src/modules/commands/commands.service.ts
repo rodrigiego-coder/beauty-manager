@@ -837,15 +837,20 @@ export class CommandsService {
       throw new BadRequestException('Comanda ja encerrada ou cancelada');
     }
 
-    const oldDiscount = parseFloat(command.totalDiscounts || '0');
-    const newDiscount = oldDiscount + data.discountAmount;
-    const totalNet = parseFloat(command.totalGross || '0') - newDiscount;
+    // Desconto manual acumula na coluna dedicada (manualDiscount)
+    const oldManual = parseFloat(command.manualDiscount || '0');
+    const newManual = oldManual + data.discountAmount;
+
+    // Incrementa totalDiscounts e decrementa totalNet pelo valor do desconto
+    const newTotalDiscounts = parseFloat(command.totalDiscounts || '0') + data.discountAmount;
+    const newTotalNet = parseFloat(command.totalGross || '0') - newTotalDiscounts;
 
     const [updatedCommand] = await this.db
       .update(commands)
       .set({
-        totalDiscounts: newDiscount.toString(),
-        totalNet: totalNet.toString(),
+        manualDiscount: newManual.toString(),
+        totalDiscounts: newTotalDiscounts.toString(),
+        totalNet: newTotalNet.toString(),
         updatedAt: new Date(),
       })
       .where(eq(commands.id, commandId))
@@ -855,8 +860,8 @@ export class CommandsService {
     await this.addEvent(commandId, currentUser.id, 'DISCOUNT_APPLIED', {
       amount: data.discountAmount,
       reason: data.reason,
-      oldDiscount,
-      newDiscount,
+      oldManualDiscount: oldManual,
+      newManualDiscount: newManual,
     });
 
     return updatedCommand;
@@ -1891,6 +1896,14 @@ export class CommandsService {
 
   /**
    * Recalcula totais da comanda
+   * ========== PROTEGIDO - AUDITORIA FINANCEIRA ==========
+   * totalGross    = soma(unitPrice × quantity) dos itens ativos (BRUTO)
+   * itemDiscounts = soma(item.discount) dos itens ativos
+   * manualDiscount = desconto manual aplicado via applyDiscount (coluna separada)
+   * totalDiscounts = itemDiscounts + manualDiscount
+   * totalNet       = totalGross - totalDiscounts (LÍQUIDO)
+   * NAO ALTERAR sem auditoria completa.
+   * ======================================================
    */
   private async recalculateTotals(commandId: string): Promise<void> {
     const items = await this.db
@@ -1900,9 +1913,29 @@ export class CommandsService {
 
     // Soma apenas itens não cancelados
     const activeItems = items.filter((i) => !i.canceledAt);
-    const totalGross = activeItems.reduce((sum, i) => sum + parseFloat(i.totalPrice), 0);
-    const totalDiscounts = activeItems.reduce((sum, i) => sum + parseFloat(i.discount || '0'), 0);
-    const totalNet = totalGross;
+
+    // totalGross = soma de (unitPrice × quantity) SEM desconto
+    const totalGross = activeItems.reduce(
+      (sum, i) => sum + (parseFloat(i.unitPrice) * parseFloat(i.quantity)), 0
+    );
+
+    // Descontos individuais dos itens
+    const itemDiscounts = activeItems.reduce(
+      (sum, i) => sum + parseFloat(i.discount || '0'), 0
+    );
+
+    // Ler desconto manual preservado na coluna dedicada
+    const command = await this.db
+      .select({ manualDiscount: commands.manualDiscount })
+      .from(commands)
+      .where(eq(commands.id, commandId))
+      .then(rows => rows[0]);
+
+    const manual = parseFloat(command?.manualDiscount || '0');
+
+    // totalDiscounts = descontos de itens + desconto manual
+    const totalDiscounts = itemDiscounts + manual;
+    const totalNet = totalGross - totalDiscounts;
 
     await this.db
       .update(commands)
