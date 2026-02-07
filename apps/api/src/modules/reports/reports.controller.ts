@@ -5,6 +5,7 @@ import { AuthGuard } from '../../common/guards/auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { parseQueryDate } from '../../common/date-range';
 
 @Controller('reports')
 @UseGuards(AuthGuard, RolesGuard)
@@ -25,8 +26,8 @@ export class ReportsController {
   ) {
     return this.reportsService.getSalesReport(
       user.salonId,
-      new Date(startDate),
-      new Date(endDate),
+      parseQueryDate(startDate),
+      parseQueryDate(endDate, true),
       groupBy,
     );
   }
@@ -44,8 +45,8 @@ export class ReportsController {
   ) {
     return this.reportsService.getServicesReport(
       user.salonId,
-      new Date(startDate),
-      new Date(endDate),
+      parseQueryDate(startDate),
+      parseQueryDate(endDate, true),
     );
   }
 
@@ -62,8 +63,8 @@ export class ReportsController {
   ) {
     return this.reportsService.getProductsReport(
       user.salonId,
-      new Date(startDate),
-      new Date(endDate),
+      parseQueryDate(startDate),
+      parseQueryDate(endDate, true),
     );
   }
 
@@ -80,8 +81,8 @@ export class ReportsController {
   ) {
     return this.reportsService.getProfessionalsReport(
       user.salonId,
-      new Date(startDate),
-      new Date(endDate),
+      parseQueryDate(startDate),
+      parseQueryDate(endDate, true),
     );
   }
 
@@ -98,8 +99,8 @@ export class ReportsController {
   ) {
     return this.reportsService.getClientsReport(
       user.salonId,
-      new Date(startDate),
-      new Date(endDate),
+      parseQueryDate(startDate),
+      parseQueryDate(endDate, true),
     );
   }
 
@@ -119,8 +120,8 @@ export class ReportsController {
     const csv = await this.reportsService.exportReport(
       user.salonId,
       type,
-      new Date(startDate),
-      new Date(endDate),
+      parseQueryDate(startDate),
+      parseQueryDate(endDate, true),
     );
 
     const filename = `relatorio_${type}_${new Date().toISOString().split('T')[0]}.csv`;
@@ -143,8 +144,8 @@ export class ReportsController {
     @Query('format') format: ExportFormat = 'json',
     @Res() reply?: FastifyReply,
   ) {
-    const start = startDate ? new Date(startDate) : undefined;
-    const end = endDate ? new Date(endDate) : undefined;
+    const start = startDate ? parseQueryDate(startDate) : undefined;
+    const end = endDate ? parseQueryDate(endDate, true) : undefined;
 
     const data = await this.reportsService.exportTransactions(user.salonId, start, end, format);
 
@@ -176,8 +177,8 @@ export class ReportsController {
     @Query('format') format: ExportFormat = 'json',
     @Res() reply?: FastifyReply,
   ) {
-    const start = startDate ? new Date(startDate) : undefined;
-    const end = endDate ? new Date(endDate) : undefined;
+    const start = startDate ? parseQueryDate(startDate) : undefined;
+    const end = endDate ? parseQueryDate(endDate, true) : undefined;
 
     const data = await this.reportsService.exportInvoices(user.salonId, start, end, format);
 
@@ -209,8 +210,8 @@ export class ReportsController {
   ) {
     return this.reportsService.getFinancialSummary(
       user.salonId,
-      new Date(startDate),
-      new Date(endDate),
+      parseQueryDate(startDate),
+      parseQueryDate(endDate, true),
     );
   }
 }
