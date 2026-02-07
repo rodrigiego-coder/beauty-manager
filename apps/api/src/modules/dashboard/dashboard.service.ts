@@ -1,5 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { eq, and, gte, lte, sql } from 'drizzle-orm';
+import { eq, and, gte, lte, lt, sql } from 'drizzle-orm';
 import { DATABASE_CONNECTION, Database } from '../../database/database.module';
 import {
   clients,
@@ -12,6 +12,7 @@ import {
   users,
 } from '../../database/schema';
 import { ProfessionalDashboardDto } from './dto/professional-dashboard.dto';
+import { spNow, spMidnightToUtc } from '../../common/date-range';
 
 export type DashboardPeriod = 'today' | 'week' | 'month' | 'year';
 
@@ -174,7 +175,11 @@ export class DashboardService {
   }
 
   private getPeriodDates(period: DashboardPeriod) {
-    const now = new Date();
+    // All dates are computed in America/Sao_Paulo and converted to UTC
+    // so that queries on "timestamp without time zone" (stored as UTC) are correct.
+    const { year, month, day, dayOfWeek } = spNow(); // month is 1-indexed
+    const m = month - 1; // convert to 0-indexed for spMidnightToUtc
+
     let startDate: Date;
     let endDate: Date;
     let previousStartDate: Date;
@@ -182,47 +187,40 @@ export class DashboardService {
 
     switch (period) {
       case 'today':
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-        previousStartDate = new Date(startDate);
-        previousStartDate.setDate(previousStartDate.getDate() - 1);
-        previousEndDate = new Date(previousStartDate);
-        previousEndDate.setHours(23, 59, 59);
+        startDate = spMidnightToUtc(year, m, day);
+        endDate = spMidnightToUtc(year, m, day + 1);
+        previousStartDate = spMidnightToUtc(year, m, day - 1);
+        previousEndDate = startDate;
         break;
 
-      case 'week':
-        const dayOfWeek = now.getDay();
+      case 'week': {
         const diffToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday, 0, 0, 0);
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-        previousStartDate = new Date(startDate);
-        previousStartDate.setDate(previousStartDate.getDate() - 7);
-        previousEndDate = new Date(startDate);
-        previousEndDate.setDate(previousEndDate.getDate() - 1);
-        previousEndDate.setHours(23, 59, 59);
+        startDate = spMidnightToUtc(year, m, day - diffToMonday);
+        endDate = spMidnightToUtc(year, m, day + 1);
+        previousStartDate = spMidnightToUtc(year, m, day - diffToMonday - 7);
+        previousEndDate = startDate;
         break;
+      }
 
       case 'month':
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-        previousStartDate = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0);
-        previousEndDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+        startDate = spMidnightToUtc(year, m, 1);
+        endDate = spMidnightToUtc(year, m, day + 1);
+        previousStartDate = spMidnightToUtc(year, m - 1, 1);
+        previousEndDate = startDate;
         break;
 
       case 'year':
-        startDate = new Date(now.getFullYear(), 0, 1, 0, 0, 0);
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-        previousStartDate = new Date(now.getFullYear() - 1, 0, 1, 0, 0, 0);
-        previousEndDate = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59);
+        startDate = spMidnightToUtc(year, 0, 1);
+        endDate = spMidnightToUtc(year, m, day + 1);
+        previousStartDate = spMidnightToUtc(year - 1, 0, 1);
+        previousEndDate = spMidnightToUtc(year, 0, 1);
         break;
 
       default:
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-        previousStartDate = new Date(startDate);
-        previousStartDate.setDate(previousStartDate.getDate() - 1);
-        previousEndDate = new Date(previousStartDate);
-        previousEndDate.setHours(23, 59, 59);
+        startDate = spMidnightToUtc(year, m, day);
+        endDate = spMidnightToUtc(year, m, day + 1);
+        previousStartDate = spMidnightToUtc(year, m, day - 1);
+        previousEndDate = startDate;
     }
 
     return { startDate, endDate, previousStartDate, previousEndDate };
@@ -238,7 +236,7 @@ export class DashboardService {
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
           gte(commands.cashierClosedAt, startDate),
-          lte(commands.cashierClosedAt, endDate),
+          lt(commands.cashierClosedAt, endDate),
         ),
       );
 
@@ -308,7 +306,7 @@ export class DashboardService {
         and(
           eq(commands.salonId, salonId),
           gte(commands.openedAt, startDate),
-          lte(commands.openedAt, endDate),
+          lt(commands.openedAt, endDate),
         ),
       );
 
@@ -373,7 +371,7 @@ export class DashboardService {
     // Clientes novos no periodo
     const newClientsList = allClients.filter(c => {
       const createdAt = new Date(c.createdAt);
-      return createdAt >= startDate && createdAt <= endDate;
+      return createdAt >= startDate && createdAt < endDate;
     });
 
     // Clientes com mais de 1 visita
@@ -396,7 +394,7 @@ export class DashboardService {
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
           gte(commands.cashierClosedAt, startDate),
-          lte(commands.cashierClosedAt, endDate),
+          lt(commands.cashierClosedAt, endDate),
         ),
       );
 
@@ -460,7 +458,7 @@ export class DashboardService {
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
           gte(commands.cashierClosedAt, startDate),
-          lte(commands.cashierClosedAt, endDate),
+          lt(commands.cashierClosedAt, endDate),
         ),
       );
 
@@ -583,9 +581,10 @@ export class DashboardService {
   }
 
   private async getTodaySales(salonId: string): Promise<number> {
-    const today = new Date();
-    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
-    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+    const { year, month, day } = spNow();
+    const m = month - 1;
+    const startOfDay = spMidnightToUtc(year, m, day);
+    const endOfDay = spMidnightToUtc(year, m, day + 1);
 
     const todayCommands = await this.db
       .select()
@@ -595,7 +594,7 @@ export class DashboardService {
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
           gte(commands.cashierClosedAt, startOfDay),
-          lte(commands.cashierClosedAt, endOfDay),
+          lt(commands.cashierClosedAt, endOfDay),
         ),
       );
 
@@ -615,16 +614,22 @@ export class DashboardService {
     salonId: string,
     professionalId: string,
   ): Promise<ProfessionalDashboardDto> {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayStr = today.toISOString().split('T')[0];
+    const sp = spNow();
+    const m = sp.month - 1; // 0-indexed
+    // Date strings for appointment.date comparisons (YYYY-MM-DD, no TZ needed)
+    const todayStr = `${sp.year}-${String(sp.month).padStart(2, '0')}-${String(sp.day).padStart(2, '0')}`;
 
-    const weekStart = new Date(today);
-    weekStart.setDate(weekStart.getDate() - 7);
-    const weekStartStr = weekStart.toISOString().split('T')[0];
+    const weekAgo = new Date(sp.year, m, sp.day - 7);
+    const weekStartStr = `${weekAgo.getFullYear()}-${String(weekAgo.getMonth() + 1).padStart(2, '0')}-${String(weekAgo.getDate()).padStart(2, '0')}`;
 
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const monthStartStr = `${sp.year}-${String(sp.month).padStart(2, '0')}-01`;
+    // Last day of month
+    const lastDay = new Date(sp.year, m + 1, 0).getDate();
+    const monthEndStr = `${sp.year}-${String(sp.month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    // UTC ranges for timestamp queries
+    const monthStartUtc = spMidnightToUtc(sp.year, m, 1);
+    const monthEndUtc = spMidnightToUtc(sp.year, m + 1, 1);
 
     // Buscar dados do profissional (nome e taxa de comissão)
     const [professional] = await this.db
@@ -667,7 +672,7 @@ export class DashboardService {
             eq(appointments.salonId, salonId),
             eq(appointments.professionalId, professionalId),
             gte(appointments.date, weekStartStr),
-            lte(appointments.date, todayStr),
+            lte(appointments.date, todayStr), // date string comparison, not timestamp
           ),
         ),
 
@@ -679,8 +684,8 @@ export class DashboardService {
           and(
             eq(appointments.salonId, salonId),
             eq(appointments.professionalId, professionalId),
-            gte(appointments.date, monthStart.toISOString().split('T')[0]),
-            lte(appointments.date, monthEnd.toISOString().split('T')[0]),
+            gte(appointments.date, monthStartStr),
+            lte(appointments.date, monthEndStr),
           ),
         ),
 
@@ -700,7 +705,7 @@ export class DashboardService {
         .limit(10),
 
       // Faturamento do mês (serviços executados pelo profissional)
-      this.getProfessionalMonthRevenue(salonId, professionalId, monthStart, monthEnd),
+      this.getProfessionalMonthRevenue(salonId, professionalId, monthStartUtc, monthEndUtc),
     ]);
 
     // Calcular performance
@@ -760,7 +765,7 @@ export class DashboardService {
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
           gte(commands.cashierClosedAt, monthStart),
-          lte(commands.cashierClosedAt, monthEnd),
+          lt(commands.cashierClosedAt, monthEnd),
         ),
       );
 

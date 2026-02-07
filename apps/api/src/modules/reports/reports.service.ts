@@ -14,7 +14,7 @@ import {
   products,
   commissions,
 } from '../../database/schema';
-import { eq, and, gte, lte, desc, sql } from 'drizzle-orm';
+import { eq, and, gte, lt, desc, sql } from 'drizzle-orm';
 
 export interface TransactionExportData {
   [key: string]: number | Date | string | null;
@@ -133,7 +133,7 @@ export class ReportsService {
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
           gte(commands.cashierClosedAt, startDate),
-          lte(commands.cashierClosedAt, endDate),
+          lt(commands.cashierClosedAt, endDate),
         ),
       )
       .orderBy(desc(commands.cashierClosedAt));
@@ -210,7 +210,7 @@ export class ReportsService {
           eq(commands.status, 'CLOSED'),
           eq(commandItems.type, 'SERVICE'),
           gte(commands.cashierClosedAt, startDate),
-          lte(commands.cashierClosedAt, endDate),
+          lt(commands.cashierClosedAt, endDate),
         ),
       );
 
@@ -269,7 +269,7 @@ export class ReportsService {
           eq(commands.status, 'CLOSED'),
           eq(commandItems.type, 'PRODUCT'),
           gte(commands.cashierClosedAt, startDate),
-          lte(commands.cashierClosedAt, endDate),
+          lt(commands.cashierClosedAt, endDate),
         ),
       );
 
@@ -354,7 +354,7 @@ export class ReportsService {
             eq(commandItems.performerId, prof.id),
             eq(commands.status, 'CLOSED'),
             gte(commands.cashierClosedAt, startDate),
-            lte(commands.cashierClosedAt, endDate),
+            lt(commands.cashierClosedAt, endDate),
           ),
         );
 
@@ -368,7 +368,7 @@ export class ReportsService {
           and(
             eq(commissions.professionalId, prof.id),
             gte(commissions.createdAt, startDate),
-            lte(commissions.createdAt, endDate),
+            lt(commissions.createdAt, endDate),
           ),
         );
 
@@ -416,7 +416,7 @@ export class ReportsService {
         and(
           eq(clients.salonId, salonId),
           gte(clients.createdAt, startDate),
-          lte(clients.createdAt, endDate),
+          lt(clients.createdAt, endDate),
         ),
       );
     const newClients = newClientsResult[0]?.count || 0;
@@ -434,7 +434,7 @@ export class ReportsService {
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
           gte(commands.cashierClosedAt, startDate),
-          lte(commands.cashierClosedAt, endDate),
+          lt(commands.cashierClosedAt, endDate),
           sql`${commands.clientId} IS NOT NULL`,
         ),
       )
@@ -593,7 +593,7 @@ export class ReportsService {
       conditions.push(gte(transactions.date, startDate));
     }
     if (endDate) {
-      conditions.push(lte(transactions.date, endDate));
+      conditions.push(lt(transactions.date, endDate));
     }
 
     const results = await this.db
@@ -668,7 +668,7 @@ export class ReportsService {
       conditions.push(gte(transactions.date, startDate));
     }
     if (endDate) {
-      conditions.push(lte(transactions.date, endDate));
+      conditions.push(lt(transactions.date, endDate));
     }
 
     const [salonData] = await this.db
@@ -743,7 +743,7 @@ export class ReportsService {
         and(
           eq(transactions.salonId, salonId),
           gte(transactions.date, startDate),
-          lte(transactions.date, endDate),
+          lt(transactions.date, endDate),
         ),
       );
 
