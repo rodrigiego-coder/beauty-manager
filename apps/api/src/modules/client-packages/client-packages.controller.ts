@@ -2,13 +2,14 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Param,
   Body,
   NotFoundException,
   ParseIntPipe,
 } from '@nestjs/common';
-import { ClientPackagesService, ConsumeSessionDto } from './client-packages.service';
+import { ClientPackagesService, ConsumeSessionDto, AdjustBalanceDto } from './client-packages.service';
 
 @Controller('client-packages')
 export class ClientPackagesController {
@@ -144,6 +145,18 @@ export class ClientPackagesController {
       data.clientId,
       data.serviceId,
     );
+  }
+
+  /**
+   * PATCH /client-packages/:id/adjust-balance
+   * Manually adjust session balance (for clients who started before the system)
+   */
+  @Patch(':id/adjust-balance')
+  async adjustBalance(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() data: AdjustBalanceDto,
+  ) {
+    return this.clientPackagesService.adjustSessionBalance(id, data);
   }
 
   /**
