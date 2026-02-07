@@ -1092,6 +1092,11 @@ export const clientNoShows = pgTable('client_no_shows', {
 
 
 /**
+ * Enum para tipo de produto (SIMPLE = produto normal, KIT = pacote de componentes)
+ */
+export const productKindEnum = pgEnum('product_kind', ['SIMPLE', 'KIT']);
+
+/**
  * Tabela de produtos (Estoque) - Com campos de inteligência de produto
  */
 export const products = pgTable('products', {
@@ -1108,6 +1113,7 @@ export const products = pgTable('products', {
   minStockInternal: integer('min_stock_internal').default(0).notNull(),
   unit: unitEnum('unit').default('UN').notNull(),
   active: boolean('active').default(true).notNull(),
+  kind: productKindEnum('kind').default('SIMPLE').notNull(),
   // Flags Retail/Backbar (indica onde o produto pode ser usado)
   isRetail: boolean('is_retail').default(true).notNull(),
   isBackbar: boolean('is_backbar').default(false).notNull(),
@@ -1136,6 +1142,24 @@ export const products = pgTable('products', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+/**
+ * Tabela de componentes de KIT
+ * Liga um produto KIT aos seus produtos componentes com quantidades.
+ */
+export const kitComponents = pgTable('kit_components', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id).notNull(),
+  kitProductId: integer('kit_product_id').references(() => products.id).notNull(),
+  componentProductId: integer('component_product_id').references(() => products.id).notNull(),
+  quantity: decimal('quantity', { precision: 10, scale: 2 }).default('1').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  unique('uq_kit_component').on(table.kitProductId, table.componentProductId),
+]);
+
+export type KitComponent = typeof kitComponents.$inferSelect;
+export type NewKitComponent = typeof kitComponents.$inferInsert;
 
 /**
  * Enum para tipo de ajuste de estoque (LEGADO - manter para compatibilidade)
@@ -1190,6 +1214,7 @@ export const stockMovements = pgTable('stock_movements', {
   referenceType: varchar('reference_type', { length: 50 }), // 'command', 'appointment', 'purchase', etc.
   referenceId: uuid('reference_id'), // ID do registro relacionado
   transferGroupId: uuid('transfer_group_id'), // Agrupa transferências entre locações
+  movementGroupId: uuid('movement_group_id'), // Agrupa baixas atômicas (ex: venda de KIT)
   reason: text('reason'),
   createdByUserId: uuid('created_by_user_id').references(() => users.id).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
