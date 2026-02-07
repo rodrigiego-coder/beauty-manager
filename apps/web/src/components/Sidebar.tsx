@@ -30,6 +30,7 @@ import {
   Clock,
   CalendarOff,
   ClipboardList,
+  BarChart3,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
@@ -55,6 +56,7 @@ const navigation: NavItem[] = [
   { name: 'Comissoes', href: '/comissoes', icon: Percent, roles: ['OWNER', 'MANAGER'] },
   { name: 'Financeiro', href: '/financeiro', icon: DollarSign, roles: ['OWNER', 'MANAGER'] },
   { name: 'Produtos', href: '/produtos', icon: Package, roles: ['OWNER', 'MANAGER'] },
+  { name: 'Estoque', href: '/estoque', icon: BarChart3, roles: ['OWNER', 'MANAGER'] },
   { name: 'Assinaturas', href: '/assinaturas-produtos', icon: Repeat, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST'] },
   { name: 'Entregas', href: '/assinaturas-produtos/entregas', icon: Truck, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },
   { name: 'Reservas', href: '/reservas', icon: ShoppingBag, roles: ['OWNER', 'MANAGER', 'RECEPTIONIST'] },

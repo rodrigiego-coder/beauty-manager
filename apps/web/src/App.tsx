@@ -43,6 +43,7 @@ import {
   MyBlocksPage,
   PackagesPage,
   AccountsReceivablePage,
+  StockPage,
 } from './pages';
 import AlexisConversationsPage from './pages/AlexisConversationsPage';
 import AlexisSettingsPage from './pages/AlexisSettingsPage';
@@ -181,6 +182,14 @@ function App() {
               element={
                 <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
                   <ProductsPage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/estoque"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <StockPage />
                 </RoleGuard>
               }
             />
