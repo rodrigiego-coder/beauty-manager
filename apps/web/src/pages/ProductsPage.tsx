@@ -18,15 +18,18 @@ import {
   Square,
   Power,
   PowerOff,
+  Layers,
 } from 'lucide-react';
 import api from '../services/api';
 import {
   Product,
+  ProductKind,
   ProductUnit,
   ProductStats,
   CreateProductData,
   UpdateProductData,
   AdjustStockData,
+  KitComponentData,
   PRODUCT_UNITS,
   getUnitAbbreviation,
   calculateMargin,
@@ -95,6 +98,11 @@ export function ProductsPage() {
     reason: '',
   });
   const [transferFormErrors, setTransferFormErrors] = useState<Record<string, string>>({});
+
+  // KIT components editor state
+  const [formKind, setFormKind] = useState<ProductKind>('SIMPLE');
+  const [kitComponents, setKitComponents] = useState<KitComponentData[]>([]);
+  const [kitComponentsLoading, setKitComponentsLoading] = useState(false);
 
   useEffect(() => {
     loadProducts();
@@ -210,11 +218,13 @@ export function ProductsPage() {
       isRetail: activeTab === 'retail',
       isBackbar: activeTab === 'internal',
     });
+    setFormKind('SIMPLE');
+    setKitComponents([]);
     setFormErrors({});
     setShowCreateModal(true);
   };
 
-  const handleOpenEditModal = (product: Product) => {
+  const handleOpenEditModal = async (product: Product) => {
     setSelectedProduct(product);
     setFormData({
       name: product.name,
@@ -229,8 +239,34 @@ export function ProductsPage() {
       isRetail: product.isRetail,
       isBackbar: product.isBackbar,
     });
+    setFormKind(product.kind || 'SIMPLE');
     setFormErrors({});
     setShowEditModal(true);
+
+    // Load kit components if KIT
+    if (product.kind === 'KIT') {
+      setKitComponentsLoading(true);
+      try {
+        const { data } = await api.get(`/products/${product.id}/components`);
+        setKitComponents(
+          (data.components || []).map((c: any) => ({
+            id: c.id,
+            componentProductId: c.componentProductId,
+            quantity: parseFloat(c.quantity),
+            productName: c.productName,
+            stockRetail: c.stockRetail,
+            stockInternal: c.stockInternal,
+            unit: c.unit,
+          })),
+        );
+      } catch {
+        setKitComponents([]);
+      } finally {
+        setKitComponentsLoading(false);
+      }
+    } else {
+      setKitComponents([]);
+    }
   };
 
   const handleOpenDeleteModal = (product: Product) => {
@@ -254,7 +290,19 @@ export function ProductsPage() {
 
     try {
       setSubmitting(true);
-      await api.post('/products', formData);
+      const createData = { ...formData, kind: formKind };
+      const { data: newProduct } = await api.post('/products', createData);
+
+      // Se KIT com componentes, salvar componentes
+      if (formKind === 'KIT' && kitComponents.length > 0) {
+        await api.put(`/products/${newProduct.id}/components`, {
+          components: kitComponents.map((c) => ({
+            componentProductId: c.componentProductId,
+            quantity: c.quantity,
+          })),
+        });
+      }
+
       setShowCreateModal(false);
       loadProducts();
       loadStats();
@@ -307,8 +355,22 @@ export function ProductsPage() {
       if (formData.isBackbar !== selectedProduct.isBackbar) {
         updateData.isBackbar = formData.isBackbar;
       }
+      if (formKind !== (selectedProduct.kind || 'SIMPLE')) {
+        updateData.kind = formKind;
+      }
 
       await api.patch(`/products/${selectedProduct.id}`, updateData);
+
+      // Se KIT, salvar componentes (replace-all)
+      if (formKind === 'KIT') {
+        await api.put(`/products/${selectedProduct.id}/components`, {
+          components: kitComponents.map((c) => ({
+            componentProductId: c.componentProductId,
+            quantity: c.quantity,
+          })),
+        });
+      }
+
       setShowEditModal(false);
       setSelectedProduct(null);
       loadProducts();
@@ -490,6 +552,190 @@ export function ProductsPage() {
       setBulkLoading(false);
     }
   };
+
+  // === KIT Components helpers ===
+  const simpleProducts = products.filter((p) => (p.kind || 'SIMPLE') !== 'KIT' && p.active);
+
+  const addKitComponent = (productId: number) => {
+    const product = simpleProducts.find((p) => p.id === productId);
+    if (!product) return;
+    if (kitComponents.some((c) => c.componentProductId === productId)) return;
+    setKitComponents([
+      ...kitComponents,
+      {
+        componentProductId: product.id,
+        quantity: 1,
+        productName: product.name,
+        stockRetail: product.stockRetail,
+        stockInternal: product.stockInternal,
+        unit: product.unit,
+      },
+    ]);
+  };
+
+  const removeKitComponent = (productId: number) => {
+    setKitComponents(kitComponents.filter((c) => c.componentProductId !== productId));
+  };
+
+  const updateKitComponentQty = (productId: number, qty: number) => {
+    setKitComponents(
+      kitComponents.map((c) =>
+        c.componentProductId === productId ? { ...c, quantity: Math.max(1, qty) } : c,
+      ),
+    );
+  };
+
+  const getKitsPossible = (): number | null => {
+    if (kitComponents.length === 0) return null;
+    let min = Infinity;
+    for (const c of kitComponents) {
+      const stock = activeTab === 'retail' ? (c.stockRetail ?? 0) : (c.stockInternal ?? 0);
+      const possible = c.quantity > 0 ? Math.floor(stock / c.quantity) : 0;
+      min = Math.min(min, possible);
+    }
+    return min === Infinity ? 0 : min;
+  };
+
+  // Shared JSX for kind selector + components editor (used in both create and edit modals)
+  const renderKitEditor = () => (
+    <>
+      {/* Kind selector */}
+      <div className="border-t border-gray-200 pt-4 mt-4">
+        <p className="text-sm font-medium text-gray-700 mb-3">Categoria do Produto</p>
+        <div className="flex gap-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="productKind"
+              checked={formKind === 'SIMPLE'}
+              onChange={() => { setFormKind('SIMPLE'); setKitComponents([]); }}
+              className="text-primary-600 focus:ring-primary-500"
+            />
+            <span className="text-sm text-gray-700">Simples</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="productKind"
+              checked={formKind === 'KIT'}
+              onChange={() => setFormKind('KIT')}
+              className="text-primary-600 focus:ring-primary-500"
+            />
+            <span className="text-sm text-gray-700 flex items-center gap-1">
+              <Layers className="w-4 h-4" /> Kit
+            </span>
+          </label>
+        </div>
+      </div>
+
+      {/* Components editor (only when KIT) */}
+      {formKind === 'KIT' && (
+        <div className="border border-indigo-200 rounded-lg p-4 bg-indigo-50">
+          <p className="text-sm font-medium text-indigo-700 mb-3 flex items-center gap-2">
+            <Layers className="w-4 h-4" />
+            Componentes do Kit
+          </p>
+
+          {kitComponentsLoading ? (
+            <div className="flex justify-center py-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
+            </div>
+          ) : (
+            <>
+              {/* Add component selector */}
+              <div className="mb-3">
+                <select
+                  onChange={(e) => {
+                    const id = parseInt(e.target.value);
+                    if (id) addKitComponent(id);
+                    e.target.value = '';
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    + Adicionar componente...
+                  </option>
+                  {simpleProducts
+                    .filter((p) => !kitComponents.some((c) => c.componentProductId === p.id))
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (estoque: {activeTab === 'retail' ? p.stockRetail : p.stockInternal})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* Components list */}
+              {kitComponents.length === 0 ? (
+                <p className="text-sm text-indigo-500 text-center py-2">
+                  Nenhum componente adicionado
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {kitComponents.map((comp) => {
+                    const stock = activeTab === 'retail' ? (comp.stockRetail ?? 0) : (comp.stockInternal ?? 0);
+                    const maxKits = comp.quantity > 0 ? Math.floor(stock / comp.quantity) : 0;
+                    return (
+                      <div
+                        key={comp.componentProductId}
+                        className="flex items-center gap-2 bg-white rounded-lg p-2 border border-gray-200"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {comp.productName}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Estoque: {stock} {comp.unit || ''} | Max kits: {maxKits}
+                            {stock === 0 && (
+                              <span className="ml-1 text-red-600 font-medium">Sem estoque</span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <label className="text-xs text-gray-500">Qty:</label>
+                          <input
+                            type="number"
+                            value={comp.quantity}
+                            onChange={(e) =>
+                              updateKitComponentQty(comp.componentProductId, parseInt(e.target.value) || 1)
+                            }
+                            className="w-16 px-2 py-1 border border-gray-300 rounded text-sm text-center"
+                            min="1"
+                          />
+                        </div>
+                        <button
+                          onClick={() => removeKitComponent(comp.componentProductId)}
+                          className="p-1 text-red-400 hover:text-red-600"
+                          title="Remover"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {/* Kits possible summary */}
+                  {(() => {
+                    const kp = getKitsPossible();
+                    return kp !== null ? (
+                      <div
+                        className={`text-sm font-medium text-center py-2 rounded-lg ${
+                          kp > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                        }`}
+                      >
+                        Kits possiveis: {kp}
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </>
+  );
 
   if (loading) {
     return (
@@ -762,10 +1008,16 @@ export function ProductsPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div>
-                          <div className="font-medium text-gray-900">
+                          <div className="font-medium text-gray-900 flex items-center gap-2">
                             {product.name}
+                            {product.kind === 'KIT' && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-medium rounded">
+                                <Layers className="w-3 h-3" />
+                                KIT
+                              </span>
+                            )}
                             {product.isRetail && product.isBackbar && (
-                              <span className="ml-2 text-xs text-gray-400">(Ambos)</span>
+                              <span className="text-xs text-gray-400">(Ambos)</span>
                             )}
                           </div>
                           {product.description && (
@@ -980,9 +1232,12 @@ export function ProductsPage() {
                 </div>
               )}
 
+              {/* Kit selector + components editor */}
+              {renderKitEditor()}
+
               {/* Flags Retail/Backbar */}
               <div className="border-t border-gray-200 pt-4 mt-4">
-                <p className="text-sm font-medium text-gray-700 mb-3">Tipo de Produto</p>
+                <p className="text-sm font-medium text-gray-700 mb-3">Disponibilidade</p>
                 <div className="flex gap-6">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -1219,9 +1474,12 @@ export function ProductsPage() {
                 </div>
               )}
 
+              {/* Kit selector + components editor */}
+              {renderKitEditor()}
+
               {/* Flags Retail/Backbar */}
               <div className="border-t border-gray-200 pt-4 mt-4">
-                <p className="text-sm font-medium text-gray-700 mb-3">Tipo de Produto</p>
+                <p className="text-sm font-medium text-gray-700 mb-3">Disponibilidade</p>
                 <div className="flex gap-6">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
