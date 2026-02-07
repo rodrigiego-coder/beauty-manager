@@ -156,6 +156,11 @@ export class CreateAppointmentDto {
   @IsOptional()
   @IsEnum(AppointmentSource)
   source?: AppointmentSource;
+
+  @ApiPropertyOptional({ description: 'Encaixe - permite agendar em horário já ocupado', example: false })
+  @IsOptional()
+  @IsBoolean()
+  fitIn?: boolean;
 }
 
 export class UpdateAppointmentDto {

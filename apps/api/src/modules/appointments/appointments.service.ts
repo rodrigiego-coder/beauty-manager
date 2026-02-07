@@ -1,3 +1,20 @@
+/**
+ * @stable - PROTECTED - CONSULT BEFORE CHANGE
+ * ============================================
+ * MÓDULO CRÍTICO: AGENDA (Appointments)
+ * Status: ESTÁVEL desde 2026-02-06
+ *
+ * FUNCIONALIDADES PROTEGIDAS:
+ * - Camila Sanches (OWNER + isProfessional) aparece na agenda
+ * - CANCELLED e NO_SHOW não bloqueiam horários (findByDay/Week/Month)
+ * - Horário 12h-13h disponível (getWorkingHours sem almoço padrão)
+ * - Lead time configurável
+ *
+ * ⚠️  ANTES DE MODIFICAR: Consulte STABLE_MODULES.md
+ * ⚠️  QUALQUER ALTERAÇÃO PODE QUEBRAR FUNCIONALIDADES CRÍTICAS
+ * ============================================
+ */
+
 import { Injectable, Inject, BadRequestException, NotFoundException, Logger, forwardRef } from '@nestjs/common';
 import { eq, and, desc, gte, lte, sql, or, ne } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.module';
@@ -12,6 +29,7 @@ import {
   commands,
   commandItems,
   professionalAvailabilities,
+  professionalSchedules,
   professionalBlocks,
   clientNoShows,
   clientPackages,
@@ -325,6 +343,9 @@ export class AppointmentsService {
       throw new BadRequestException('Serviço é obrigatório');
     }
 
+    // Extract fitIn flag (not persisted to DB)
+    const fitIn = (data as any).fitIn === true;
+
     // Validate client is not blocked
     if (data.clientId) {
       const isBlocked = await this.isClientBlocked(salonId, data.clientId);
@@ -343,16 +364,19 @@ export class AppointmentsService {
     );
 
     if (!availability.available) {
-      const error: any = new BadRequestException(availability.message);
-      error.response = {
-        statusCode: 400,
-        error: 'APPOINTMENT_NOT_AVAILABLE',
-        reason: availability.reason,
-        message: availability.message,
-        details: availability.details,
-        suggestedSlots: availability.suggestedSlots,
-      };
-      throw error;
+      // For fit-in (encaixe), only skip SLOT_OCCUPIED - all other reasons still block
+      if (!(fitIn && availability.reason === 'SLOT_OCCUPIED')) {
+        const error: any = new BadRequestException(availability.message);
+        error.response = {
+          statusCode: 400,
+          error: 'APPOINTMENT_NOT_AVAILABLE',
+          reason: availability.reason,
+          message: availability.message,
+          details: availability.details,
+          suggestedSlots: availability.suggestedSlots,
+        };
+        throw error;
+      }
     }
 
     // Validate professional
@@ -410,7 +434,7 @@ export class AppointmentsService {
       data.professionalId,
     );
 
-    if (hasConflict) {
+    if (hasConflict && !fitIn) {
       throw new BadRequestException('Profissional já tem agendamento neste horário');
     }
 
@@ -1385,6 +1409,7 @@ Quer agendar a próxima? Responda *AGENDAR*! 😊`;
    * Retorna horários de trabalho de um profissional
    */
   async getWorkingHours(professionalId: string, salonId: string): Promise<WorkingHours[]> {
+    // 1) Fonte primária: professional_availabilities (tabela granular com breaks)
     const availability = await this.db
       .select()
       .from(professionalAvailabilities)
@@ -1394,26 +1419,47 @@ Quer agendar a próxima? Responda *AGENDAR*! 😊`;
       ))
       .orderBy(professionalAvailabilities.dayOfWeek);
 
-    // If no custom hours, return default (Mon-Sat 9-18, SEM intervalo de almoço)
-    // O salão não tem almoço fixo - horários 12:00-13:00 devem ficar disponíveis
-    if (availability.length === 0) {
-      return [1, 2, 3, 4, 5, 6].map(day => ({
-        dayOfWeek: day,
-        startTime: '09:00',
-        endTime: '18:00',
-        breakStartTime: null,
-        breakEndTime: null,
-        isActive: day !== 0, // Sunday off
+    if (availability.length > 0) {
+      return availability.map(a => ({
+        dayOfWeek: a.dayOfWeek,
+        startTime: a.startTime,
+        endTime: a.endTime,
+        breakStartTime: a.breakStartTime,
+        breakEndTime: a.breakEndTime,
+        isActive: a.isActive,
       }));
     }
 
-    return availability.map(a => ({
-      dayOfWeek: a.dayOfWeek,
-      startTime: a.startTime,
-      endTime: a.endTime,
-      breakStartTime: a.breakStartTime,
-      breakEndTime: a.breakEndTime,
-      isActive: a.isActive,
+    // 2) Fallback: professional_schedules (tabela da página "Meu Horário")
+    const schedules = await this.db
+      .select()
+      .from(professionalSchedules)
+      .where(and(
+        eq(professionalSchedules.salonId, salonId),
+        eq(professionalSchedules.professionalId, professionalId),
+      ))
+      .orderBy(professionalSchedules.dayOfWeek);
+
+    if (schedules.length > 0) {
+      return schedules.map(s => ({
+        dayOfWeek: s.dayOfWeek,
+        startTime: s.startTime || '09:00',
+        endTime: s.endTime || '18:00',
+        breakStartTime: null,
+        breakEndTime: null,
+        isActive: s.isWorking,
+      }));
+    }
+
+    // 3) Último recurso: fallback fixo Mon-Sat 9-18, SEM intervalo de almoço
+    // O salão não tem almoço fixo - horários 12:00-13:00 devem ficar disponíveis
+    return [1, 2, 3, 4, 5, 6].map(day => ({
+      dayOfWeek: day,
+      startTime: '09:00',
+      endTime: '18:00',
+      breakStartTime: null,
+      breakEndTime: null,
+      isActive: day !== 0, // Sunday off
     }));
   }
 
