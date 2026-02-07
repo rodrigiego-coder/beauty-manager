@@ -393,6 +393,123 @@ export class ProductsService {
   }
 
   /**
+   * Retorna componentes de um KIT com dados do produto (nome, estoque).
+   */
+  async getKitComponentsWithProduct(kitProductId: number, salonId: string) {
+    return this.db
+      .select({
+        id: kitComponents.id,
+        componentProductId: kitComponents.componentProductId,
+        quantity: kitComponents.quantity,
+        productName: products.name,
+        stockRetail: products.stockRetail,
+        stockInternal: products.stockInternal,
+        unit: products.unit,
+      })
+      .from(kitComponents)
+      .innerJoin(products, eq(products.id, kitComponents.componentProductId))
+      .where(
+        and(
+          eq(kitComponents.kitProductId, kitProductId),
+          eq(kitComponents.salonId, salonId),
+        ),
+      );
+  }
+
+  /**
+   * Substitui todos os componentes de um KIT (replace-all transacional).
+   * Valida: kit existe e é KIT, componentes existem e são SIMPLE, salonId confere.
+   */
+  async setKitComponents(
+    kitProductId: number,
+    salonId: string,
+    componentsList: { componentProductId: number; quantity: number }[],
+  ) {
+    // 1. Validar que o kit existe e é KIT
+    const kit = await this.findById(kitProductId);
+    if (!kit || kit.salonId !== salonId) {
+      throw new NotFoundException(`Produto KIT ID ${kitProductId} não encontrado`);
+    }
+    if (kit.kind !== 'KIT') {
+      throw new BadRequestException(`Produto ID ${kitProductId} não é um KIT`);
+    }
+
+    // 2. Validar componentes
+    if (componentsList.length === 0) {
+      // Permitir KIT vazio (sem componentes) — delete all
+      await this.db
+        .delete(kitComponents)
+        .where(
+          and(
+            eq(kitComponents.kitProductId, kitProductId),
+            eq(kitComponents.salonId, salonId),
+          ),
+        );
+      return [];
+    }
+
+    const compIds = componentsList.map((c) => c.componentProductId);
+
+    // Verificar duplicados no input
+    if (new Set(compIds).size !== compIds.length) {
+      throw new BadRequestException('Componentes duplicados não são permitidos');
+    }
+
+    // Buscar os produtos componentes
+    const compProducts = await this.db
+      .select()
+      .from(products)
+      .where(and(inArray(products.id, compIds), eq(products.salonId, salonId)));
+
+    if (compProducts.length !== compIds.length) {
+      const foundIds = compProducts.map((p) => p.id);
+      const missing = compIds.filter((id) => !foundIds.includes(id));
+      throw new BadRequestException(`Componentes não encontrados: ${missing.join(', ')}`);
+    }
+
+    // Validar: nenhum componente pode ser KIT
+    const kitComps = compProducts.filter((p) => p.kind === 'KIT');
+    if (kitComps.length > 0) {
+      throw new BadRequestException(
+        `Componentes não podem ser KIT: ${kitComps.map((p) => p.name).join(', ')}`,
+      );
+    }
+
+    // Validar quantidades
+    for (const c of componentsList) {
+      if (c.quantity < 1) {
+        throw new BadRequestException(`Quantidade deve ser >= 1 para cada componente`);
+      }
+    }
+
+    // 3. Replace-all transacional
+    await this.db.transaction(async (tx: any) => {
+      // Delete existing
+      await tx
+        .delete(kitComponents)
+        .where(
+          and(
+            eq(kitComponents.kitProductId, kitProductId),
+            eq(kitComponents.salonId, salonId),
+          ),
+        );
+
+      // Insert new
+      await tx.insert(kitComponents).values(
+        componentsList.map((c) => ({
+          salonId,
+          kitProductId,
+          componentProductId: c.componentProductId,
+          quantity: c.quantity.toString(),
+        })),
+      );
+    });
+
+    // 4. Retornar lista enriquecida
+    return this.getKitComponentsWithProduct(kitProductId, salonId);
+  }
+
+  /**
    * Reverte todos os movimentos de estoque de um KIT de forma atômica.
    * Usa SELECT ... FOR UPDATE para consistência (mesmo padrão de deductKitStock).
    * Retorna o novo movementGroupId dos movimentos RETURN gerados.

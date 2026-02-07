@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Param,
@@ -203,6 +204,43 @@ export class ProductsController {
 
     const product = await this.productsService.reactivate(id);
     return product;
+  }
+
+  /**
+   * GET /products/:id/components
+   * Retorna os componentes de um produto KIT (com dados do produto)
+   */
+  @Get(':id/components')
+  @Roles('OWNER', 'MANAGER')
+  async getComponents(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    const existing = await this.productsService.findById(id);
+    if (!existing || existing.salonId !== user.salonId) {
+      throw new NotFoundException('Produto nao encontrado');
+    }
+    const components = await this.productsService.getKitComponentsWithProduct(id, user.salonId);
+    return { components };
+  }
+
+  /**
+   * PUT /products/:id/components
+   * Substitui todos os componentes de um KIT (replace-all transacional)
+   */
+  @Put(':id/components')
+  @Roles('OWNER', 'MANAGER')
+  async setComponents(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: { components: { componentProductId: number; quantity: number }[] },
+  ) {
+    const components = await this.productsService.setKitComponents(
+      id,
+      user.salonId,
+      body.components || [],
+    );
+    return { components };
   }
 
   /**

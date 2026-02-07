@@ -76,6 +76,12 @@ export class CreateProductDto {
   @IsBoolean({ message: 'isBackbar deve ser um booleano' })
   @IsOptional()
   isBackbar?: boolean;
+
+  @ApiPropertyOptional({ description: 'Tipo do produto', enum: ['SIMPLE', 'KIT'], example: 'SIMPLE' })
+  @IsString({ message: 'Tipo deve ser uma string' })
+  @IsIn(['SIMPLE', 'KIT'], { message: 'Tipo deve ser SIMPLE ou KIT' })
+  @IsOptional()
+  kind?: 'SIMPLE' | 'KIT';
 }
 
 // DTO para atualizar produto
@@ -149,6 +155,12 @@ export class UpdateProductDto {
   @IsBoolean({ message: 'isBackbar deve ser um booleano' })
   @IsOptional()
   isBackbar?: boolean;
+
+  @ApiPropertyOptional({ description: 'Tipo do produto', enum: ['SIMPLE', 'KIT'], example: 'SIMPLE' })
+  @IsString({ message: 'Tipo deve ser uma string' })
+  @IsIn(['SIMPLE', 'KIT'], { message: 'Tipo deve ser SIMPLE ou KIT' })
+  @IsOptional()
+  kind?: 'SIMPLE' | 'KIT';
 }
 
 // DTO para ajuste de estoque
