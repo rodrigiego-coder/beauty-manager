@@ -1,4 +1,22 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+/**
+ * @stable - PROTECTED - CONSULT BEFORE CHANGE
+ * ============================================
+ * MÓDULO CRÍTICO: AGENDA (Frontend)
+ * Status: ESTÁVEL desde 2026-02-06
+ *
+ * FUNCIONALIDADES PROTEGIDAS:
+ * - View mode: Dia/Semana/Mês
+ * - Snap-scroll mobile entre profissionais
+ * - ActionSheet de filtros mobile
+ * - Indicadores de scroll (dots)
+ * - Lead time toggle
+ *
+ * ⚠️  ANTES DE MODIFICAR: Consulte STABLE_MODULES.md
+ * ⚠️  QUALQUER ALTERAÇÃO PODE QUEBRAR FUNCIONALIDADES CRÍTICAS
+ * ============================================
+ */
+
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Calendar,
   ChevronLeft,
@@ -32,6 +50,7 @@ import api, { getTriageForAppointment } from '../services/api';
 import { TriageSummary } from '../components/TriageSummary';
 import { ActionSheet } from '../components/ActionSheet';
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import { useAuth } from '../contexts/AuthContext';
 import { APP_CONFIG } from '../config/app_config';
 
 // ==================== TYPES ====================
@@ -200,6 +219,9 @@ const minutesToPixels = (minutes: number, pixelsPerHour: number = 60) => {
 // ==================== COMPONENT ====================
 
 export function AppointmentsPage() {
+  const { user } = useAuth();
+  const isStylist = user?.role === 'STYLIST';
+
   // State
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -250,6 +272,7 @@ export function AppointmentsPage() {
     price: '',
     notes: '',
     internalNotes: '',
+    fitIn: false,
   });
 
   // Block form state
@@ -331,7 +354,7 @@ export function AppointmentsPage() {
       // Inclui STYLIST, qualquer usuário com isProfessional=true, e IDs blindados em ALWAYS_SHOW_IN_AGENDA
       try {
         const teamRes = await api.get('/team');
-        const activeProfessionals = (teamRes.data || [])
+        let activeProfessionals = (teamRes.data || [])
           .filter((u: any) => {
             // Sempre incluir IDs blindados (ex: Camila Sanches OWNER)
             if (APP_CONFIG.ALWAYS_SHOW_IN_AGENDA.includes(u.id)) {
@@ -341,6 +364,7 @@ export function AppointmentsPage() {
             return u.active && (u.role === 'STYLIST' || u.isProfessional === true);
           })
           .map((u: any) => ({ id: u.id, name: u.name }));
+
         if (activeProfessionals.length > 0) {
           setProfessionals(activeProfessionals);
         }
@@ -398,6 +422,15 @@ export function AppointmentsPage() {
         const response = await api.get(
           `/appointments/availability/${formData.professionalId}/${formData.date}${serviceQuery}`
         );
+        // DEBUG: Smoke test - verificar se horários 12:00-13:00 estão disponíveis
+        const lunchSlots = (response.data || []).filter((s: TimeSlot) =>
+          s.time >= '12:00' && s.time < '13:00'
+        );
+        console.log('[DEBUG] Slots 12h-13h:', lunchSlots.map((s: TimeSlot) => ({
+          time: s.time,
+          available: s.available,
+          reason: s.reason
+        })));
         setAvailableSlots(response.data || []);
       } catch (error) {
         console.error('Error loading slots:', error);
@@ -508,6 +541,10 @@ export function AppointmentsPage() {
     setClientResults([]);
   };
 
+  // ========== HANDLE SUBMIT - PROTEGIDO - NAO ALTERAR A ASSINATURA ==========
+  // Esta funcao e chamada pelo <form onSubmit={handleSubmit}>
+  // NAO renomear, NAO remover, NAO mudar para callback de onClick
+  // ===========================================================================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -555,6 +592,7 @@ export function AppointmentsPage() {
         internalNotes: formData.internalNotes || undefined,
         bufferBefore: formData.bufferBefore,
         bufferAfter: formData.bufferAfter,
+        fitIn: formData.fitIn || undefined,
       };
 
       // Adicionar clientId apenas se existir (UUID válido)
@@ -701,6 +739,7 @@ export function AppointmentsPage() {
       price: '',
       notes: '',
       internalNotes: '',
+      fitIn: false,
     });
     setClientSearch('');
   };
@@ -725,7 +764,19 @@ export function AppointmentsPage() {
 
   // ==================== FILTERED DATA ====================
 
+  // STYLIST só vê a própria agenda
+  const visibleProfessionals = useMemo(() => {
+    if (isStylist && user?.id) {
+      return professionals.filter(p => p.id === user.id);
+    }
+    return professionals;
+  }, [professionals, isStylist, user?.id]);
+
   const filteredAppointments = appointments.filter(apt => {
+    // STYLIST: só mostrar os próprios agendamentos
+    if (isStylist && user?.id && apt.professionalId !== user.id) {
+      return false;
+    }
     if (filterProfessional !== 'all' && apt.professionalId !== filterProfessional) {
       return false;
     }
@@ -757,15 +808,15 @@ export function AppointmentsPage() {
         <div
           ref={scrollContainerRef}
           onScroll={handleScroll}
-          className="flex overflow-x-auto snap-x snap-mandatory md:snap-none"
+          className="flex overflow-x-auto snap-x snap-mandatory md:snap-none scroll-pl-16"
         >
           {/* Time column */}
-          <div className="flex-shrink-0 w-16 bg-gray-50 border-r sticky left-0 z-10">
-            <div className="h-12 border-b bg-gray-50" /> {/* Header spacer */}
+          <div className="flex-shrink-0 w-16 bg-white border-r border-gray-200 sticky left-0 z-20 shadow-[2px_0_4px_rgba(0,0,0,0.08)]">
+            <div className="h-12 border-b border-gray-200 bg-white" /> {/* Header spacer */}
             {timeSlots.map(time => (
               <div
                 key={time}
-                className="h-[30px] text-xs text-gray-500 text-right pr-2 border-b border-gray-100 bg-gray-50"
+                className="h-[30px] text-xs text-gray-500 text-right pr-2 border-b border-gray-100 bg-white"
               >
                 {time}
               </div>
@@ -773,7 +824,7 @@ export function AppointmentsPage() {
           </div>
 
           {/* Professional columns */}
-          {professionals.map(professional => {
+          {visibleProfessionals.map(professional => {
             const profAppointments = filteredAppointments.filter(
               apt => apt.professionalId === professional.id && apt.date === selectedDate
             );
@@ -784,7 +835,7 @@ export function AppointmentsPage() {
             return (
               <div
                 key={professional.id}
-                className="w-[calc(100vw-4rem)] flex-shrink-0 snap-center md:w-auto md:flex-1 md:min-w-[200px] border-r"
+                className="w-[calc(100vw-8rem)] flex-shrink-0 snap-start md:w-auto md:flex-1 md:min-w-[200px] border-r"
               >
                 {/* Header */}
                 <div className="h-12 border-b bg-gray-50 px-2 flex items-center justify-center">
@@ -797,7 +848,7 @@ export function AppointmentsPage() {
                 </div>
 
                 {/* Time grid */}
-                <div className="relative">
+                <div className="relative overflow-hidden">
                   {timeSlots.map(time => (
                     <div
                       key={time}
@@ -835,7 +886,7 @@ export function AppointmentsPage() {
                     return (
                       <div
                         key={apt.id}
-                        className={`absolute left-1 right-1 ${colors.bg} ${colors.border} border rounded-md p-1 cursor-pointer overflow-hidden ${priorityClass}`}
+                        className={`absolute left-2 right-1 ${colors.bg} ${colors.border} border rounded-md px-2 py-1 cursor-pointer overflow-hidden ${priorityClass}`}
                         style={{ top: `${top}px`, height: `${Math.max(height, 24)}px` }}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -863,9 +914,9 @@ export function AppointmentsPage() {
         </div>
 
         {/* Mobile scroll indicators (dots) */}
-        {isMobile && professionals.length > 1 && (
+        {isMobile && visibleProfessionals.length > 1 && (
           <div className="flex justify-center gap-1.5 py-3 md:hidden">
-            {professionals.map((_, index) => (
+            {visibleProfessionals.map((_, index) => (
               <div
                 key={index}
                 className={`w-2 h-2 rounded-full transition-colors ${
@@ -1028,8 +1079,8 @@ export function AppointmentsPage() {
 
   const renderCreateModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="p-4 border-b flex justify-between items-center">
+      <div className="bg-white rounded-t-2xl md:rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto pb-safe">
+        <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white z-10">
           <h2 className="text-lg font-semibold">Novo Agendamento</h2>
           <button onClick={() => { setShowCreateModal(false); resetForm(); }}>
             <X className="w-5 h-5" />
@@ -1220,9 +1271,9 @@ export function AppointmentsPage() {
                     <option
                       key={slot.time}
                       value={slot.time}
-                      disabled={!slot.available}
+                      disabled={!slot.available && !formData.fitIn}
                     >
-                      {slot.time} {!slot.available ? `(${slot.reason})` : ''}
+                      {slot.time} {!slot.available ? (formData.fitIn ? '(encaixe)' : `(${slot.reason})`) : ''}
                     </option>
                   ))
                 ) : (
@@ -1232,6 +1283,27 @@ export function AppointmentsPage() {
                 )}
               </select>
             </div>
+          </div>
+
+          {/* Encaixe toggle */}
+          <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+            <div>
+              <div className="text-sm font-medium text-amber-800">Encaixe</div>
+              <div className="text-xs text-amber-600">Agendar mesmo com horario ocupado</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, fitIn: !formData.fitIn })}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
+                formData.fitIn ? 'bg-amber-500' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm ${
+                  formData.fitIn ? 'translate-x-[22px]' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
           </div>
 
           {/* Duration and Price */}
@@ -1323,7 +1395,13 @@ export function AppointmentsPage() {
             />
           </div>
 
-          {/* Actions */}
+          {/* ========== BOTAO SALVAR - PROTEGIDO - NAO ALTERAR ========== */}
+          {/* REGRA: type="submit" dentro de <form onSubmit={handleSubmit}> */}
+          {/* Se este botao parar de funcionar, verificar:                   */}
+          {/*   1. BottomNav z-index deve ser MENOR que z-50 dos modais     */}
+          {/*   2. O botao DEVE ser type="submit" (NAO type="button")       */}
+          {/*   3. O botao DEVE estar DENTRO do <form>                      */}
+          {/* ============================================================= */}
           <div className="flex justify-end gap-2 pt-4 border-t">
             <button
               type="button"
@@ -1339,6 +1417,10 @@ export function AppointmentsPage() {
               Salvar
             </button>
           </div>
+          {/* ============ FIM BOTAO SALVAR - PROTEGIDO =================== */}
+
+          {/* Safe area para BottomNav mobile - NAO REMOVER */}
+          <div className="h-24 md:h-0" />
         </form>
       </div>
     </div>
@@ -1351,8 +1433,8 @@ export function AppointmentsPage() {
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
-          <div className="p-4 border-b flex justify-between items-center">
+        <div className="bg-white rounded-t-2xl md:rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white z-10">
             <div className="flex items-center gap-2">
               <span className={`px-2 py-1 rounded text-sm ${colors.bg} ${colors.text}`}>
                 {STATUS_LABELS[apt.status]}
@@ -1563,6 +1645,9 @@ export function AppointmentsPage() {
                 </button>
               )}
             </div>
+
+            {/* Safe area para BottomNav mobile */}
+            <div className="h-24 md:h-0" />
           </div>
         </div>
       </div>
@@ -1636,8 +1721,8 @@ export function AppointmentsPage() {
 
   const renderBlockFormModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
-        <div className="p-4 border-b flex justify-between items-center">
+      <div className="bg-white rounded-t-2xl md:rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white z-10">
           <h2 className="text-lg font-semibold">Nova Folga/Bloqueio</h2>
           <button onClick={() => { setShowBlockFormModal(false); resetBlockForm(); }}>
             <X className="w-5 h-5" />
@@ -1771,6 +1856,9 @@ export function AppointmentsPage() {
               Salvar
             </button>
           </div>
+
+          {/* Safe area para BottomNav mobile */}
+          <div className="h-24 md:h-0" />
         </form>
       </div>
     </div>

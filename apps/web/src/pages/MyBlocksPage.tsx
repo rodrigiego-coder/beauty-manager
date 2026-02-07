@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, Plus, Trash2, Loader2, X, CalendarOff } from 'lucide-react';
+import { Calendar, Clock, Plus, Trash2, Loader2, X, CalendarOff, MapPin, MapPinOff } from 'lucide-react';
 import api from '../services/api';
+
+interface PresenceSettings {
+  minAdvanceHours: number;
+  isInSalon: boolean;
+  awayMarginHours: number;
+}
 
 interface Block {
   id: string;
@@ -27,6 +33,14 @@ export function MyBlocksPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  // Presence status
+  const [presence, setPresence] = useState<PresenceSettings>({
+    minAdvanceHours: 2,
+    isInSalon: true,
+    awayMarginHours: 3, // Default 3 hours
+  });
+  const [updatingPresence, setUpdatingPresence] = useState(false);
+
   const [form, setForm] = useState<NewBlockForm>({
     blockDate: new Date().toISOString().split('T')[0],
     startTime: '08:00',
@@ -36,7 +50,66 @@ export function MyBlocksPage() {
 
   useEffect(() => {
     loadBlocks();
+    loadPresenceSettings();
   }, []);
+
+  const loadPresenceSettings = async () => {
+    try {
+      const { data } = await api.get('/online-booking/settings');
+      const savedMargin = localStorage.getItem('awayMarginHours');
+      const isInSalon = data.minAdvanceHours === 0;
+
+      setPresence({
+        minAdvanceHours: data.minAdvanceHours ?? 2,
+        isInSalon,
+        awayMarginHours: savedMargin ? parseInt(savedMargin) : (isInSalon ? 3 : data.minAdvanceHours),
+      });
+    } catch (err) {
+      console.error('Erro ao carregar configurações:', err);
+    }
+  };
+
+  const togglePresence = async (inSalon: boolean) => {
+    setUpdatingPresence(true);
+    try {
+      const newMinAdvance = inSalon ? 0 : presence.awayMarginHours;
+
+      await api.put('/online-booking/settings', {
+        minAdvanceHours: newMinAdvance,
+      });
+
+      setPresence(prev => ({
+        ...prev,
+        isInSalon: inSalon,
+        minAdvanceHours: newMinAdvance,
+      }));
+    } catch (err) {
+      console.error('Erro ao atualizar status:', err);
+      alert('Erro ao atualizar status de presença');
+    } finally {
+      setUpdatingPresence(false);
+    }
+  };
+
+  const updateAwayMargin = async (hours: number) => {
+    localStorage.setItem('awayMarginHours', hours.toString());
+    setPresence(prev => ({ ...prev, awayMarginHours: hours }));
+
+    // If currently away, update minAdvanceHours immediately
+    if (!presence.isInSalon) {
+      setUpdatingPresence(true);
+      try {
+        await api.put('/online-booking/settings', {
+          minAdvanceHours: hours,
+        });
+        setPresence(prev => ({ ...prev, minAdvanceHours: hours }));
+      } catch (err) {
+        console.error('Erro ao atualizar margem:', err);
+      } finally {
+        setUpdatingPresence(false);
+      }
+    }
+  };
 
   const loadBlocks = async () => {
     try {
@@ -134,6 +207,92 @@ export function MyBlocksPage() {
           <Plus className="w-5 h-5" />
           Novo Bloqueio
         </button>
+      </div>
+
+      {/* Presence Status Card */}
+      <div className={`mb-6 rounded-2xl border-2 p-6 transition-all ${
+        presence.isInSalon
+          ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-300'
+          : 'bg-gradient-to-r from-red-50 to-orange-50 border-red-300'
+      }`}>
+        <div className="flex items-center gap-3 mb-4">
+          {presence.isInSalon ? (
+            <MapPin className="w-6 h-6 text-green-600" />
+          ) : (
+            <MapPinOff className="w-6 h-6 text-red-600" />
+          )}
+          <h2 className="text-lg font-bold text-gray-900">Status de Presença</h2>
+          {updatingPresence && <Loader2 className="w-5 h-5 animate-spin text-gray-400" />}
+        </div>
+
+        {/* Toggle Buttons */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <button
+            onClick={() => togglePresence(true)}
+            disabled={updatingPresence}
+            className={`flex items-center justify-center gap-2 py-4 rounded-xl font-semibold transition-all ${
+              presence.isInSalon
+                ? 'bg-green-500 text-white shadow-lg'
+                : 'bg-white border-2 border-gray-200 text-gray-600 hover:border-green-300'
+            }`}
+          >
+            <span className="text-xl">🟢</span>
+            Estou no Salão
+          </button>
+
+          <button
+            onClick={() => togglePresence(false)}
+            disabled={updatingPresence}
+            className={`flex items-center justify-center gap-2 py-4 rounded-xl font-semibold transition-all ${
+              !presence.isInSalon
+                ? 'bg-red-500 text-white shadow-lg'
+                : 'bg-white border-2 border-gray-200 text-gray-600 hover:border-red-300'
+            }`}
+          >
+            <span className="text-xl">🔴</span>
+            Não estou no Salão
+          </button>
+        </div>
+
+        {/* Away Margin Selector */}
+        <div className={`p-4 rounded-xl ${presence.isInSalon ? 'bg-white/50' : 'bg-white'}`}>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Margem de segurança (quando fora do salão)
+          </label>
+          <div className="grid grid-cols-4 gap-2">
+            {[2, 3, 4, 6].map(hours => (
+              <button
+                key={hours}
+                onClick={() => updateAwayMargin(hours)}
+                disabled={updatingPresence}
+                className={`py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+                  presence.awayMarginHours === hours
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {hours}h
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Status Info */}
+        <div className={`mt-4 p-3 rounded-lg text-sm ${
+          presence.isInSalon
+            ? 'bg-green-100 text-green-800'
+            : 'bg-red-100 text-red-800'
+        }`}>
+          {presence.isInSalon ? (
+            <>
+              <strong>Agendamento imediato ativo!</strong> Clientes podem agendar horários a partir de agora.
+            </>
+          ) : (
+            <>
+              <strong>Margem de {presence.awayMarginHours}h ativa!</strong> Clientes só podem agendar com {presence.awayMarginHours} horas de antecedência.
+            </>
+          )}
+        </div>
       </div>
 
       {/* Blocks List */}

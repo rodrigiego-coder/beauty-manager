@@ -248,14 +248,16 @@ export class DashboardService {
     );
 
     // Buscar pagamentos das comandas fechadas no periodo
+    // AUDITORIA: Usa netAmount (líquido após taxas) para bater com totalRevenue
     const commandIds = closedCommands.map(cmd => cmd.id);
 
-    let payments: { method: string | null; amount: string }[] = [];
+    let payments: { method: string | null; amount: string; netAmount: string | null }[] = [];
     if (commandIds.length > 0) {
       payments = await this.db
         .select({
           method: commandPayments.method,
           amount: commandPayments.amount,
+          netAmount: commandPayments.netAmount,
         })
         .from(commandPayments)
         .where(
@@ -263,7 +265,7 @@ export class DashboardService {
         );
     }
 
-    // Agrupar por metodo de pagamento
+    // Agrupar por metodo de pagamento (usa netAmount para consistência com totalRevenue)
     const byPaymentMethod: RevenueByPaymentMethod = {
       cash: 0,
       creditCard: 0,
@@ -273,7 +275,7 @@ export class DashboardService {
     };
 
     payments.forEach(p => {
-      const amount = parseFloat(p.amount);
+      const amount = parseFloat(p.netAmount || p.amount);
       switch (p.method) {
         case 'CASH':
           byPaymentMethod.cash += amount;

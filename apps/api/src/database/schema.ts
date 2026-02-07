@@ -1773,6 +1773,7 @@ export const commands = pgTable('commands', {
   
   totalGross: decimal('total_gross', { precision: 10, scale: 2 }).default('0'),
   totalDiscounts: decimal('total_discounts', { precision: 10, scale: 2 }).default('0'),
+  manualDiscount: decimal('manual_discount', { precision: 10, scale: 2 }).default('0'),
   totalNet: decimal('total_net', { precision: 10, scale: 2 }).default('0'),
   
   notes: text('notes'),
@@ -3039,6 +3040,7 @@ export const aiSettings = pgTable('ai_settings', {
   autoSchedulingEnabled: boolean('auto_scheduling_enabled').default(true),
 
   // Horário de funcionamento
+  workingHoursEnabled: boolean('working_hours_enabled').default(false),
   workingHoursStart: varchar('working_hours_start', { length: 5 }).default('08:00'),
   workingHoursEnd: varchar('working_hours_end', { length: 5 }).default('20:00'),
 

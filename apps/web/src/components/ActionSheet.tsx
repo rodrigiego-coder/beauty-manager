@@ -44,7 +44,7 @@ export function ActionSheet({ isOpen, onClose, title, children }: ActionSheetPro
         )}
 
         {/* Content */}
-        <div className="overflow-y-auto max-h-[70vh] p-4">
+        <div className="overflow-y-auto max-h-[70vh] p-4 pb-24">
           {children}
         </div>
       </div>

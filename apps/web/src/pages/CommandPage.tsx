@@ -385,6 +385,11 @@ export function CommandPage() {
   const [loadingPackage, setLoadingPackage] = useState(false);
   const [useClientPackage, setUseClientPackage] = useState(true); // Toggle para usar ou não o pacote
 
+  // Estados para ajuste manual de saldo de sessões
+  const [showAdjustBalanceModal, setShowAdjustBalanceModal] = useState(false);
+  const [currentSessionNum, setCurrentSessionNum] = useState<number>(1);
+  const [adjustLoading, setAdjustLoading] = useState(false);
+
   // Estado para seleção de profissional que vai executar o serviço
   const [availableProfessionals, setAvailableProfessionals] = useState<{ id: string; name: string }[]>([]);
   const [selectedPerformerId, setSelectedPerformerId] = useState<string>('');
@@ -1039,10 +1044,14 @@ export function CommandPage() {
         performerId: itemType === 'SERVICE' && selectedPerformerId ? selectedPerformerId : undefined,
       };
 
-      // Se tem pacote disponível, envia a escolha do usuário
+      // Se tem pacote disponível, envia apenas o flag de escolha do usuário.
+      // O backend detecta e consome o pacote internamente (clientPackageId é gerenciado server-side).
       if (itemType === 'SERVICE' && packageAvailability?.hasPackage) {
         if (useClientPackage) {
-          itemData.clientPackageId = packageAvailability.clientPackageId;
+          // Usa currentSessionNum como fonte única de verdade (sincronizado no load e no modal)
+          const currentSession = currentSessionNum;
+          const totalSess = packageAvailability.totalSessions || '?';
+          itemData.description = `${selectedItem.name} (Sessao ${currentSession}/${totalSess})`;
           itemData.paidByPackage = true;
           itemData.unitPrice = 0; // Sessão de pacote = R$ 0,00
         } else {
@@ -1124,12 +1133,16 @@ export function CommandPage() {
           });
 
           if (response.data.hasPackage) {
+            const total = response.data.balance?.totalSessions || 0;
+            const remaining = response.data.remainingSessions || 0;
             setPackageAvailability({
               hasPackage: true,
               clientPackageId: response.data.clientPackage?.id,
-              remainingSessions: response.data.remainingSessions,
-              totalSessions: response.data.balance?.totalSessions,
+              remainingSessions: remaining,
+              totalSessions: total,
             });
+            // Fonte única de verdade: número direto da sessão atual (ex: 3 de 4)
+            setCurrentSessionNum((total - remaining) + 1);
           } else {
             setPackageAvailability({ hasPackage: false });
           }
@@ -2154,7 +2167,7 @@ export function CommandPage() {
                                 ⚠️ ÚLTIMA SESSÃO do pacote
                               </p>
                               <p className="text-sm text-amber-700">
-                                Sessao {(packageAvailability.totalSessions || 1)} de {(packageAvailability.totalSessions || 1)} (R$ 0,00)
+                                Sessao {currentSessionNum} de {packageAvailability.totalSessions || '?'} (R$ 0,00)
                               </p>
                             </div>
                           </>
@@ -2163,7 +2176,7 @@ export function CommandPage() {
                             <Gift className="w-5 h-5 text-emerald-600" />
                             <div>
                               <p className="font-semibold text-emerald-800">
-                                Lancar Sessao {((packageAvailability.totalSessions || 0) - (packageAvailability.remainingSessions || 0)) + 1} de {packageAvailability.totalSessions || '?'}
+                                Lancar Sessao {currentSessionNum} de {packageAvailability.totalSessions || '?'}
                               </p>
                               <p className="text-sm text-emerald-700">
                                 Restam {packageAvailability.remainingSessions} sessoes - Abater do pacote (R$ 0,00)
@@ -2185,19 +2198,35 @@ export function CommandPage() {
                         </>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setUseClientPackage(!useClientPackage)}
-                      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                        useClientPackage ? 'bg-emerald-500' : 'bg-gray-300'
-                      }`}
-                    >
-                      <span
-                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                          useClientPackage ? 'translate-x-5' : 'translate-x-0'
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCurrentSessionNum(
+                            ((packageAvailability?.totalSessions || 0) - (packageAvailability?.remainingSessions || 0)) + 1
+                          );
+                          setShowAdjustBalanceModal(true);
+                        }}
+                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg active:bg-gray-200"
+                        title="Ajustar saldo de sessoes"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUseClientPackage(!useClientPackage)}
+                        className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          useClientPackage ? 'bg-emerald-500' : 'bg-gray-300'
                         }`}
-                      />
-                    </button>
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            useClientPackage ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : null
@@ -2293,6 +2322,99 @@ export function CommandPage() {
       )}
 
       {/* Modal de Remover Item */}
+      {/* Modal de Ajuste Manual de Saldo de Sessões */}
+      {showAdjustBalanceModal && packageAvailability?.hasPackage && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm mx-4 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-emerald-100 rounded-full">
+                <Edit className="w-5 h-5 text-emerald-600" />
+              </div>
+              <h2 className="text-lg font-semibold text-gray-900">Ajustar Saldo</h2>
+            </div>
+
+            <p className="text-sm text-gray-600 mb-3">
+              Esta e a <strong>quantesima</strong> sessao que a cliente esta fazendo hoje?
+            </p>
+
+            <div className="mb-4 p-3 bg-emerald-50 rounded-lg border border-emerald-200 text-center">
+              <p className="text-sm text-emerald-700 mb-2">Esta e a</p>
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCurrentSessionNum(Math.max(1, currentSessionNum - 1))}
+                  className="w-10 h-10 flex items-center justify-center rounded-full bg-white border-2 border-emerald-300 text-emerald-700 font-bold text-lg hover:bg-emerald-50 active:bg-emerald-100"
+                >-</button>
+                <span className="text-3xl font-bold text-emerald-800 min-w-[80px]">
+                  {currentSessionNum}ª
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentSessionNum(Math.min(packageAvailability.totalSessions || 1, currentSessionNum + 1))}
+                  className="w-10 h-10 flex items-center justify-center rounded-full bg-white border-2 border-emerald-300 text-emerald-700 font-bold text-lg hover:bg-emerald-50 active:bg-emerald-100"
+                >+</button>
+              </div>
+              <p className="text-lg font-semibold text-emerald-800 mt-1">
+                sessao de {packageAvailability.totalSessions}
+              </p>
+              <p className="text-xs text-emerald-600 mt-2">
+                Restam {(packageAvailability.totalSessions || 0) - currentSessionNum} sessao(oes) apos esta
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowAdjustBalanceModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={adjustLoading || currentSessionNum < 1 || currentSessionNum > (packageAvailability.totalSessions || 1)}
+                onClick={async () => {
+                  if (!packageAvailability?.clientPackageId || !selectedItem) return;
+                  try {
+                    setAdjustLoading(true);
+                    // Converte: "esta é a sessão 3" → 2 sessões já feitas antes
+                    await api.patch(`/client-packages/${packageAvailability.clientPackageId}/adjust-balance`, {
+                      serviceId: selectedItem.id,
+                      sessionsAlreadyDone: currentSessionNum - 1,
+                      adjustedBy: user?.name || user?.email || 'unknown',
+                    });
+
+                    // Refresh package availability immediately
+                    const response = await api.post('/client-packages/check-service', {
+                      clientId: command?.clientId,
+                      serviceId: selectedItem.id,
+                    });
+
+                    if (response.data.hasPackage) {
+                      setPackageAvailability({
+                        hasPackage: true,
+                        clientPackageId: response.data.clientPackage?.id,
+                        remainingSessions: response.data.remainingSessions,
+                        totalSessions: response.data.balance?.totalSessions,
+                      });
+                    }
+
+                    setShowAdjustBalanceModal(false);
+                  } catch (err: any) {
+                    alert(err?.response?.data?.message || 'Erro ao ajustar saldo');
+                  } finally {
+                    setAdjustLoading(false);
+                  }
+                }}
+                className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {adjustLoading ? 'Salvando...' : 'Salvar Ajuste'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showRemoveItemModal && itemToRemove && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">

@@ -118,35 +118,42 @@ export function summarizePayload(payload: ZapiPayload): PayloadSummary {
  * Determines if payload should be ignored (group, newsletter, fromMe, no content)
  * ALFA.4: Filter noise before processing
  * Updated: Now accepts audio messages for transcription
+ * Updated: Now accepts #eu/#ia commands from agent (fromMe=true)
  */
-export function shouldIgnorePayload(payload: ZapiPayload): { ignore: boolean; reason: string | null; isAudio: boolean } {
-  // Sent by us
+export function shouldIgnorePayload(payload: ZapiPayload): { ignore: boolean; reason: string | null; isAudio: boolean; isAgentCommand: boolean } {
+  const message = payload.text?.message?.trim().toLowerCase() || '';
+
+  // Sent by us - but allow #eu and #ia commands from agent
   if (payload.fromMe === true) {
-    return { ignore: true, reason: 'from_me', isAudio: false };
+    // Allow agent commands (#eu, #ia) to pass through
+    if (message.startsWith('#eu') || message.startsWith('#ia')) {
+      return { ignore: false, reason: null, isAudio: false, isAgentCommand: true };
+    }
+    return { ignore: true, reason: 'from_me', isAudio: false, isAgentCommand: false };
   }
 
   // Group message
   if (payload.isGroup === true) {
-    return { ignore: true, reason: 'is_group', isAudio: false };
+    return { ignore: true, reason: 'is_group', isAudio: false, isAgentCommand: false };
   }
 
   // Newsletter/broadcast
   if (payload.isNewsletter === true) {
-    return { ignore: true, reason: 'is_newsletter', isAudio: false };
+    return { ignore: true, reason: 'is_newsletter', isAudio: false, isAgentCommand: false };
   }
 
   // Check for audio message
   const isAudio = payload.type === 'audio' || !!payload.audio?.audioUrl;
   if (isAudio) {
-    return { ignore: false, reason: null, isAudio: true };
+    return { ignore: false, reason: null, isAudio: true, isAgentCommand: false };
   }
 
   // No text message and not audio
   if (!payload.text?.message) {
-    return { ignore: true, reason: 'no_text', isAudio: false };
+    return { ignore: true, reason: 'no_text', isAudio: false, isAgentCommand: false };
   }
 
-  return { ignore: false, reason: null, isAudio: false };
+  return { ignore: false, reason: null, isAudio: false, isAgentCommand: false };
 }
 
 // =====================================================
@@ -301,14 +308,44 @@ export class ZapiWebhookController {
         return { received: true };
       }
 
+      // ========== CHECK HORÁRIO DE FUNCIONAMENTO ==========
+      // Só restringe mensagens de clientes; comandos do agente (#eu/#ia) passam sempre
+      if (!ignoreCheck.isAgentCommand) {
+        const [aiConfig] = await db
+          .select({
+            workingHoursEnabled: schema.aiSettings.workingHoursEnabled,
+            workingHoursStart: schema.aiSettings.workingHoursStart,
+            workingHoursEnd: schema.aiSettings.workingHoursEnd,
+          })
+          .from(schema.aiSettings)
+          .where(eq(schema.aiSettings.salonId, salonId))
+          .limit(1);
+
+        if (aiConfig?.workingHoursEnabled) {
+          const now = new Date();
+          const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+          if (currentTime < (aiConfig.workingHoursStart || '08:00') || currentTime >= (aiConfig.workingHoursEnd || '20:00')) {
+            this.logger.log(`Fora do horário de funcionamento (${currentTime}). Mensagem de ${phone} salva mas Alexia não responde.`);
+            return { received: true, outsideWorkingHours: true };
+          }
+        }
+      }
+
       // Processa mensagem com Alexis
+      // Se é comando do agente (#eu/#ia), usa senderType 'agent'
+      const senderType = ignoreCheck.isAgentCommand ? 'agent' : 'client';
+      if (ignoreCheck.isAgentCommand) {
+        this.logger.log(`Comando de agente detectado: ${message}`);
+      }
+
       const result = await this.alexisService.processWhatsAppMessage(
         salonId,
         phone,
         message,
         clientName,
         undefined, // senderId
-        'client',
+        senderType,
       );
 
       this.logger.log(`Alexis processou: intent=${result.intent}, shouldSend=${result.shouldSend}`);

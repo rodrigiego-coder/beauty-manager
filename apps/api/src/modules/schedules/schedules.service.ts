@@ -293,40 +293,7 @@ export class SchedulesService {
     const salonCloseTime = salonSchedule[0].closeTime;
     const salonOpenTime = salonSchedule[0].openTime;
 
-    // 2. Verificar se o horário está dentro do funcionamento do salão
-    if (salonOpenTime && startTime < salonOpenTime) {
-      return {
-        available: false,
-        reason: 'SALON_CLOSED',
-        message: `O salão só abre às ${salonOpenTime}. Tente um horário a partir das ${salonOpenTime}.`,
-        details: { requestedTime: startTime, salonCloseTime: salonCloseTime! },
-      };
-    }
-
-    // 3. Verificar se o serviço termina antes do salão fechar
-    if (salonCloseTime && serviceEndTime > salonCloseTime) {
-      const suggestedSlots = this.calculateSuggestedSlots(
-        salonOpenTime!,
-        salonCloseTime,
-        durationMinutes,
-        startTime,
-      );
-
-      return {
-        available: false,
-        reason: 'EXCEEDS_CLOSING_TIME',
-        message: `O serviço terminaria às ${serviceEndTime}, mas o salão fecha às ${salonCloseTime}.`,
-        suggestedSlots,
-        details: {
-          requestedTime: startTime,
-          serviceDuration: durationMinutes,
-          serviceEndTime,
-          salonCloseTime,
-        },
-      };
-    }
-
-    // 4. Verificar se o profissional trabalha nesse dia
+    // 2. Buscar horário do profissional para determinar limite efetivo
     const profSchedule = await this.db
       .select()
       .from(schema.professionalSchedules)
@@ -337,6 +304,47 @@ export class SchedulesService {
         ),
       )
       .limit(1);
+
+    // Limite efetivo: se profissional trabalha além do horário do salão, respeitar o do profissional
+    let effectiveCloseTime = salonCloseTime;
+    if (profSchedule.length > 0 && profSchedule[0].isWorking && profSchedule[0].endTime) {
+      if (!salonCloseTime || profSchedule[0].endTime > salonCloseTime) {
+        effectiveCloseTime = profSchedule[0].endTime;
+      }
+    }
+
+    // 3. Verificar se o horário está dentro do funcionamento do salão
+    if (salonOpenTime && startTime < salonOpenTime) {
+      return {
+        available: false,
+        reason: 'SALON_CLOSED',
+        message: `O salão só abre às ${salonOpenTime}. Tente um horário a partir das ${salonOpenTime}.`,
+        details: { requestedTime: startTime, salonCloseTime: salonCloseTime! },
+      };
+    }
+
+    // 4. Verificar se o serviço termina antes do limite efetivo (salão ou profissional)
+    if (effectiveCloseTime && serviceEndTime > effectiveCloseTime) {
+      const suggestedSlots = this.calculateSuggestedSlots(
+        salonOpenTime!,
+        effectiveCloseTime,
+        durationMinutes,
+        startTime,
+      );
+
+      return {
+        available: false,
+        reason: 'EXCEEDS_CLOSING_TIME',
+        message: `O serviço terminaria às ${serviceEndTime}, mas o expediente encerra às ${effectiveCloseTime}.`,
+        suggestedSlots,
+        details: {
+          requestedTime: startTime,
+          serviceDuration: durationMinutes,
+          serviceEndTime,
+          salonCloseTime: effectiveCloseTime,
+        },
+      };
+    }
 
     if (profSchedule.length > 0 && !profSchedule[0].isWorking) {
       const workDays = await this.getProfessionalWorkDays(professionalId);

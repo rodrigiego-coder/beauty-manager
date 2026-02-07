@@ -54,6 +54,16 @@ export interface ConsumeSessionDto {
   notes?: string;
 }
 
+/**
+ * DTO for manual session balance adjustment
+ */
+export interface AdjustBalanceDto {
+  serviceId: number;
+  sessionsAlreadyDone: number;
+  adjustedBy: string;
+  notes?: string;
+}
+
 @Injectable()
 export class ClientPackagesService {
   constructor(
@@ -435,7 +445,9 @@ export class ClientPackagesService {
   }
 
   /**
-   * Check if client has valid package for a specific service
+   * Check if client has valid package for a specific service.
+   * Auto-provisions a package when the service has totalSessions > 1
+   * and the client has no existing package for it.
    */
   async hasValidPackageForService(
     clientId: string,
@@ -448,22 +460,16 @@ export class ClientPackagesService {
   }> {
     const today = new Date().toISOString().split('T')[0];
 
-    // Get active packages for client
-    const activePackages = await this.db
+    // Get ALL packages for client (active or not) to check existing and find usable
+    const allClientPackages = await this.db
       .select()
       .from(clientPackages)
-      .where(
-        and(
-          eq(clientPackages.clientId, clientId),
-          eq(clientPackages.active, true),
-        ),
-      );
+      .where(eq(clientPackages.clientId, clientId));
 
-    for (const cp of activePackages) {
-      // Skip expired packages
-      if (cp.expirationDate < today) continue;
+    // 1) Look for an active package with remaining sessions (existing behavior)
+    for (const cp of allClientPackages) {
+      if (!cp.active || cp.expirationDate < today) continue;
 
-      // Check if this package has balance for the service
       const [balance] = await this.db
         .select()
         .from(clientPackageBalances)
@@ -485,7 +491,135 @@ export class ClientPackagesService {
       }
     }
 
-    return { hasPackage: false };
+    // 2) No usable package found. Check if the service itself is multi-session.
+    const [service] = await this.db
+      .select()
+      .from(services)
+      .where(eq(services.id, serviceId))
+      .limit(1);
+
+    if (!service || service.totalSessions <= 1) {
+      return { hasPackage: false };
+    }
+
+    // 3) Service has totalSessions > 1. Check if client already HAD a balance
+    //    for this service (depleted/expired) to avoid re-creating.
+    for (const cp of allClientPackages) {
+      const [existingBalance] = await this.db
+        .select()
+        .from(clientPackageBalances)
+        .where(
+          and(
+            eq(clientPackageBalances.clientPackageId, cp.id),
+            eq(clientPackageBalances.serviceId, serviceId),
+          ),
+        )
+        .limit(1);
+
+      if (existingBalance) {
+        // Client already had a package for this service (sessions depleted or expired)
+        return { hasPackage: false };
+      }
+    }
+
+    // 4) Auto-provision: create package infrastructure for this multi-session service
+    const [client] = await this.db
+      .select()
+      .from(clients)
+      .where(eq(clients.id, clientId))
+      .limit(1);
+
+    if (!client || !client.salonId) {
+      return { hasPackage: false };
+    }
+
+    const salonId = client.salonId;
+
+    // Find existing package definition that includes this service, or create one
+    let pkg: any = null;
+
+    const existingPkgSvc = await this.db
+      .select()
+      .from(packageServices)
+      .where(
+        and(
+          eq(packageServices.serviceId, serviceId),
+          eq(packageServices.salonId, salonId),
+        ),
+      );
+
+    if (existingPkgSvc.length > 0) {
+      [pkg] = await this.db
+        .select()
+        .from(packages)
+        .where(
+          and(
+            eq(packages.id, existingPkgSvc[0].packageId),
+            eq(packages.active, true),
+          ),
+        )
+        .limit(1);
+    }
+
+    if (!pkg) {
+      // Create auto-package definition
+      [pkg] = await this.db
+        .insert(packages)
+        .values({
+          salonId,
+          name: service.name,
+          description: `Pacote automático: ${service.name} (${service.totalSessions} sessões)`,
+          price: service.basePrice,
+          servicesIncluded: { services: [{ name: service.name, quantity: service.totalSessions }] },
+          totalSessions: service.totalSessions,
+          expirationDays: 365,
+          active: true,
+        })
+        .returning();
+
+      await this.db
+        .insert(packageServices)
+        .values({
+          salonId,
+          packageId: pkg.id,
+          serviceId: service.id,
+          sessionsIncluded: service.totalSessions,
+        });
+    }
+
+    // Create clientPackage
+    const expirationDate = new Date();
+    expirationDate.setDate(expirationDate.getDate() + (pkg.expirationDays || 365));
+
+    const [clientPkg] = await this.db
+      .insert(clientPackages)
+      .values({
+        clientId,
+        packageId: pkg.id,
+        remainingSessions: service.totalSessions,
+        expirationDate: expirationDate.toISOString().split('T')[0],
+        active: true,
+      })
+      .returning();
+
+    // Create balance
+    const [balance] = await this.db
+      .insert(clientPackageBalances)
+      .values({
+        salonId,
+        clientPackageId: clientPkg.id,
+        serviceId: service.id,
+        totalSessions: service.totalSessions,
+        remainingSessions: service.totalSessions,
+      })
+      .returning();
+
+    return {
+      hasPackage: true,
+      clientPackage: clientPkg,
+      balance,
+      remainingSessions: service.totalSessions,
+    };
   }
 
   /**
@@ -561,6 +695,94 @@ export class ClientPackagesService {
       activePackages: activeWithBalances.length,
       totalSessionsUsed,
       totalSessionsRemaining,
+    };
+  }
+
+  /**
+   * Manually adjust session balance for clients who started treatments before the system.
+   * Creates a MANUAL_ADJUSTMENT audit record for traceability.
+   */
+  async adjustSessionBalance(
+    clientPackageId: number,
+    data: AdjustBalanceDto,
+  ): Promise<{
+    balance: ClientPackageBalance;
+    usage: ClientPackageUsage;
+    message: string;
+  }> {
+    const clientPkg = await this.findById(clientPackageId);
+
+    if (!clientPkg) {
+      throw new BadRequestException('Client package not found');
+    }
+
+    // Get balance for this service
+    const [balance] = await this.db
+      .select()
+      .from(clientPackageBalances)
+      .where(
+        and(
+          eq(clientPackageBalances.clientPackageId, clientPackageId),
+          eq(clientPackageBalances.serviceId, data.serviceId),
+        ),
+      )
+      .limit(1);
+
+    if (!balance) {
+      throw new BadRequestException('This service is not included in the package');
+    }
+
+    if (data.sessionsAlreadyDone < 0 || data.sessionsAlreadyDone >= balance.totalSessions) {
+      throw new BadRequestException(
+        `Sessions already done must be between 0 and ${balance.totalSessions - 1}`,
+      );
+    }
+
+    const newRemaining = balance.totalSessions - data.sessionsAlreadyDone;
+
+    // Update the per-service balance
+    const [updatedBalance] = await this.db
+      .update(clientPackageBalances)
+      .set({
+        remainingSessions: newRemaining,
+        updatedAt: new Date(),
+      })
+      .where(eq(clientPackageBalances.id, balance.id))
+      .returning();
+
+    // Create audit record (use salonId from the balance row)
+    const [usage] = await this.db
+      .insert(clientPackageUsages)
+      .values({
+        salonId: balance.salonId,
+        clientPackageId,
+        serviceId: data.serviceId,
+        status: 'MANUAL_ADJUSTMENT',
+        notes: `Ajuste manual: ${data.sessionsAlreadyDone} sessões já realizadas (de ${balance.totalSessions} total). Restam ${newRemaining}. Ajustado por: ${data.adjustedBy}${data.notes ? '. Obs: ' + data.notes : ''}`,
+      })
+      .returning();
+
+    // Recalculate aggregate remaining sessions on clientPackages
+    const allBalances = await this.db
+      .select()
+      .from(clientPackageBalances)
+      .where(eq(clientPackageBalances.clientPackageId, clientPackageId));
+
+    const totalRemaining = allBalances.reduce((sum, b) => sum + b.remainingSessions, 0);
+
+    await this.db
+      .update(clientPackages)
+      .set({
+        remainingSessions: totalRemaining,
+        updatedAt: new Date(),
+        active: totalRemaining > 0,
+      })
+      .where(eq(clientPackages.id, clientPackageId));
+
+    return {
+      balance: updatedBalance,
+      usage,
+      message: `Saldo ajustado. ${newRemaining} sessão(ões) restante(s) para este serviço.`,
     };
   }
 
