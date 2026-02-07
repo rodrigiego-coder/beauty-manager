@@ -477,6 +477,7 @@ export class CommandsService {
 
     // Se for PRODUTO, baixar estoque antes de adicionar
     // HARDENING: validação multi-tenant + existência do produto
+    let kitMovementGroupId: string | null = null;
     if (data.type === 'PRODUCT' && data.referenceId) {
       const productId = parseInt(data.referenceId, 10);
       if (isNaN(productId)) {
@@ -503,7 +504,7 @@ export class CommandsService {
       // Baixar estoque RETAIL (loja)
       if (product.kind === 'KIT') {
         // KIT: baixa atômica de todos os componentes
-        await this.productsService.deductKitStock({
+        const kitResult = await this.productsService.deductKitStock({
           kitProductId: productId,
           salonId: command.salonId,
           userId: currentUser.id,
@@ -513,6 +514,7 @@ export class CommandsService {
           referenceId: command.id,
           reason: `Venda KIT - Comanda ${command.cardNumber}`,
         });
+        kitMovementGroupId = kitResult.movementGroupId;
       } else {
         // SIMPLE: baixa direta (fluxo original)
         await this.productsService.adjustStockWithLocation({
@@ -600,6 +602,7 @@ export class CommandsService {
         clientPackageId,
         clientPackageUsageId,
         paidByPackage,
+        movementGroupId: kitMovementGroupId,
       })
       .returning();
 
@@ -771,18 +774,34 @@ export class CommandsService {
     if (existingItem.type === 'PRODUCT' && existingItem.referenceId) {
       const productId = parseInt(existingItem.referenceId, 10);
       if (!isNaN(productId)) {
-        const qty = parseFloat(existingItem.quantity);
-        await this.productsService.adjustStockWithLocation({
-          productId,
-          salonId: command.salonId,
-          userId: currentUser.id,
-          quantity: qty, // positivo = entrada (devolução)
-          locationType: 'RETAIL',
-          movementType: 'RETURN',
-          reason: `Cancelamento item - Comanda ${command.cardNumber}`,
-          referenceType: 'command',
-          referenceId: command.id,
-        });
+        if (existingItem.movementGroupId) {
+          // KIT: reverter todos os componentes atomicamente pelo movementGroupId
+          await this.productsService.reverseKitStock({
+            movementGroupId: existingItem.movementGroupId,
+            userId: currentUser.id,
+            reason: `Cancelamento item KIT - Comanda ${command.cardNumber}`,
+            referenceType: 'command',
+            referenceId: command.id,
+          });
+          // Limpar movementGroupId para idempotência (anti-duplo-estorno)
+          await this.db.update(commandItems)
+            .set({ movementGroupId: null, updatedAt: new Date() })
+            .where(eq(commandItems.id, itemId));
+        } else {
+          // SIMPLE: devolução direta (fluxo original)
+          const qty = parseFloat(existingItem.quantity);
+          await this.productsService.adjustStockWithLocation({
+            productId,
+            salonId: command.salonId,
+            userId: currentUser.id,
+            quantity: qty, // positivo = entrada (devolução)
+            locationType: 'RETAIL',
+            movementType: 'RETURN',
+            reason: `Cancelamento item - Comanda ${command.cardNumber}`,
+            referenceType: 'command',
+            referenceId: command.id,
+          });
+        }
       }
     }
 
@@ -1548,19 +1567,34 @@ export class CommandsService {
       try {
         const productId = parseInt(item.referenceId!, 10);
         if (!isNaN(productId)) {
-          const qty = parseFloat(item.quantity);
-          // Devolver estoque RETAIL (produto vendido)
-          await this.productsService.adjustStockWithLocation({
-            productId,
-            salonId: command.salonId,
-            userId: currentUser.id,
-            quantity: qty, // positivo = entrada (devolução)
-            locationType: 'RETAIL',
-            movementType: 'RETURN',
-            reason: `Cancelamento comanda ${command.cardNumber}`,
-            referenceType: 'command',
-            referenceId: command.id,
-          });
+          if (item.movementGroupId) {
+            // KIT: reverter todos os componentes atomicamente
+            await this.productsService.reverseKitStock({
+              movementGroupId: item.movementGroupId,
+              userId: currentUser.id,
+              reason: `Cancelamento comanda ${command.cardNumber}`,
+              referenceType: 'command',
+              referenceId: command.id,
+            });
+            // Limpar movementGroupId para idempotência
+            await this.db.update(commandItems)
+              .set({ movementGroupId: null, updatedAt: new Date() })
+              .where(eq(commandItems.id, item.id));
+          } else {
+            // SIMPLE: devolução direta (fluxo original)
+            const qty = parseFloat(item.quantity);
+            await this.productsService.adjustStockWithLocation({
+              productId,
+              salonId: command.salonId,
+              userId: currentUser.id,
+              quantity: qty, // positivo = entrada (devolução)
+              locationType: 'RETAIL',
+              movementType: 'RETURN',
+              reason: `Cancelamento comanda ${command.cardNumber}`,
+              referenceType: 'command',
+              referenceId: command.id,
+            });
+          }
         }
       } catch (err) {
         console.error(`[cancel] Erro ao devolver estoque do item ${item.id}:`, err);
