@@ -96,6 +96,11 @@ class UpdateSettingsDto {
   @IsBoolean()
   autoSchedulingEnabled?: boolean;
 
+  @ApiPropertyOptional({ description: 'Restringir horário de funcionamento', example: false })
+  @IsOptional()
+  @IsBoolean()
+  workingHoursEnabled?: boolean;
+
   @ApiPropertyOptional({ description: 'Horário de início do expediente', example: '08:00' })
   @IsOptional()
   @IsString()

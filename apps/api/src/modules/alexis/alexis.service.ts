@@ -222,6 +222,24 @@ export class AlexisService {
   ): Promise<ProcessMessageResult> {
     const startTime = Date.now();
 
+    // ========== VERIFICA SE ALEXIA ESTÁ HABILITADA GLOBALMENTE ==========
+    const settings = await this.getSettings(salonId);
+    if (settings?.isEnabled === false) {
+      this.logger.log(`Alexia desabilitada para salão ${salonId} - mensagem ignorada`);
+      // Salva a mensagem mas não responde
+      const conversation = await this.getOrCreateConversation(salonId, clientPhone, clientName);
+      if (senderType === 'client') {
+        await this.saveMessage(conversation.id, 'client', message, 'DISABLED', false, false);
+      }
+      return {
+        response: null,
+        intent: 'DISABLED',
+        blocked: false,
+        shouldSend: false,
+        statusChanged: false,
+      };
+    }
+
     // Busca ou cria conversa
     const conversation = await this.getOrCreateConversation(salonId, clientPhone, clientName);
 

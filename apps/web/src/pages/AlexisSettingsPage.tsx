@@ -13,6 +13,7 @@ interface AlexisSettings {
   humanTakeoverCommand: string;
   aiResumeCommand: string;
   autoSchedulingEnabled: boolean;
+  workingHoursEnabled: boolean;
   workingHoursStart: string;
   workingHoursEnd: string;
 }
@@ -52,6 +53,7 @@ export default function AlexisSettingsPage() {
         humanTakeoverCommand: settings.humanTakeoverCommand,
         aiResumeCommand: settings.aiResumeCommand,
         autoSchedulingEnabled: settings.autoSchedulingEnabled,
+        workingHoursEnabled: settings.workingHoursEnabled,
         workingHoursStart: settings.workingHoursStart,
         workingHoursEnd: settings.workingHoursEnd,
       });
@@ -113,30 +115,61 @@ export default function AlexisSettingsPage() {
       </div>
 
       <div className="space-y-6">
-        {/* Status Geral */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Bot className="w-5 h-5 text-blue-500" />
-            Status Geral
-          </h2>
-
+        {/* Status Geral - Card Principal */}
+        <div className={`rounded-xl border-2 p-6 transition-all ${
+          settings.isEnabled
+            ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-300'
+            : 'bg-gradient-to-r from-red-50 to-orange-50 border-red-300'
+        }`}>
           <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-gray-900">ALEXIS Ativada</p>
-              <p className="text-sm text-gray-500">
-                Quando desativada, nenhuma resposta automatica sera enviada
+            <div className="flex items-center gap-4">
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${
+                settings.isEnabled
+                  ? 'bg-green-500'
+                  : 'bg-red-500'
+              }`}>
+                <Bot className="w-9 h-9 text-white" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  {settings.isEnabled ? 'ALEXIS Ativada' : 'ALEXIS Desativada'}
+                </h2>
+                <p className={`text-sm ${settings.isEnabled ? 'text-green-700' : 'text-red-700'}`}>
+                  {settings.isEnabled
+                    ? 'Respondendo mensagens automaticamente'
+                    : 'Nenhuma resposta automatica sera enviada'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className={`text-sm font-medium ${settings.isEnabled ? 'text-green-700' : 'text-red-700'}`}>
+                {settings.isEnabled ? 'LIGADA' : 'DESLIGADA'}
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.isEnabled}
+                  onChange={(e) => updateSetting('isEnabled', e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className={`w-14 h-8 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all ${
+                  settings.isEnabled
+                    ? 'bg-green-500 peer-focus:ring-green-300'
+                    : 'bg-red-500 peer-focus:ring-red-300'
+                } peer-focus:outline-none peer-focus:ring-4`}></div>
+              </label>
+            </div>
+          </div>
+
+          {!settings.isEnabled && (
+            <div className="mt-4 p-3 bg-red-100 rounded-lg border border-red-200">
+              <p className="text-sm text-red-800">
+                <strong>Atenção:</strong> Com a ALEXIS desativada, todas as mensagens do WhatsApp serao ignoradas.
+                Lembre-se de ativar quando quiser que ela volte a responder.
               </p>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={settings.isEnabled}
-                onChange={(e) => updateSetting('isEnabled', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
+          )}
         </div>
 
         {/* Identidade */}
@@ -287,33 +320,55 @@ export default function AlexisSettingsPage() {
             Horario de Funcionamento
           </h2>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Inicio
-              </label>
-              <input
-                type="time"
-                value={settings.workingHoursStart}
-                onChange={(e) => updateSetting('workingHoursStart', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <p className="font-medium text-gray-900">Restringir horario</p>
+              <p className="text-sm text-gray-500">
+                Alexia so responde dentro do horario configurado
+              </p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Fim
-              </label>
+            <label className="relative inline-flex items-center cursor-pointer">
               <input
-                type="time"
-                value={settings.workingHoursEnd}
-                onChange={(e) => updateSetting('workingHoursEnd', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                type="checkbox"
+                checked={settings.workingHoursEnabled}
+                onChange={(e) => updateSetting('workingHoursEnabled', e.target.checked)}
+                className="sr-only peer"
               />
-            </div>
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
           </div>
-          <p className="text-xs text-gray-500 mt-2">
-            Horarios em que a ALEXIS responde automaticamente
-          </p>
+
+          {settings.workingHoursEnabled && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Inicio
+                  </label>
+                  <input
+                    type="time"
+                    value={settings.workingHoursStart}
+                    onChange={(e) => updateSetting('workingHoursStart', e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Fim
+                  </label>
+                  <input
+                    type="time"
+                    value={settings.workingHoursEnd}
+                    onChange={(e) => updateSetting('workingHoursEnd', e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Fora desse horario, mensagens de clientes serao salvas mas a Alexia nao responde. Comandos #eu e #ia funcionam sempre.
+              </p>
+            </>
+          )}
         </div>
       </div>
     </div>

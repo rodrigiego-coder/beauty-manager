@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Bot,
   MessageCircle,
@@ -12,6 +13,7 @@ import {
   CheckCircle,
   Settings,
   Search,
+  Power,
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -54,6 +56,7 @@ interface Metrics {
 }
 
 export default function AlexisConversationsPage() {
+  const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -64,11 +67,35 @@ export default function AlexisConversationsPage() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [isEnabled, setIsEnabled] = useState<boolean>(true);
+  const [togglingEnabled, setTogglingEnabled] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadData();
+    loadStatus();
   }, []);
+
+  const loadStatus = async () => {
+    try {
+      const { data } = await api.get('/alexis/status');
+      setIsEnabled(data.isEnabled ?? true);
+    } catch (err) {
+      console.error('Erro ao carregar status:', err);
+    }
+  };
+
+  const toggleEnabled = async () => {
+    setTogglingEnabled(true);
+    try {
+      await api.patch('/alexis/settings', { isEnabled: !isEnabled });
+      setIsEnabled(!isEnabled);
+    } catch (err) {
+      console.error('Erro ao alterar status:', err);
+      alert('Erro ao alterar status da ALEXIS');
+    }
+    setTogglingEnabled(false);
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -227,7 +254,9 @@ export default function AlexisConversationsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-cyan-500 rounded-xl flex items-center justify-center">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+            isEnabled ? 'bg-gradient-to-r from-blue-600 to-cyan-500' : 'bg-gray-400'
+          }`}>
             <Bot className="w-7 h-7 text-white" />
           </div>
           <div>
@@ -236,18 +265,59 @@ export default function AlexisConversationsPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
+          {/* Toggle Liga/Desliga */}
+          <div className={`flex items-center gap-3 px-4 py-2 rounded-xl border-2 transition-all ${
+            isEnabled
+              ? 'bg-green-50 border-green-300'
+              : 'bg-red-50 border-red-300'
+          }`}>
+            <Power className={`w-5 h-5 ${isEnabled ? 'text-green-600' : 'text-red-600'}`} />
+            <span className={`text-sm font-medium ${isEnabled ? 'text-green-700' : 'text-red-700'}`}>
+              {isEnabled ? 'LIGADA' : 'DESLIGADA'}
+            </span>
+            <button
+              onClick={toggleEnabled}
+              disabled={togglingEnabled}
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                isEnabled ? 'bg-green-500' : 'bg-red-500'
+              } ${togglingEnabled ? 'opacity-50' : ''}`}
+            >
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                isEnabled ? 'left-7' : 'left-1'
+              }`} />
+            </button>
+          </div>
+
           <button
             onClick={loadData}
             className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <RefreshCw className="w-5 h-5" />
           </button>
-          <button className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+          <button
+            onClick={() => navigate('/alexis/configuracoes')}
+            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+          >
             <Settings className="w-5 h-5" />
           </button>
         </div>
       </div>
+
+      {/* Aviso quando desativada */}
+      {!isEnabled && (
+        <div className="mb-4 p-4 bg-red-50 border-2 border-red-200 rounded-xl flex items-center gap-3">
+          <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0">
+            <Power className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <p className="font-medium text-red-800">ALEXIS está desativada</p>
+            <p className="text-sm text-red-600">
+              Nenhuma resposta automática será enviada. Clique no toggle acima para reativar.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Metrics Cards - usando campos REAIS da API */}
       <div className="grid grid-cols-5 gap-4 mb-6">
