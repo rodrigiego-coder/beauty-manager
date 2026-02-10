@@ -89,11 +89,51 @@ export class ProductsService {
       );
     }
 
-    const result = await this.db
+    const rows = await this.db
       .select()
       .from(products)
       .where(and(...conditions))
       .orderBy(products.name);
+
+    // For KIT products, calculate stock from components
+    const kitRows = rows.filter((p) => p.kind === 'KIT');
+    const kitStockMap = new Map<number, { retail: number; internal: number }>();
+
+    for (const kit of kitRows) {
+      const comps = await this.db
+        .select({
+          quantity: kitComponents.quantity,
+          stockRetail: products.stockRetail,
+          stockInternal: products.stockInternal,
+        })
+        .from(kitComponents)
+        .innerJoin(products, eq(products.id, kitComponents.componentProductId))
+        .where(eq(kitComponents.kitProductId, kit.id));
+
+      if (comps.length === 0) {
+        kitStockMap.set(kit.id, { retail: 0, internal: 0 });
+      } else {
+        let minRetail = Infinity;
+        let minInternal = Infinity;
+        for (const c of comps) {
+          const qty = parseFloat(c.quantity) || 1;
+          minRetail = Math.min(minRetail, Math.floor(c.stockRetail / qty));
+          minInternal = Math.min(minInternal, Math.floor(c.stockInternal / qty));
+        }
+        kitStockMap.set(kit.id, {
+          retail: minRetail === Infinity ? 0 : minRetail,
+          internal: minInternal === Infinity ? 0 : minInternal,
+        });
+      }
+    }
+
+    const result = rows.map((p) => {
+      if (p.kind === 'KIT') {
+        const ks = kitStockMap.get(p.id);
+        return { ...p, stockRetail: ks?.retail ?? 0, stockInternal: ks?.internal ?? 0 };
+      }
+      return p;
+    });
 
     // Filtro de estoque baixo (verifica ambos os estoques)
     if (lowStockOnly) {
