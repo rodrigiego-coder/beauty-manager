@@ -239,6 +239,7 @@ export function AppointmentsPage() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -547,6 +548,29 @@ export function AppointmentsPage() {
   // ===========================================================================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // ========== VALIDAÇÃO JS VISÍVEL (substitui required HTML invisível no mobile) ==========
+    const errors: Record<string, string> = {};
+    if (!formData.serviceId) errors.serviceId = 'Selecione um serviço';
+    if (!formData.professionalId) errors.professionalId = 'Selecione um profissional';
+    if (!formData.date) errors.date = 'Selecione uma data';
+    if (!formData.time) errors.time = 'Selecione um horário';
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      // Scroll + focus no primeiro campo com erro
+      const firstKey = Object.keys(errors)[0];
+      const el = document.getElementById(`field-${firstKey}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const input = el.querySelector('select, input') as HTMLElement;
+        if (input) setTimeout(() => input.focus(), 300);
+      }
+      return;
+    }
+    setFormErrors({});
+    // ========================================================================================
+
     try {
       let clientId = formData.clientId;
 
@@ -572,12 +596,6 @@ export function AppointmentsPage() {
             throw clientError;
           }
         }
-      }
-
-      // Validar profissional antes de montar payload
-      if (!formData.professionalId) {
-        setMessage({ type: 'error', text: 'Selecione um profissional' });
-        return;
       }
 
       // Montar payload apenas com campos necessários (sem spread para evitar campos vazios)
@@ -742,6 +760,7 @@ export function AppointmentsPage() {
       fitIn: false,
     });
     setClientSearch('');
+    setFormErrors({});
   };
 
   const resetBlockForm = () => {
@@ -1087,7 +1106,7 @@ export function AppointmentsPage() {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="p-4 space-y-4">
           {/* Client Section */}
           <div className="space-y-3">
             <label className="block text-sm font-medium text-gray-700">Cliente</label>
@@ -1212,13 +1231,12 @@ export function AppointmentsPage() {
           </div>
 
           {/* Service */}
-          <div>
+          <div id="field-serviceId">
             <label className="block text-sm font-medium mb-1">Serviço *</label>
             <select
               value={formData.serviceId}
-              onChange={(e) => handleServiceChange(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2"
-              required
+              onChange={(e) => { handleServiceChange(e.target.value); setFormErrors(prev => { const { serviceId, ...rest } = prev; return rest; }); }}
+              className={`w-full border rounded-lg px-3 py-2 ${formErrors.serviceId ? 'border-red-500 ring-2 ring-red-200' : ''}`}
             >
               <option value="">Selecione um serviço</option>
               {services.map(service => (
@@ -1227,43 +1245,43 @@ export function AppointmentsPage() {
                 </option>
               ))}
             </select>
+            {formErrors.serviceId && <p className="text-red-500 text-xs mt-1">{formErrors.serviceId}</p>}
           </div>
 
           {/* Professional */}
-          <div>
+          <div id="field-professionalId">
             <label className="block text-sm font-medium mb-1">Profissional *</label>
             <select
               value={formData.professionalId}
-              onChange={(e) => setFormData({ ...formData, professionalId: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2"
-              required
+              onChange={(e) => { setFormData({ ...formData, professionalId: e.target.value }); setFormErrors(prev => { const { professionalId, ...rest } = prev; return rest; }); }}
+              className={`w-full border rounded-lg px-3 py-2 ${formErrors.professionalId ? 'border-red-500 ring-2 ring-red-200' : ''}`}
             >
               <option value="">Selecione um profissional</option>
               {professionals.map(prof => (
                 <option key={prof.id} value={prof.id}>{prof.name}</option>
               ))}
             </select>
+            {formErrors.professionalId && <p className="text-red-500 text-xs mt-1">{formErrors.professionalId}</p>}
           </div>
 
           {/* Date and Time */}
           <div className="grid grid-cols-2 gap-4">
-            <div>
+            <div id="field-date">
               <label className="block text-sm font-medium mb-1">Data *</label>
               <input
                 type="date"
                 value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                className="w-full border rounded-lg px-3 py-2"
-                required
+                onChange={(e) => { setFormData({ ...formData, date: e.target.value }); setFormErrors(prev => { const { date, ...rest } = prev; return rest; }); }}
+                className={`w-full border rounded-lg px-3 py-2 ${formErrors.date ? 'border-red-500 ring-2 ring-red-200' : ''}`}
               />
+              {formErrors.date && <p className="text-red-500 text-xs mt-1">{formErrors.date}</p>}
             </div>
-            <div>
+            <div id="field-time">
               <label className="block text-sm font-medium mb-1">Horário *</label>
               <select
                 value={formData.time}
-                onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                className="w-full border rounded-lg px-3 py-2"
-                required
+                onChange={(e) => { setFormData({ ...formData, time: e.target.value }); setFormErrors(prev => { const { time, ...rest } = prev; return rest; }); }}
+                className={`w-full border rounded-lg px-3 py-2 ${formErrors.time ? 'border-red-500 ring-2 ring-red-200' : ''}`}
               >
                 <option value="">Selecione</option>
                 {availableSlots.length > 0 ? (
@@ -1282,6 +1300,7 @@ export function AppointmentsPage() {
                   ))
                 )}
               </select>
+              {formErrors.time && <p className="text-red-500 text-xs mt-1">{formErrors.time}</p>}
             </div>
           </div>
 
