@@ -85,14 +85,53 @@ export class AccountsReceivableService {
   }
 
   /**
-   * Lista contas pendentes (OPEN)
+   * Lista contas pendentes (OPEN) filtradas por salonId
    */
-  async findPending(): Promise<AccountReceivable[]> {
+  async findPending(salonId: string): Promise<AccountReceivable[]> {
     return this.db
       .select()
       .from(accountsReceivable)
-      .where(eq(accountsReceivable.status, 'OPEN'))
+      .where(
+        and(
+          eq(accountsReceivable.salonId, salonId),
+          eq(accountsReceivable.status, 'OPEN'),
+        ),
+      )
       .orderBy(accountsReceivable.dueDate);
+  }
+
+  /**
+   * Lista contas pendentes com dados do cliente (para tela de detalhes)
+   */
+  async findPendingWithClient(salonId: string) {
+    const accounts = await this.findPending(salonId);
+    const result = [];
+
+    for (const account of accounts) {
+      let clientName: string | null = null;
+      let clientPhone: string | null = null;
+
+      if (account.clientId) {
+        const clientResult = await this.db
+          .select({ name: clients.name, phone: clients.phone })
+          .from(clients)
+          .where(eq(clients.id, account.clientId))
+          .limit(1);
+
+        if (clientResult[0]) {
+          clientName = clientResult[0].name;
+          clientPhone = clientResult[0].phone;
+        }
+      }
+
+      result.push({
+        ...account,
+        clientName: clientName || 'Cliente removido',
+        clientPhone,
+      });
+    }
+
+    return result;
   }
 
   /**
@@ -143,11 +182,11 @@ export class AccountsReceivableService {
   }
 
   /**
-   * Calcula total a receber
+   * Calcula total a receber (usa remainingAmount, não totalAmount)
    */
-  async getTotalPending(): Promise<number> {
-    const pending = await this.findPending();
-    return pending.reduce((sum, account) => sum + parseFloat(account.totalAmount), 0);
+  async getTotalPending(salonId: string): Promise<number> {
+    const pending = await this.findPending(salonId);
+    return pending.reduce((sum, account) => sum + parseFloat(account.remainingAmount), 0);
   }
 
   /**

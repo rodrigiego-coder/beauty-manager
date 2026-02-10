@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { AccountsReceivableService } from './accounts-receivable.service';
 import { NewAccountReceivable } from '../../database';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { JwtPayload } from '../auth/jwt.strategy';
 
 @Controller('accounts-receivable')
 export class AccountsReceivableController {
@@ -35,11 +37,11 @@ export class AccountsReceivableController {
 
   /**
    * GET /accounts-receivable/pending
-   * Lista contas pendentes
+   * Lista contas pendentes (com dados do cliente, filtrado por salonId)
    */
   @Get('pending')
-  async findPending() {
-    return this.accountsReceivableService.findPending();
+  async findPending(@CurrentUser() user: JwtPayload) {
+    return this.accountsReceivableService.findPendingWithClient(user.salonId);
   }
 
   /**
@@ -53,12 +55,12 @@ export class AccountsReceivableController {
 
   /**
    * GET /accounts-receivable/total-pending
-   * Retorna o total a receber
+   * Retorna o total a receber (usa remainingAmount, filtrado por salonId)
    */
   @Get('total-pending')
-  async getTotalPending() {
-    const pending = await this.accountsReceivableService.findPending();
-    const total = pending.reduce((sum, a) => sum + parseFloat(a.totalAmount), 0);
+  async getTotalPending(@CurrentUser() user: JwtPayload) {
+    const pending = await this.accountsReceivableService.findPending(user.salonId);
+    const total = pending.reduce((sum, a) => sum + parseFloat(a.remainingAmount), 0);
     return { total, count: pending.length };
   }
 
