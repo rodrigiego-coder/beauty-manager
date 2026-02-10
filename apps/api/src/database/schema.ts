@@ -1254,18 +1254,23 @@ export const accountsPayable = pgTable('accounts_payable', {
 });
 
 /**
- * Tabela de contas a receber (Fiado)
+ * Tabela de contas a receber (Fiado / Comanda pendente)
+ * Schema alinhado com DB real (redesenhado para integração com comandas)
  */
 export const accountsReceivable = pgTable('accounts_receivable', {
-  id: serial('id').primaryKey(),
-  salonId: uuid('salon_id').references(() => salons.id),
-  clientId: uuid('client_id')
-    .references(() => clients.id)
-    .notNull(),
-  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(),
-  dueDate: date('due_date').notNull(),
-  status: accountStatusEnum('status').default('PENDING').notNull(),
-  description: text('description'),
+  id: uuid('id').defaultRandom().primaryKey(),
+  salonId: uuid('salon_id').references(() => salons.id, { onDelete: 'cascade' }).notNull(),
+  clientId: uuid('client_id').references(() => clients.id),
+  commandId: uuid('command_id'),
+  totalAmount: decimal('total_amount', { precision: 10, scale: 2 }).notNull(),
+  paidAmount: decimal('paid_amount', { precision: 10, scale: 2 }).notNull().default('0'),
+  remainingAmount: decimal('remaining_amount', { precision: 10, scale: 2 }).notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('OPEN'),
+  dueDate: timestamp('due_date'),
+  settledAt: timestamp('settled_at'),
+  settledById: uuid('settled_by_id').references(() => users.id),
+  notes: text('notes'),
+  createdById: uuid('created_by_id').references(() => users.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

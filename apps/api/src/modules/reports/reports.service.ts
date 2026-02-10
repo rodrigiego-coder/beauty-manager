@@ -776,11 +776,11 @@ export class ReportsService {
       .where(
         and(
           eq(accountsReceivable.salonId, salonId),
-          eq(accountsReceivable.status, 'PENDING'),
+          eq(accountsReceivable.status, 'OPEN'),
         ),
       );
     const pendingReceivables = receivables.reduce(
-      (sum: number, r: AccountReceivable) => sum + parseFloat(r.amount),
+      (sum: number, r: AccountReceivable) => sum + parseFloat(r.totalAmount),
       0,
     );
 

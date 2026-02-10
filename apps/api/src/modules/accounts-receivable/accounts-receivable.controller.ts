@@ -7,7 +7,6 @@ import {
   Param,
   Body,
   NotFoundException,
-  ParseIntPipe,
 } from '@nestjs/common';
 import { AccountsReceivableService } from './accounts-receivable.service';
 import { NewAccountReceivable } from '../../database';
@@ -67,7 +66,7 @@ export class AccountsReceivableController {
    * Lista contas por status
    */
   @Get('status/:status')
-  async findByStatus(@Param('status') status: 'PENDING' | 'PAID' | 'OVERDUE') {
+  async findByStatus(@Param('status') status: string) {
     return this.accountsReceivableService.findByStatus(status);
   }
 
@@ -85,7 +84,7 @@ export class AccountsReceivableController {
    * Busca conta por ID
    */
   @Get(':id')
-  async findById(@Param('id', ParseIntPipe) id: number) {
+  async findById(@Param('id') id: string) {
     const account = await this.accountsReceivableService.findById(id);
 
     if (!account) {
@@ -110,7 +109,7 @@ export class AccountsReceivableController {
    */
   @Patch(':id')
   async update(
-    @Param('id', ParseIntPipe) id: number,
+    @Param('id') id: string,
     @Body() data: Partial<NewAccountReceivable>,
   ) {
     const account = await this.accountsReceivableService.update(id, data);
@@ -127,7 +126,7 @@ export class AccountsReceivableController {
    * Marca uma conta como recebida
    */
   @Patch(':id/pay')
-  async markAsPaid(@Param('id', ParseIntPipe) id: number) {
+  async markAsPaid(@Param('id') id: string) {
     const account = await this.accountsReceivableService.markAsPaid(id);
 
     if (!account) {
@@ -142,7 +141,7 @@ export class AccountsReceivableController {
    * Remove uma conta a receber
    */
   @Delete(':id')
-  async delete(@Param('id', ParseIntPipe) id: number) {
+  async delete(@Param('id') id: string) {
     const deleted = await this.accountsReceivableService.delete(id);
 
     if (!deleted) {

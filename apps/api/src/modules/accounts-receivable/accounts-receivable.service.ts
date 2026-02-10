@@ -23,7 +23,7 @@ export class AccountsReceivableService {
   /**
    * Busca conta por ID
    */
-  async findById(id: number): Promise<AccountReceivable | null> {
+  async findById(id: string): Promise<AccountReceivable | null> {
     const result = await this.db
       .select()
       .from(accountsReceivable)
@@ -48,7 +48,7 @@ export class AccountsReceivableService {
   /**
    * Atualiza uma conta a receber
    */
-  async update(id: number, data: Partial<NewAccountReceivable>): Promise<AccountReceivable | null> {
+  async update(id: string, data: Partial<NewAccountReceivable>): Promise<AccountReceivable | null> {
     const result = await this.db
       .update(accountsReceivable)
       .set({
@@ -64,7 +64,7 @@ export class AccountsReceivableService {
   /**
    * Remove uma conta a receber
    */
-  async delete(id: number): Promise<boolean> {
+  async delete(id: string): Promise<boolean> {
     const result = await this.db
       .delete(accountsReceivable)
       .where(eq(accountsReceivable.id, id))
@@ -76,18 +76,22 @@ export class AccountsReceivableService {
   /**
    * Marca uma conta como recebida
    */
-  async markAsPaid(id: number): Promise<AccountReceivable | null> {
-    return this.update(id, { status: 'PAID' });
+  async markAsPaid(id: string): Promise<AccountReceivable | null> {
+    return this.update(id, {
+      status: 'SETTLED',
+      paidAmount: undefined, // will be set by caller or defaults
+      settledAt: new Date(),
+    } as any);
   }
 
   /**
-   * Lista contas pendentes
+   * Lista contas pendentes (OPEN)
    */
   async findPending(): Promise<AccountReceivable[]> {
     return this.db
       .select()
       .from(accountsReceivable)
-      .where(eq(accountsReceivable.status, 'PENDING'))
+      .where(eq(accountsReceivable.status, 'OPEN'))
       .orderBy(accountsReceivable.dueDate);
   }
 
@@ -95,7 +99,7 @@ export class AccountsReceivableService {
    * Lista contas vencidas (atualiza status para OVERDUE se necessário)
    */
   async findOverdue(): Promise<AccountReceivable[]> {
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
 
     // Primeiro atualiza status das vencidas
     await this.db
@@ -103,8 +107,8 @@ export class AccountsReceivableService {
       .set({ status: 'OVERDUE', updatedAt: new Date() })
       .where(
         and(
-          eq(accountsReceivable.status, 'PENDING'),
-          lte(accountsReceivable.dueDate, today),
+          eq(accountsReceivable.status, 'OPEN'),
+          lte(accountsReceivable.dueDate, now),
         ),
       );
 
@@ -130,7 +134,7 @@ export class AccountsReceivableService {
   /**
    * Lista contas por status
    */
-  async findByStatus(status: 'PENDING' | 'PAID' | 'OVERDUE'): Promise<AccountReceivable[]> {
+  async findByStatus(status: string): Promise<AccountReceivable[]> {
     return this.db
       .select()
       .from(accountsReceivable)
@@ -143,7 +147,7 @@ export class AccountsReceivableService {
    */
   async getTotalPending(): Promise<number> {
     const pending = await this.findPending();
-    return pending.reduce((sum, account) => sum + parseFloat(account.amount), 0);
+    return pending.reduce((sum, account) => sum + parseFloat(account.totalAmount), 0);
   }
 
   /**
@@ -154,15 +158,21 @@ export class AccountsReceivableService {
     const result = [];
 
     for (const account of accounts) {
-      const clientResult = await this.db
-        .select()
-        .from(clients)
-        .where(eq(clients.id, account.clientId))
-        .limit(1);
+      let client: { name: string | null; phone: string } | undefined;
+
+      if (account.clientId) {
+        const clientResult = await this.db
+          .select()
+          .from(clients)
+          .where(eq(clients.id, account.clientId))
+          .limit(1);
+
+        client = clientResult[0] ? { name: clientResult[0].name, phone: clientResult[0].phone } : undefined;
+      }
 
       result.push({
         ...account,
-        client: clientResult[0] ? { name: clientResult[0].name, phone: clientResult[0].phone } : undefined,
+        client,
       });
     }
 
