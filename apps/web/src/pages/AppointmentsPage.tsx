@@ -600,6 +600,10 @@ export function AppointmentsPage() {
             if (searchResponse.data.length > 0) {
               clientId = searchResponse.data[0].id;
             }
+          } else if (clientError.response?.status === 403) {
+            // STYLIST sem permissão para criar cliente - prosseguir sem clientId
+            // O appointment aceita clientName/clientPhone diretamente
+            console.warn('Sem permissão para criar cliente, prosseguindo com nome/telefone');
           } else {
             throw clientError;
           }

@@ -147,7 +147,7 @@ export class ClientsController {
    * Cria um novo cliente
    */
   @Post()
-  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
   async create(
     @CurrentUser() user: CurrentUserPayload,
     @Body() data: CreateClientDto,
