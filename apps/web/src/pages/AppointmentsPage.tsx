@@ -239,6 +239,10 @@ export function AppointmentsPage() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
+  // ========== FORM ERRORS - PROTEGIDO - NAO REMOVER ==========
+  // Este state alimenta a validação JS visível no mobile.
+  // SEM ele o botão Salvar volta a "não funcionar" (required HTML é invisível).
+  // =============================================================
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const [loading, setLoading] = useState(true);
@@ -549,7 +553,12 @@ export function AppointmentsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // ========== VALIDAÇÃO JS VISÍVEL (substitui required HTML invisível no mobile) ==========
+    // ========== VALIDAÇÃO JS - PROTEGIDO - NAO ALTERAR ========================================
+    // CONTEXTO: HTML5 required é INVISÍVEL no Samsung Browser e outros mobile.
+    // Este bloco substitui a validação nativa com mensagens visuais (borda vermelha + texto).
+    // REMOVER ou ALTERAR este bloco faz o botão Salvar "parar de funcionar" no mobile.
+    // Se precisar adicionar campos obrigatórios, apenas adicione linhas de erro aqui.
+    // ========================================================================================
     const errors: Record<string, string> = {};
     if (!formData.serviceId) errors.serviceId = 'Selecione um serviço';
     if (!formData.professionalId) errors.professionalId = 'Selecione um profissional';
@@ -558,7 +567,6 @@ export function AppointmentsPage() {
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
-      // Scroll + focus no primeiro campo com erro
       const firstKey = Object.keys(errors)[0];
       const el = document.getElementById(`field-${firstKey}`);
       if (el) {
@@ -569,7 +577,7 @@ export function AppointmentsPage() {
       return;
     }
     setFormErrors({});
-    // ========================================================================================
+    // ========== FIM VALIDAÇÃO JS - PROTEGIDO ================================================
 
     try {
       let clientId = formData.clientId;
@@ -1106,6 +1114,7 @@ export function AppointmentsPage() {
           </button>
         </div>
 
+        {/* noValidate OBRIGATÓRIO - sem ele o browser usa validação invisível no mobile */}
         <form onSubmit={handleSubmit} noValidate className="p-4 space-y-4">
           {/* Client Section */}
           <div className="space-y-3">
