@@ -49,8 +49,9 @@ export class AccountsPayableController {
    */
   @Get('total-pending')
   async getTotalPending() {
-    const total = await this.accountsPayableService.getTotalPending();
-    return { totalPending: total };
+    const pending = await this.accountsPayableService.findPending();
+    const total = pending.reduce((sum, a) => sum + parseFloat(a.amount), 0);
+    return { total, count: pending.length };
   }
 
   /**

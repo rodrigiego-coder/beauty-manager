@@ -43,6 +43,7 @@ import {
   MyBlocksPage,
   PackagesPage,
   AccountsReceivablePage,
+  AccountsPayablePage,
   StockPage,
 } from './pages';
 import AlexisConversationsPage from './pages/AlexisConversationsPage';
@@ -174,6 +175,14 @@ function App() {
               element={
                 <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
                   <AccountsReceivablePage />
+                </RoleGuard>
+              }
+            />
+            <Route
+              path="/financeiro/contas-pagar"
+              element={
+                <RoleGuard allowedRoles={['OWNER', 'MANAGER']}>
+                  <AccountsPayablePage />
                 </RoleGuard>
               }
             />
