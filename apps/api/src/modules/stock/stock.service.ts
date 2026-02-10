@@ -4,7 +4,7 @@ import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../../database/schema';
 import { parseQueryDate } from '../../common/date-range';
 
-const { products, stockMovements, users } = schema;
+const { products, stockMovements, users, kitComponents } = schema;
 
 export interface StockSummaryQuery {
   salonId: string;
@@ -71,11 +71,49 @@ export class StockService {
       .where(and(...conditions))
       .orderBy(products.name);
 
+    // For KIT products, calculate stock from components
+    const kitIds = rows.filter((p) => p.kind === 'KIT').map((p) => p.id);
+    const kitStockMap = new Map<number, { retail: number; internal: number }>();
+
+    if (kitIds.length > 0) {
+      for (const kitId of kitIds) {
+        const comps = await this.db
+          .select({
+            quantity: kitComponents.quantity,
+            stockRetail: products.stockRetail,
+            stockInternal: products.stockInternal,
+          })
+          .from(kitComponents)
+          .innerJoin(products, eq(products.id, kitComponents.componentProductId))
+          .where(eq(kitComponents.kitProductId, kitId));
+
+        if (comps.length === 0) {
+          kitStockMap.set(kitId, { retail: 0, internal: 0 });
+        } else {
+          let minRetail = Infinity;
+          let minInternal = Infinity;
+          for (const c of comps) {
+            const qty = parseFloat(c.quantity) || 1;
+            minRetail = Math.min(minRetail, Math.floor(c.stockRetail / qty));
+            minInternal = Math.min(minInternal, Math.floor(c.stockInternal / qty));
+          }
+          kitStockMap.set(kitId, {
+            retail: minRetail === Infinity ? 0 : minRetail,
+            internal: minInternal === Infinity ? 0 : minInternal,
+          });
+        }
+      }
+    }
+
     const result = rows.map((p) => {
-      const isLowRetail = p.isRetail && p.stockRetail <= p.minStockRetail;
-      const isLowInternal = p.isBackbar && p.stockInternal <= p.minStockInternal;
+      const stockRetail = p.kind === 'KIT' ? (kitStockMap.get(p.id)?.retail ?? 0) : p.stockRetail;
+      const stockInternal = p.kind === 'KIT' ? (kitStockMap.get(p.id)?.internal ?? 0) : p.stockInternal;
+      const isLowRetail = p.isRetail && stockRetail <= p.minStockRetail;
+      const isLowInternal = p.isBackbar && stockInternal <= p.minStockInternal;
       return {
         ...p,
+        stockRetail,
+        stockInternal,
         isLowRetail,
         isLowInternal,
         isLowStock: isLowRetail || isLowInternal,
