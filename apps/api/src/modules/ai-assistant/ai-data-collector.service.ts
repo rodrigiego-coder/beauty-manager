@@ -12,7 +12,7 @@ import {
   clientHairProfiles,
   clientNotesAi,
 } from '../../database/schema';
-import { eq, and, gte, lte, desc, sql, count } from 'drizzle-orm';
+import { eq, and, gte, desc, sql, count } from 'drizzle-orm';
 
 interface OwnerData {
   todayRevenue: number;
@@ -280,6 +280,7 @@ export class AIDataCollectorService {
   // ==================== PRIVATE HELPER METHODS ====================
 
   private async getRevenue(salonId: string, start: Date, end: Date): Promise<number> {
+    const bizDate = sql`COALESCE(${commands.businessDate}, DATE((${commands.openedAt} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo'))`;
     const result = await db
       .select({ total: sql<string>`COALESCE(SUM(${commands.totalNet}), 0)` })
       .from(commands)
@@ -287,8 +288,8 @@ export class AIDataCollectorService {
         and(
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
-          gte(commands.cashierClosedAt, start),
-          lte(commands.cashierClosedAt, end),
+          sql`${bizDate} >= DATE(${start} AT TIME ZONE 'America/Sao_Paulo')`,
+          sql`${bizDate} <= DATE(${end} AT TIME ZONE 'America/Sao_Paulo')`,
         ),
       );
     return parseFloat(result[0]?.total || '0');
@@ -410,7 +411,7 @@ export class AIDataCollectorService {
         and(
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
-          gte(commands.cashierClosedAt, since),
+          sql`COALESCE(${commands.businessDate}, DATE((${commands.openedAt} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo')) >= DATE(${since} AT TIME ZONE 'America/Sao_Paulo')`,
         ),
       )
       .groupBy(commandItems.performerId, users.name)
@@ -441,7 +442,7 @@ export class AIDataCollectorService {
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
           eq(commandItems.type, 'SERVICE'),
-          gte(commands.cashierClosedAt, since),
+          sql`COALESCE(${commands.businessDate}, DATE((${commands.openedAt} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo')) >= DATE(${since} AT TIME ZONE 'America/Sao_Paulo')`,
         ),
       )
       .groupBy(commandItems.description)
@@ -483,7 +484,7 @@ export class AIDataCollectorService {
       .select({ count: count() })
       .from(commands)
       .where(
-        and(eq(commands.salonId, salonId), eq(commands.status, 'CLOSED'), gte(commands.cashierClosedAt, since)),
+        and(eq(commands.salonId, salonId), eq(commands.status, 'CLOSED'), sql`COALESCE(${commands.businessDate}, DATE((${commands.openedAt} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo')) >= DATE(${since} AT TIME ZONE 'America/Sao_Paulo')`),
       );
     return result[0]?.count || 0;
   }
@@ -597,7 +598,7 @@ export class AIDataCollectorService {
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
           eq(commandItems.performerId, odela),
-          gte(commands.cashierClosedAt, since),
+          sql`COALESCE(${commands.businessDate}, DATE((${commands.openedAt} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo')) >= DATE(${since} AT TIME ZONE 'America/Sao_Paulo')`,
         ),
       );
     return parseFloat(result[0]?.total || '0');

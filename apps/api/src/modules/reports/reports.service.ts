@@ -111,6 +111,16 @@ export type ExportFormat = 'json' | 'csv';
 export class ReportsService {
   constructor(@Inject(DATABASE_CONNECTION) private db: Database) {}
 
+  /** SP é fixo UTC-3 (sem DST). Converte UTC Date para 'YYYY-MM-DD' SP. */
+  private toSpDateStr(d: Date): string {
+    const sp = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+    return sp.toISOString().slice(0, 10);
+  }
+
+  private get bizDateExpr() {
+    return sql`COALESCE(${commands.businessDate}, DATE((${commands.openedAt} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo'))`;
+  }
+
   /**
    * Relatorio de vendas por periodo
    */
@@ -120,11 +130,13 @@ export class ReportsService {
     endDate: Date,
     groupBy: 'day' | 'week' | 'month' = 'day',
   ): Promise<{ items: SalesReportItem[]; totals: { total: number; commands: number; averageTicket: number } }> {
-    // Get closed commands in the period
+    // Get closed commands in the period — agrupado por business_date (dia operacional)
+    const startStr = this.toSpDateStr(startDate);
+    const endStr = this.toSpDateStr(endDate);
     const closedCommands = await this.db
       .select({
         id: commands.id,
-        closedAt: commands.cashierClosedAt,
+        closedAt: sql<string>`${this.bizDateExpr}`.as('closed_at'),
         totalAmount: commands.totalNet,
       })
       .from(commands)
@@ -132,13 +144,13 @@ export class ReportsService {
         and(
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
-          gte(commands.cashierClosedAt, startDate),
-          lt(commands.cashierClosedAt, endDate),
+          sql`${this.bizDateExpr} >= ${startStr}::date`,
+          sql`${this.bizDateExpr} < ${endStr}::date`,
         ),
       )
       .orderBy(desc(commands.cashierClosedAt));
 
-    // Group by date
+    // Group by date (closedAt agora é business_date = dia operacional)
     const groupedData: Record<string, { total: number; count: number }> = {};
 
     for (const cmd of closedCommands) {
@@ -209,8 +221,8 @@ export class ReportsService {
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
           eq(commandItems.type, 'SERVICE'),
-          gte(commands.cashierClosedAt, startDate),
-          lt(commands.cashierClosedAt, endDate),
+          sql`${this.bizDateExpr} >= ${this.toSpDateStr(startDate)}::date`,
+          sql`${this.bizDateExpr} < ${this.toSpDateStr(endDate)}::date`,
         ),
       );
 
@@ -268,8 +280,8 @@ export class ReportsService {
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
           eq(commandItems.type, 'PRODUCT'),
-          gte(commands.cashierClosedAt, startDate),
-          lt(commands.cashierClosedAt, endDate),
+          sql`${this.bizDateExpr} >= ${this.toSpDateStr(startDate)}::date`,
+          sql`${this.bizDateExpr} < ${this.toSpDateStr(endDate)}::date`,
         ),
       );
 
@@ -353,8 +365,8 @@ export class ReportsService {
           and(
             eq(commandItems.performerId, prof.id),
             eq(commands.status, 'CLOSED'),
-            gte(commands.cashierClosedAt, startDate),
-            lt(commands.cashierClosedAt, endDate),
+            sql`${this.bizDateExpr} >= ${this.toSpDateStr(startDate)}::date`,
+            sql`${this.bizDateExpr} < ${this.toSpDateStr(endDate)}::date`,
           ),
         );
 
@@ -433,8 +445,8 @@ export class ReportsService {
         and(
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
-          gte(commands.cashierClosedAt, startDate),
-          lt(commands.cashierClosedAt, endDate),
+          sql`${this.bizDateExpr} >= ${this.toSpDateStr(startDate)}::date`,
+          sql`${this.bizDateExpr} < ${this.toSpDateStr(endDate)}::date`,
           sql`${commands.clientId} IS NOT NULL`,
         ),
       )

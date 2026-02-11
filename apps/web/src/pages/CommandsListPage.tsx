@@ -80,11 +80,13 @@ export function CommandsListPage() {
   const currentCommands = activeTab === 'active' ? activeCommands : waitingCommands;
 
   const filteredCommands = currentCommands.filter((cmd) => {
+    const s = search.toLowerCase();
     const matchesSearch =
       !search ||
-      cmd.cardNumber?.toLowerCase().includes(search.toLowerCase()) ||
-      cmd.clientName?.toLowerCase().includes(search.toLowerCase()) ||
-      cmd.code?.toLowerCase().includes(search.toLowerCase());
+      cmd.cardNumber?.toLowerCase().includes(s) ||
+      cmd.clientName?.toLowerCase().includes(s) ||
+      cmd.clientPhone?.toLowerCase().includes(s) ||
+      cmd.code?.toLowerCase().includes(s);
 
     return matchesSearch;
   });

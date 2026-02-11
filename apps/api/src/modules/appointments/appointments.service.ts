@@ -1555,6 +1555,7 @@ Quer agendar a próxima? Responda *AGENDAR*! 😊`;
         status: 'IN_SERVICE', // P0: Start as IN_SERVICE since it already has a service item
         openedById: userId,
         openedAt: new Date(),
+        businessDate: sql`DATE(NOW() AT TIME ZONE 'America/Sao_Paulo')`,
         totalGross: '0',
         totalDiscounts: '0',
         totalNet: '0',

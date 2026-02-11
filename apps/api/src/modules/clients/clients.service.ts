@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { eq, and, desc, ilike, or } from 'drizzle-orm';
+import { eq, and, desc, ilike, or, inArray } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.module';
-import { Database, clients, commands, Client, NewClient } from '../../database';
+import { Database, clients, commands, commandPayments, Client, NewClient } from '../../database';
 
 export interface FindAllOptions {
   salonId: string;
@@ -26,6 +26,7 @@ export interface ClientHistory {
     totalNet: string | null;
     openedAt: Date;
     closedAt: Date | null;
+    paymentSummary: string;
   }[];
   totalSpent: number;
   averageTicket: number;
@@ -272,6 +273,32 @@ export class ClientsService {
       .orderBy(desc(commands.openedAt))
       .limit(20);
 
+    // Buscar métodos de pagamento por comanda
+    const commandIds = clientCommands.map(c => c.id);
+    let paymentsByCommand: Record<string, string[]> = {};
+    if (commandIds.length > 0) {
+      const payments = await this.db
+        .select({
+          commandId: commandPayments.commandId,
+          method: commandPayments.method,
+        })
+        .from(commandPayments)
+        .where(inArray(commandPayments.commandId, commandIds));
+
+      const methodLabels: Record<string, string> = {
+        CASH: 'Dinheiro', CARD_CREDIT: 'Crédito', CARD_DEBIT: 'Débito',
+        PIX: 'PIX', VOUCHER: 'Voucher', TRANSFER: 'Transferência', OTHER: 'Outro',
+      };
+      for (const p of payments) {
+        const key = p.commandId;
+        if (!paymentsByCommand[key]) paymentsByCommand[key] = [];
+        const label = methodLabels[p.method || ''] || p.method || 'Outro';
+        if (!paymentsByCommand[key].includes(label)) {
+          paymentsByCommand[key].push(label);
+        }
+      }
+    }
+
     // Calcular totais
     const closedCommands = clientCommands.filter(c => c.status === 'CLOSED');
     const totalSpent = closedCommands.reduce((acc, c) => {
@@ -283,7 +310,10 @@ export class ClientsService {
       : 0;
 
     return {
-      commands: clientCommands,
+      commands: clientCommands.map(c => ({
+        ...c,
+        paymentSummary: paymentsByCommand[c.id]?.join(', ') || '',
+      })),
       totalSpent,
       averageTicket,
       totalVisits: closedCommands.length,

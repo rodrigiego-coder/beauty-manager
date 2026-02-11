@@ -253,7 +253,7 @@ export class DataCollectorService {
             and(
               eq(commands.salonId, salonId),
               eq(commands.status, 'CLOSED'),
-              sql`DATE(${commands.cashierClosedAt}) = ${todayStr}`,
+              sql`COALESCE(${commands.businessDate}, DATE((${commands.openedAt} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo')) = DATE(NOW() AT TIME ZONE 'America/Sao_Paulo')`,
             ),
           );
 

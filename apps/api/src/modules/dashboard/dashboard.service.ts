@@ -103,6 +103,24 @@ export class DashboardService {
     private db: Database,
   ) {}
 
+  /**
+   * Converte Date (de spMidnightToUtc) para string 'YYYY-MM-DD' em SP timezone.
+   * SP é fixo UTC-3 (sem DST desde 2019). toISOString é determinístico (sempre UTC).
+   */
+  private toSpDateStr(d: Date): string {
+    const sp = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+    return sp.toISOString().slice(0, 10);
+  }
+
+  /**
+   * Expressão SQL: dia operacional (business_date) com fallback para legado.
+   * Usa DATE((opened_at AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo')
+   * quando business_date for NULL (registros anteriores à migration).
+   */
+  private get bizDateExpr() {
+    return sql`COALESCE(${commands.businessDate}, DATE((${commands.openedAt} AT TIME ZONE 'UTC') AT TIME ZONE 'America/Sao_Paulo'))`;
+  }
+
   async getStats(salonId: string, period: DashboardPeriod = 'today'): Promise<DashboardStats> {
     const { startDate, endDate, previousStartDate, previousEndDate } = this.getPeriodDates(period);
 
@@ -227,7 +245,9 @@ export class DashboardService {
   }
 
   private async getRevenueData(salonId: string, startDate: Date, endDate: Date) {
-    // Buscar comandas fechadas no periodo
+    // Buscar comandas fechadas no periodo — agrupado por business_date (dia operacional)
+    const startStr = this.toSpDateStr(startDate);
+    const endStr = this.toSpDateStr(endDate);
     const closedCommands = await this.db
       .select()
       .from(commands)
@@ -235,8 +255,8 @@ export class DashboardService {
         and(
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
-          gte(commands.cashierClosedAt, startDate),
-          lt(commands.cashierClosedAt, endDate),
+          sql`${this.bizDateExpr} >= ${startStr}::date`,
+          sql`${this.bizDateExpr} < ${endStr}::date`,
         ),
       );
 
@@ -385,7 +405,9 @@ export class DashboardService {
   }
 
   private async getTopServices(salonId: string, startDate: Date, endDate: Date): Promise<TopService[]> {
-    // Buscar comandas fechadas no periodo
+    // Buscar comandas fechadas no periodo — por business_date
+    const startStr = this.toSpDateStr(startDate);
+    const endStr = this.toSpDateStr(endDate);
     const closedCommands = await this.db
       .select({ id: commands.id })
       .from(commands)
@@ -393,8 +415,8 @@ export class DashboardService {
         and(
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
-          gte(commands.cashierClosedAt, startDate),
-          lt(commands.cashierClosedAt, endDate),
+          sql`${this.bizDateExpr} >= ${startStr}::date`,
+          sql`${this.bizDateExpr} < ${endStr}::date`,
         ),
       );
 
@@ -449,7 +471,9 @@ export class DashboardService {
   }
 
   private async getTopProducts(salonId: string, startDate: Date, endDate: Date): Promise<TopProduct[]> {
-    // Buscar comandas fechadas no periodo
+    // Buscar comandas fechadas no periodo — por business_date
+    const startStr = this.toSpDateStr(startDate);
+    const endStr = this.toSpDateStr(endDate);
     const closedCommands = await this.db
       .select({ id: commands.id })
       .from(commands)
@@ -457,8 +481,8 @@ export class DashboardService {
         and(
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
-          gte(commands.cashierClosedAt, startDate),
-          lt(commands.cashierClosedAt, endDate),
+          sql`${this.bizDateExpr} >= ${startStr}::date`,
+          sql`${this.bizDateExpr} < ${endStr}::date`,
         ),
       );
 
@@ -581,10 +605,9 @@ export class DashboardService {
   }
 
   private async getTodaySales(salonId: string): Promise<number> {
+    // Vendas de hoje — por business_date (dia operacional)
     const { year, month, day } = spNow();
-    const m = month - 1;
-    const startOfDay = spMidnightToUtc(year, m, day);
-    const endOfDay = spMidnightToUtc(year, m, day + 1);
+    const todayStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
     const todayCommands = await this.db
       .select()
@@ -593,8 +616,7 @@ export class DashboardService {
         and(
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
-          gte(commands.cashierClosedAt, startOfDay),
-          lt(commands.cashierClosedAt, endOfDay),
+          sql`${this.bizDateExpr} = ${todayStr}::date`,
         ),
       );
 
@@ -756,7 +778,9 @@ export class DashboardService {
     monthStart: Date,
     monthEnd: Date,
   ): Promise<number> {
-    // Buscar comandas fechadas no mês
+    // Buscar comandas fechadas no mês — por business_date
+    const startStr = this.toSpDateStr(monthStart);
+    const endStr = this.toSpDateStr(monthEnd);
     const closedCommands = await this.db
       .select({ id: commands.id })
       .from(commands)
@@ -764,8 +788,8 @@ export class DashboardService {
         and(
           eq(commands.salonId, salonId),
           eq(commands.status, 'CLOSED'),
-          gte(commands.cashierClosedAt, monthStart),
-          lt(commands.cashierClosedAt, monthEnd),
+          sql`${this.bizDateExpr} >= ${startStr}::date`,
+          sql`${this.bizDateExpr} < ${endStr}::date`,
         ),
       );
 

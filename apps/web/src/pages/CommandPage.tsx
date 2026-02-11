@@ -433,6 +433,9 @@ export function CommandPage() {
   const [savingReminder, setSavingReminder] = useState(false);
   const [reminderSaved, setReminderSaved] = useState(false);
 
+  // Timeline: mostrar todos os eventos
+  const [showAllEvents, setShowAllEvents] = useState(false);
+
   useEffect(() => {
     if (id) {
       loadCommand();
@@ -1414,6 +1417,115 @@ export function CommandPage() {
         </div>
       </div>
 
+      {/* Espelho da Comanda — só para CLOSED */}
+      {command.status === 'CLOSED' && (
+        <>
+          <style>{`
+            @media print {
+              body * { visibility: hidden !important; }
+              .print-receipt, .print-receipt * { visibility: visible !important; }
+              .print-receipt { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; }
+              .no-print { display: none !important; }
+            }
+          `}</style>
+          <div className="print-receipt bg-white rounded-xl border-2 border-green-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-green-600" />
+                <h2 className="text-lg font-semibold text-gray-900">Espelho da Comanda</h2>
+              </div>
+              <button
+                onClick={() => window.print()}
+                className="no-print flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
+              >
+                <FileText className="w-4 h-4" />
+                Imprimir
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
+              <div>
+                <p className="text-gray-500">Comanda</p>
+                <p className="font-semibold">#{command.cardNumber}</p>
+              </div>
+              <div>
+                <p className="text-gray-500">Código</p>
+                <p className="font-semibold">{command.code || '-'}</p>
+              </div>
+              <div>
+                <p className="text-gray-500">Abertura</p>
+                <p className="font-semibold">{format(new Date(command.openedAt), 'dd/MM/yyyy HH:mm', { locale: ptBR })}</p>
+              </div>
+              <div>
+                <p className="text-gray-500">Cliente</p>
+                <p className="font-semibold">{linkedClient?.name || 'Não informado'}</p>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 pt-4 mb-4">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">Itens</h3>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-500 border-b">
+                    <th className="pb-2">Descrição</th>
+                    <th className="pb-2 text-right">Qtd</th>
+                    <th className="pb-2 text-right">Valor Un.</th>
+                    <th className="pb-2 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeItems.map((item) => (
+                    <tr key={item.id} className="border-b border-gray-100">
+                      <td className="py-2">
+                        {item.description}
+                        {item.paidByPackage && <span className="ml-2 text-xs text-purple-600">(Pacote)</span>}
+                      </td>
+                      <td className="py-2 text-right">{parseFloat(item.quantity).toFixed(0)}</td>
+                      <td className="py-2 text-right">{formatCurrency(item.unitPrice)}</td>
+                      <td className="py-2 text-right">{formatCurrency(item.totalPrice)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="border-t border-gray-200 pt-4 mb-4">
+              <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">Pagamentos</h3>
+              {command.payments.length > 0 ? (
+                <table className="w-full text-sm">
+                  <tbody>
+                    {command.payments.map((p) => (
+                      <tr key={p.id} className="border-b border-gray-100">
+                        <td className="py-2">
+                          {p.paymentMethod?.name || p.method || 'Outro'}
+                          {p.paymentDestination && <span className="text-gray-400 ml-1">({p.paymentDestination.name})</span>}
+                        </td>
+                        <td className="py-2 text-right">{formatCurrency(p.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="text-gray-400 text-sm">Nenhum pagamento registrado</p>
+              )}
+            </div>
+
+            <div className="border-t-2 border-gray-300 pt-3 flex justify-between text-sm">
+              <div>
+                <p className="text-gray-500">Bruto: {formatCurrency(command.totalGross)}</p>
+                {parseFloat(command.totalDiscounts) > 0 && (
+                  <p className="text-red-500">Descontos: -{formatCurrency(command.totalDiscounts)}</p>
+                )}
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-bold text-gray-900">Total: {formatCurrency(command.totalNet)}</p>
+                <p className="text-green-600 text-xs font-medium">Pago</p>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Coluna Principal */}
         <div className="lg:col-span-2 space-y-6">
@@ -1850,34 +1962,45 @@ export function CommandPage() {
             {(!command.events || command.events.length === 0) ? (
               <p className="text-gray-500 text-sm">Nenhuma atividade registrada.</p>
             ) : (
-              <div className="space-y-4">
-                {command.events.slice(0, 10).map((event, index) => {
-                  const { action, details } = formatEventMessage(event.eventType, event.metadata || {});
-                  return (
-                    <div key={event.id} className="flex gap-3">
-                      <div className="flex flex-col items-center">
-                        <div className="w-2 h-2 bg-primary-500 rounded-full mt-2"></div>
-                        {index < Math.min(command.events.length - 1, 9) && (
-                          <div className="w-0.5 h-full bg-gray-200 mt-1"></div>
-                        )}
+              <>
+                <div className="space-y-4">
+                  {(showAllEvents ? command.events : command.events.slice(0, 10)).map((event, index) => {
+                    const eventsToShow = showAllEvents ? command.events : command.events.slice(0, 10);
+                    const { action, details } = formatEventMessage(event.eventType, event.metadata || {});
+                    return (
+                      <div key={event.id} className="flex gap-3">
+                        <div className="flex flex-col items-center">
+                          <div className="w-2 h-2 bg-primary-500 rounded-full mt-2"></div>
+                          {index < eventsToShow.length - 1 && (
+                            <div className="w-0.5 h-full bg-gray-200 mt-1"></div>
+                          )}
+                        </div>
+                        <div className="flex-1 pb-4">
+                          <p className="text-sm text-gray-900">
+                            <span className="font-medium">{event.actorName || 'Usuário'}</span>
+                            {' '}
+                            {action}
+                          </p>
+                          {details && (
+                            <p className="text-sm text-gray-600 mt-0.5">{details}</p>
+                          )}
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {formatTime(event.createdAt)}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex-1 pb-4">
-                        <p className="text-sm text-gray-900">
-                          <span className="font-medium">{event.actorName || 'Usuário'}</span>
-                          {' '}
-                          {action}
-                        </p>
-                        {details && (
-                          <p className="text-sm text-gray-600 mt-0.5">{details}</p>
-                        )}
-                        <p className="text-xs text-gray-400 mt-0.5">
-                          {formatTime(event.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+                {command.events.length > 10 && (
+                  <button
+                    onClick={() => setShowAllEvents(!showAllEvents)}
+                    className="mt-2 text-sm text-primary-600 hover:text-primary-700 font-medium"
+                  >
+                    {showAllEvents ? 'Ver menos' : `Ver todos (${command.events.length})`}
+                  </button>
+                )}
+              </>
             )}
           </div>
 
