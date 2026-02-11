@@ -134,10 +134,29 @@ export class CommandsService {
    * Lista comandas ativas (OPEN ou IN_SERVICE apenas)
    * Comandas em WAITING_PAYMENT ou CLOSED não aparecem aqui
    */
-  async findOpen(salonId: string): Promise<Command[]> {
+  async findOpen(salonId: string) {
     return this.db
-      .select()
+      .select({
+        id: commands.id,
+        salonId: commands.salonId,
+        clientId: commands.clientId,
+        appointmentId: commands.appointmentId,
+        cardNumber: commands.cardNumber,
+        code: commands.code,
+        status: commands.status,
+        openedAt: commands.openedAt,
+        openedById: commands.openedById,
+        totalGross: commands.totalGross,
+        totalDiscounts: commands.totalDiscounts,
+        totalNet: commands.totalNet,
+        notes: commands.notes,
+        createdAt: commands.createdAt,
+        updatedAt: commands.updatedAt,
+        clientName: clients.name,
+        clientPhone: clients.phone,
+      })
       .from(commands)
+      .leftJoin(clients, eq(commands.clientId, clients.id))
       .where(
         and(
           eq(commands.salonId, salonId),
