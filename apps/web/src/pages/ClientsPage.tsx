@@ -1132,45 +1132,52 @@ export function ClientsPage() {
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        {clientHistory.commands.map((command) => (
-                          <div
-                            key={command.id}
-                            className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                          >
-                            <div className="flex items-center gap-4">
-                              <div className="text-sm">
-                                <p className="font-medium text-gray-900">
-                                  Comanda #{command.cardNumber}
-                                </p>
-                                <p className="text-gray-500">
-                                  {format(new Date(command.openedAt), 'dd/MM/yyyy HH:mm')}
-                                </p>
+                        {clientHistory.commands.map((command) => {
+                          const statusLabels: Record<string, { label: string; classes: string }> = {
+                            CLOSED: { label: 'Fechada', classes: 'bg-green-100 text-green-800' },
+                            OPEN: { label: 'Aberta', classes: 'bg-blue-100 text-blue-800' },
+                            IN_SERVICE: { label: 'Em Atendimento', classes: 'bg-purple-100 text-purple-800' },
+                            WAITING_PAYMENT: { label: 'Aguardando Pagamento', classes: 'bg-orange-100 text-orange-800' },
+                            CANCELED: { label: 'Cancelada', classes: 'bg-red-100 text-red-800' },
+                          };
+                          const st = statusLabels[command.status] || { label: command.status, classes: 'bg-gray-100 text-gray-800' };
+
+                          return (
+                            <div
+                              key={command.id}
+                              className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="text-sm">
+                                  <p className="font-medium text-gray-900">
+                                    Comanda #{command.cardNumber}
+                                    {command.code && (
+                                      <span className="text-gray-500 ml-2">OS {command.code}</span>
+                                    )}
+                                  </p>
+                                  <p className="text-gray-500">
+                                    {format(new Date(command.openedAt), 'dd/MM/yyyy HH:mm')}
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                  <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${st.classes}`}>
+                                    {st.label}
+                                  </span>
+                                  <span className="font-semibold text-gray-900">
+                                    R$ {parseFloat(command.totalNet || '0').toFixed(2)}
+                                  </span>
+                                </div>
                               </div>
-                            </div>
 
-                            <div className="flex items-center gap-4">
-                              <span
-                                className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                                  command.status === 'CLOSED'
-                                    ? 'bg-green-100 text-green-800'
-                                    : command.status === 'OPEN'
-                                    ? 'bg-blue-100 text-blue-800'
-                                    : 'bg-gray-100 text-gray-800'
-                                }`}
-                              >
-                                {command.status === 'CLOSED'
-                                  ? 'Fechada'
-                                  : command.status === 'OPEN'
-                                  ? 'Aberta'
-                                  : command.status}
-                              </span>
-
-                              <span className="font-semibold text-gray-900">
-                                R$ {parseFloat(command.totalNet || '0').toFixed(2)}
-                              </span>
+                              {command.paymentSummary && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Pagamento: {command.paymentSummary}
+                                </p>
+                              )}
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

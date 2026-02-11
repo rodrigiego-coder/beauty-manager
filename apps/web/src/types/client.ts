@@ -52,6 +52,7 @@ export interface ClientCommand {
   totalNet: string | null;
   openedAt: string;
   closedAt: string | null;
+  paymentSummary: string;
 }
 
 export interface ClientHistory {
