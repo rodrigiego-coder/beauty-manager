@@ -1,5 +1,5 @@
 import { Injectable, Inject, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
-import { eq, and, desc, ne, inArray } from 'drizzle-orm';
+import { eq, and, desc, ne, inArray, sql } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.module';
 import {
   Database,
@@ -395,6 +395,7 @@ export class CommandsService {
         notes: data.notes || null,
         openedById: currentUser.id,
         status: 'OPEN',
+        businessDate: sql`DATE(NOW() AT TIME ZONE 'America/Sao_Paulo')`,
       })
       .returning();
 

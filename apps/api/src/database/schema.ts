@@ -1791,10 +1791,11 @@ export const commands = pgTable('commands', {
   code: varchar('code', { length: 50 }),
   
   status: varchar('status', { length: 20 }).default('OPEN').notNull(),
-  
+
   openedAt: timestamp('opened_at').defaultNow().notNull(),
+  businessDate: date('business_date'),
   openedById: uuid('opened_by_id').references(() => users.id).notNull(),
-  
+
   serviceClosedAt: timestamp('service_closed_at'),
   serviceClosedById: uuid('service_closed_by_id').references(() => users.id),
   
