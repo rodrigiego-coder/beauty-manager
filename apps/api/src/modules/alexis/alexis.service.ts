@@ -222,29 +222,10 @@ export class AlexisService {
   ): Promise<ProcessMessageResult> {
     const startTime = Date.now();
 
-    // ========== VERIFICA SE ALEXIA ESTÁ HABILITADA GLOBALMENTE ==========
-    const settings = await this.getSettings(salonId);
-    if (settings?.isEnabled === false) {
-      this.logger.log(`Alexia desabilitada para salão ${salonId} - mensagem ignorada`);
-      // Salva a mensagem mas não responde
-      const conversation = await this.getOrCreateConversation(salonId, clientPhone, clientName);
-      if (senderType === 'client') {
-        await this.saveMessage(conversation.id, 'client', message, 'DISABLED', false, false);
-      }
-      return {
-        response: null,
-        intent: 'DISABLED',
-        blocked: false,
-        shouldSend: false,
-        statusChanged: false,
-      };
-    }
-
-    // Busca ou cria conversa
-    const conversation = await this.getOrCreateConversation(salonId, clientPhone, clientName);
-
-    // ========== VERIFICA SE É COMANDO DO ATENDENTE ==========
+    // ========== VERIFICA SE É COMANDO DO ATENDENTE (antes do check isEnabled) ==========
+    // Comandos #eu/#ia são de controle e devem funcionar mesmo com Alexia desabilitada
     if (senderType === 'agent') {
+      const conversation = await this.getOrCreateConversation(salonId, clientPhone, clientName);
       const commandCheck = this.contentFilter.isCommand(message);
 
       if (commandCheck.isCommand) {
@@ -303,7 +284,129 @@ export class AlexisService {
       };
     }
 
+    // ========== CONFIRMAÇÃO DE AGENDAMENTO FUNCIONA MESMO COM ALEXIA DESLIGADA ==========
+    // É funcionalidade crítica do salão (não é chat IA)
+
+    // Primeiro: verifica se há um fluxo de retenção ativo (cliente respondendo 1/2 após "não")
+    {
+      const conversation = await this.getOrCreateConversation(salonId, clientPhone, clientName);
+      const state = await this.stateStore.getState(conversation.id);
+
+      if (state.activeSkill === 'CANCELLATION' && state.cancellationStep === 'AWAITING_CANCEL_CONFIRM') {
+        const choice = message.trim().toLowerCase();
+        const appointmentId = state.cancellationSlots?.appointmentId;
+
+        if (choice === '1' || choice.includes('reagendar')) {
+          // ========== REAGENDAR: cancela o antigo + envia link ==========
+          if (appointmentId) {
+            await this.executeCancellation(appointmentId, clientPhone);
+          }
+          const bookingUrl = await this.getBookingUrl(salonId, clientPhone);
+          const reagendarMsg = bookingUrl
+            ? `Sem problemas! O agendamento anterior foi cancelado.\n\nPara reagendar, acesse:\n🔗 ${bookingUrl}\n\nOu me diga o dia e horário que prefere! 😊`
+            : `Sem problemas! O agendamento anterior foi cancelado.\n\nMe diga o dia e horário que prefere para reagendar! 😊`;
+
+          await this.saveMessage(conversation.id, 'client', message, 'APPOINTMENT_RESCHEDULE', false, false);
+          await this.saveMessage(conversation.id, 'ai', reagendarMsg, 'APPOINTMENT_RESCHEDULE', false, false);
+          await this.stateStore.updateState(conversation.id, {
+            activeSkill: 'NONE',
+            cancellationStep: 'NONE',
+            cancellationSlots: {},
+          });
+
+          return {
+            response: reagendarMsg,
+            intent: 'APPOINTMENT_RESCHEDULE',
+            blocked: false,
+            shouldSend: true,
+            statusChanged: false,
+          };
+        }
+
+        if (choice === '2' || choice.includes('cancelar') || choice.includes('cancela')) {
+          // ========== CANCELAR DE FATO ==========
+          if (appointmentId) {
+            await this.executeCancellation(appointmentId, clientPhone);
+          }
+          const cancelMsg = `Agendamento *cancelado* com sucesso. 😔\n\nQuando quiser, agende novamente! Estamos à disposição. 💜`;
+
+          await this.saveMessage(conversation.id, 'client', message, 'APPOINTMENT_DECLINE', false, false);
+          await this.saveMessage(conversation.id, 'ai', cancelMsg, 'APPOINTMENT_DECLINE', false, false);
+          await this.stateStore.updateState(conversation.id, {
+            activeSkill: 'NONE',
+            cancellationStep: 'NONE',
+            cancellationSlots: {},
+          });
+
+          return {
+            response: cancelMsg,
+            intent: 'APPOINTMENT_DECLINE',
+            blocked: false,
+            shouldSend: true,
+            statusChanged: false,
+          };
+        }
+
+        // Qualquer outra resposta: trata como cancelamento (mais seguro) e segue pipeline
+        await this.stateStore.updateState(conversation.id, {
+          activeSkill: 'NONE',
+          cancellationStep: 'NONE',
+          cancellationSlots: {},
+        });
+      }
+    }
+
+    const confirmIntent = this.intentClassifier.classify(message);
+    if (confirmIntent === 'APPOINTMENT_CONFIRM' || confirmIntent === 'APPOINTMENT_DECLINE') {
+      const confirmResult = await this.handleAppointmentConfirmation(
+        salonId, clientPhone, confirmIntent === 'APPOINTMENT_CONFIRM',
+      );
+      if (confirmResult.handled) {
+        const conversation = await this.getOrCreateConversation(salonId, clientPhone, clientName);
+        await this.saveMessage(conversation.id, 'client', message, confirmIntent, false, false);
+        await this.saveMessage(conversation.id, 'ai', confirmResult.response, confirmIntent, false, false);
+
+        // Se é DECLINE, salvar state de retenção (handleAppointmentConfirmation agora retorna appointmentId)
+        if (confirmIntent === 'APPOINTMENT_DECLINE' && confirmResult.appointmentId) {
+          await this.stateStore.updateState(conversation.id, {
+            activeSkill: 'CANCELLATION',
+            cancellationStep: 'AWAITING_CANCEL_CONFIRM',
+            cancellationSlots: { appointmentId: confirmResult.appointmentId },
+          });
+        }
+
+        return {
+          response: confirmResult.response,
+          intent: confirmIntent,
+          blocked: false,
+          shouldSend: true,
+          statusChanged: false,
+        };
+      }
+    }
+
+    // ========== VERIFICA SE ALEXIA ESTÁ HABILITADA GLOBALMENTE ==========
+    const settings = await this.getSettings(salonId);
+    if (settings?.isEnabled === false) {
+      this.logger.log(`Alexia desabilitada para salão ${salonId} - mensagem de cliente ignorada`);
+      // Salva a mensagem mas não responde
+      const conversation = await this.getOrCreateConversation(salonId, clientPhone, clientName);
+      if (senderType === 'client') {
+        await this.saveMessage(conversation.id, 'client', message, 'DISABLED', false, false);
+      }
+      return {
+        response: null,
+        intent: 'DISABLED',
+        blocked: false,
+        shouldSend: false,
+        statusChanged: false,
+      };
+    }
+
     // ========== MENSAGEM DO CLIENTE ==========
+
+    // Busca ou cria conversa (para mensagens de clientes)
+    const conversation = await this.getOrCreateConversation(salonId, clientPhone, clientName);
 
     // Se humano está ativo, não responde (atendente vai responder)
     if (conversation.status === 'HUMAN_ACTIVE') {
@@ -333,6 +436,107 @@ export class AlexisService {
 
     // ========== P0: CARREGA FSM STATE LOGO APÓS DEBOUNCE ==========
     const state = await this.stateStore.getState(conversation.id);
+
+    // ========== FLUXO DE BOAS-VINDAS COM ESCOLHA DE CANAL ==========
+    if (!state.userAlreadyGreeted && state.activeSkill === 'NONE') {
+      const bookingUrl = await this.getBookingUrl(salonId, clientPhone);
+      const ctxForName = await this.dataCollector.collectContext(salonId, clientPhone);
+      const salonName = ctxForName?.salon?.name || 'Salão';
+      const hour = new Date().getHours();
+      const greeting = hour >= 5 && hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+      const firstName = clientName?.split(' ')[0] || '';
+      const nameGreeting = firstName ? `${greeting}, ${firstName}!` : `${greeting}!`;
+
+      const bookingLine = bookingUrl
+        ? `\nSe quiser agendar um horário, acesse:\n🔗 ${bookingUrl}\n`
+        : '';
+
+      // Usa a mensagem de boas-vindas configurada nas settings, ou fallback padrão
+      const greetingSettings = await this.getSettings(salonId);
+      const customGreeting = greetingSettings?.greetingMessage?.trim();
+      const greetingBody = customGreeting
+        ? customGreeting
+            .replace(/\{nome\}/gi, firstName || 'cliente')
+            .replace(/\{saudacao\}/gi, greeting)
+            .replace(/\{salao\}/gi, salonName)
+        : `${nameGreeting} Eu sou a Alexia, assistente do ${salonName}.`;
+
+      const channelOptions = `\n*1* - Falar com atendente\n      📅 Seg a Sex e Sábado, das 08:00 às 18:00\n*2* - Continuar com a Alexia (IA) 🤖\n      ⏰ Disponível 24h`;
+
+      const welcomeMessage = `${greetingBody}${bookingLine}${channelOptions}`;
+
+      await this.saveMessage(conversation.id, 'client', mergedText, 'GREETING', false, false);
+      await this.saveMessage(conversation.id, 'ai', welcomeMessage, 'GREETING', false, false);
+      await this.stateStore.updateState(conversation.id, {
+        activeSkill: 'CHANNEL_CHOICE',
+        channelChoiceStep: 'AWAITING_CHOICE',
+        userAlreadyGreeted: true,
+        lastGreetingAt: nowIso(),
+      });
+
+      await this.logInteraction(
+        salonId, conversation.id, clientPhone,
+        mergedText, welcomeMessage, 'GREETING',
+        false, undefined, Date.now() - startTime,
+      );
+
+      return {
+        response: welcomeMessage,
+        intent: 'GREETING',
+        blocked: false,
+        shouldSend: true,
+        statusChanged: false,
+      };
+    }
+
+    // ========== HANDLE CHANNEL CHOICE RESPONSE ==========
+    if (state.activeSkill === 'CHANNEL_CHOICE' && state.channelChoiceStep === 'AWAITING_CHOICE') {
+      const choice = mergedText.trim().toLowerCase();
+
+      if (choice === '1' || choice.includes('atendente') || choice.includes('humano')) {
+        // Opção 1: Atendimento humano
+        await this.handleHumanTakeover(conversation.id, '');
+        await this.saveMessage(conversation.id, 'client', mergedText, 'HUMAN_TAKEOVER', false, false);
+        const chSettings = await this.getSettings(salonId);
+        const msg = chSettings?.humanTakeoverMessage || 'Pronto! Nossa equipe já foi notificada e logo irá te atender. 😊';
+        await this.saveMessage(conversation.id, 'ai', msg, 'HUMAN_TAKEOVER', false, false);
+        await this.stateStore.updateState(conversation.id, {
+          activeSkill: 'NONE',
+          channelChoiceStep: 'NONE',
+        });
+
+        return {
+          response: msg,
+          intent: 'HUMAN_TAKEOVER',
+          blocked: false,
+          shouldSend: true,
+          statusChanged: true,
+          newStatus: 'HUMAN_ACTIVE',
+        };
+      }
+
+      // Limpa state de escolha de canal
+      await this.stateStore.updateState(conversation.id, {
+        activeSkill: 'NONE',
+        channelChoiceStep: 'NONE',
+      });
+
+      if (choice === '2' || choice.includes('ia') || choice.includes('alexia')) {
+        // Opção 2: Continuar com IA
+        const confirmMsg = 'Perfeito! Estou aqui para te ajudar. O que você precisa? 😊';
+        await this.saveMessage(conversation.id, 'client', mergedText, 'AI_CONFIRMED', false, false);
+        await this.saveMessage(conversation.id, 'ai', confirmMsg, 'AI_CONFIRMED', false, false);
+        return {
+          response: confirmMsg,
+          intent: 'GENERAL',
+          blocked: false,
+          shouldSend: true,
+          statusChanged: false,
+        };
+      }
+
+      // Qualquer outra coisa (pergunta direta): cai no pipeline normal abaixo
+    }
 
     // ========== P0: FSM ATIVA TEM PRIORIDADE ABSOLUTA ==========
     // Se SCHEDULING com step !== 'NONE', vai direto para FSM (NÃO cai em IA/fallback)
@@ -529,6 +733,7 @@ export class AlexisService {
     // ========== CAMADA 2: GERAÇÃO COM IA ==========
     const context = await this.dataCollector.collectContext(salonId, clientPhone);
     const history = await this.getRecentHistory(conversation.id, CONVERSATION_HISTORY_LIMIT);
+    const kbSettings = await this.getSettings(salonId);
     let aiResponse: string;
 
     // Check if Gemini is available before trying
@@ -543,6 +748,7 @@ export class AlexisService {
       } else {
         aiResponse = await this.gemini.generateResponse(
           context.salon?.name || 'Salão', mergedText, context, history,
+          kbSettings?.knowledgeBase,
         );
       }
       // Reset fallback counter on success
@@ -1343,6 +1549,18 @@ export class AlexisService {
    * GERA RESPOSTA COM LINK DE AGENDAMENTO ONLINE
    * =====================================================
    */
+  private async getBookingUrl(salonId: string, clientPhone: string): Promise<string> {
+    try {
+      const result = await this.onlineBookingSettings.generateAssistedLink({
+        salonId,
+        clientPhone: clientPhone?.replace(/\D/g, ''),
+      });
+      return result.url;
+    } catch {
+      return '';
+    }
+  }
+
   private async generateBookingLinkResponse(
     salonId: string,
     clientPhone: string,
@@ -1528,16 +1746,21 @@ export class AlexisService {
     salonId: string,
     clientPhone: string,
     isConfirm: boolean,
-  ): Promise<{ handled: boolean; response: string }> {
+  ): Promise<{ handled: boolean; response: string; appointmentId?: string }> {
     // Formata variações do telefone para busca
     const phoneClean = clientPhone.replace(/\D/g, '');
     const phoneVariants = [phoneClean, phoneClean.replace(/^55/, ''), `55${phoneClean.replace(/^55/, '')}`];
 
     // Busca agendamento pendente de confirmação para este telefone
+    // Busca por confirmationStatus='PENDING' com status SCHEDULED (padrão do sistema)
     const pendingAppointments = await db
       .select()
       .from(appointments)
-      .where(and(eq(appointments.salonId, salonId), eq(appointments.status, 'PENDING_CONFIRMATION')))
+      .where(and(
+        eq(appointments.salonId, salonId),
+        eq(appointments.confirmationStatus, 'PENDING'),
+        eq(appointments.status, 'SCHEDULED'),
+      ))
       .orderBy(desc(appointments.createdAt))
       .limit(20);
 
@@ -1600,7 +1823,27 @@ Aguardamos você! 💜`,
       };
     }
 
-    // ========== CANCELA AGENDAMENTO ==========
+    // ========== RETENÇÃO: PERGUNTA ANTES DE CANCELAR ==========
+    const dateFormatted2 = new Date(appointment.date).toLocaleDateString('pt-BR', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    });
+
+    this.logger.log(`Agendamento ${appointment.id} — cliente disse NÃO, iniciando retenção para ${clientPhone}`);
+
+    return {
+      handled: true,
+      appointmentId: appointment.id,
+      response: `Entendi! Antes de cancelar o agendamento de *${dateFormatted2}* às *${appointment.time}*, gostaria de reagendar para outro dia/horário?\n\n*1* - Sim, quero reagendar\n*2* - Não, pode cancelar`,
+    };
+  }
+
+  /**
+   * Executa o cancelamento efetivo de um agendamento
+   * Usado pelo fluxo de retenção após confirmação do cliente
+   */
+  private async executeCancellation(appointmentId: string, clientPhone: string): Promise<void> {
     await db
       .update(appointments)
       .set({
@@ -1608,9 +1851,8 @@ Aguardamos você! 💜`,
         cancellationReason: 'Cancelado pelo cliente via WhatsApp',
         updatedAt: new Date(),
       })
-      .where(eq(appointments.id, appointment.id));
+      .where(eq(appointments.id, appointmentId));
 
-    // Registra resposta na notificação
     await db
       .update(appointmentNotifications)
       .set({
@@ -1620,7 +1862,7 @@ Aguardamos você! 💜`,
       })
       .where(
         and(
-          eq(appointmentNotifications.appointmentId, appointment.id),
+          eq(appointmentNotifications.appointmentId, appointmentId),
           eq(appointmentNotifications.notificationType, 'APPOINTMENT_CONFIRMATION'),
         ),
       );
@@ -1633,17 +1875,10 @@ Aguardamos você! 💜`,
         updatedAt: new Date(),
       })
       .where(
-        and(eq(appointmentNotifications.appointmentId, appointment.id), eq(appointmentNotifications.status, 'SCHEDULED')),
+        and(eq(appointmentNotifications.appointmentId, appointmentId), eq(appointmentNotifications.status, 'SCHEDULED')),
       );
 
-    this.logger.log(`Agendamento ${appointment.id} CANCELADO via WhatsApp por ${clientPhone}`);
-
-    return {
-      handled: true,
-      response: `Agendamento *cancelado* com sucesso. 😔
-
-Quando quiser, agende novamente! Estamos à disposição. 💜`,
-    };
+    this.logger.log(`Agendamento ${appointmentId} CANCELADO via WhatsApp por ${clientPhone}`);
   }
 
   /**

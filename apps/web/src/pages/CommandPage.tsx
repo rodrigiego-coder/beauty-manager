@@ -108,6 +108,9 @@ interface PackageAvailability {
   remainingSessions?: number;
   totalSessions?: number;
   packageName?: string;
+  depleted?: boolean;
+  depletedPackageId?: number;
+  serviceName?: string;
 }
 
 interface CommandPayment {
@@ -311,6 +314,7 @@ const legacyPaymentMethodLabels: Record<string, string> = {
   TRANSFER: 'Transferência',
   CARD_CREDIT: 'Cartão de Crédito',
   CARD_DEBIT: 'Cartão de Débito',
+  OTHER: 'Outro',
 };
 
 export function CommandPage() {
@@ -1146,6 +1150,15 @@ export function CommandPage() {
             });
             // Fonte única de verdade: número direto da sessão atual (ex: 3 de 4)
             setCurrentSessionNum((total - remaining) + 1);
+            // Comissão vem do cadastro do serviço (read-only)
+          } else if (response.data.depletedPackage) {
+            setPackageAvailability({
+              hasPackage: false,
+              depleted: true,
+              depletedPackageId: response.data.depletedPackageId,
+              totalSessions: response.data.service?.totalSessions || 0,
+              serviceName: response.data.service?.name || '',
+            });
           } else {
             setPackageAvailability({ hasPackage: false });
           }
@@ -1497,8 +1510,8 @@ export function CommandPage() {
                     {command.payments.map((p) => (
                       <tr key={p.id} className="border-b border-gray-100">
                         <td className="py-2">
-                          {p.paymentMethod?.name || p.method || 'Outro'}
-                          {p.paymentDestination && <span className="text-gray-400 ml-1">({p.paymentDestination.name})</span>}
+                          {getPaymentMethodName(p)}
+                          {getPaymentDestinationName(p) && <span className="text-gray-400 ml-1">({getPaymentDestinationName(p)})</span>}
                         </td>
                         <td className="py-2 text-right">{formatCurrency(p.amount)}</td>
                       </tr>
@@ -2271,6 +2284,66 @@ export function CommandPage() {
                     <span className="text-sm">Verificando pacotes...</span>
                   </div>
                 </div>
+              ) : packageAvailability?.depleted ? (
+                <div className="mb-4 p-3 rounded-lg border bg-amber-50 border-amber-300">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertTriangle className="w-5 h-5 text-amber-600" />
+                    <div>
+                      <p className="font-semibold text-amber-800">
+                        Pacote esgotado ({packageAvailability.totalSessions} sessoes concluidas)
+                      </p>
+                      <p className="text-sm text-amber-700">
+                        {packageAvailability.serviceName || 'Servico de pacote'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!command?.clientId || !selectedItem || !packageAvailability?.depletedPackageId || !user?.salonId) return;
+                        try {
+                          setLoadingPackage(true);
+                          await api.post('/client-packages/purchase', {
+                            clientId: command.clientId,
+                            packageId: packageAvailability.depletedPackageId,
+                            salonId: user.salonId,
+                          });
+                          // Re-check package
+                          const response = await api.post('/client-packages/check-service', {
+                            clientId: command.clientId,
+                            serviceId: selectedItem.id,
+                          });
+                          if (response.data.hasPackage) {
+                            const total = response.data.balance?.totalSessions || 0;
+                            const remaining = response.data.remainingSessions || 0;
+                            setPackageAvailability({
+                              hasPackage: true,
+                              clientPackageId: response.data.clientPackage?.id,
+                              remainingSessions: remaining,
+                              totalSessions: total,
+                            });
+                            setCurrentSessionNum((total - remaining) + 1);
+                          }
+                        } catch (err: any) {
+                          alert(err?.response?.data?.message || 'Erro ao iniciar novo pacote');
+                        } finally {
+                          setLoadingPackage(false);
+                        }
+                      }}
+                      className="flex-1 px-3 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700"
+                    >
+                      Iniciar Novo Pacote
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPackageAvailability(null)}
+                      className="flex-1 px-3 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50"
+                    >
+                      Cobrar Avulso
+                    </button>
+                  </div>
+                </div>
               ) : packageAvailability?.hasPackage ? (
                 <div className={`mb-4 p-3 rounded-lg border ${
                   useClientPackage
@@ -2353,6 +2426,17 @@ export function CommandPage() {
                   </div>
                 </div>
               ) : null
+            )}
+
+            {/* Informação de comissão por sessão (read-only, vem do cadastro do serviço) */}
+            {itemType === 'SERVICE' && packageAvailability?.hasPackage && useClientPackage && selectedItem && parseFloat(selectedItem.sessionCommissionValue || '0') > 0 && (
+              <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-blue-700">Comissao do profissional:</span>
+                  <span className="font-semibold text-blue-800">R$ {parseFloat(selectedItem.sessionCommissionValue).toFixed(2).replace('.', ',')}</span>
+                  <span className="text-xs text-blue-500">(definido no cadastro do servico)</span>
+                </div>
+              </div>
             )}
 
             {/* Seletor de Variante - aparece apenas se serviço tem variantes */}
@@ -2531,7 +2615,7 @@ export function CommandPage() {
                 }}
                 className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
               >
-                {adjustLoading ? 'Salvando...' : 'Salvar Ajuste'}
+                {adjustLoading ? 'Salvando...' : 'Confirmar Sessao'}
               </button>
             </div>
           </div>

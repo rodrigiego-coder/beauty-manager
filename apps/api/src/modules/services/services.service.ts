@@ -82,6 +82,7 @@ export class ServicesService {
         basePrice: data.basePrice.toString(),
         commissionPercentage: (data.commissionPercentage || 0).toString(),
         totalSessions: data.totalSessions || 1,
+        sessionCommissionValue: (data.sessionCommissionValue || 0).toString(),
         active: true,
       })
       .returning();
@@ -126,6 +127,9 @@ export class ServicesService {
     }
     if (data.totalSessions !== undefined) {
       updateData.totalSessions = data.totalSessions;
+    }
+    if (data.sessionCommissionValue !== undefined) {
+      updateData.sessionCommissionValue = data.sessionCommissionValue.toString();
     }
 
     const [updated] = await this.db

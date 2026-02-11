@@ -55,6 +55,9 @@ export class SchedulesController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') professionalId: string,
   ) {
+    if (professionalId === 'me') {
+      professionalId = user.id;
+    }
     // STYLIST só pode ver próprio horário
     if (user.role === 'STYLIST' && user.id !== professionalId) {
       professionalId = user.id;
@@ -86,6 +89,10 @@ export class SchedulesController {
     @Param('dayOfWeek') dayOfWeek: string,
     @Body() data: ProfessionalScheduleDto,
   ) {
+    // "me" = próprio usuário logado (qualquer role)
+    if (professionalId === 'me') {
+      professionalId = user.id;
+    }
     // STYLIST só pode editar próprio horário
     if (user.role === 'STYLIST' && user.id !== professionalId) {
       professionalId = user.id;

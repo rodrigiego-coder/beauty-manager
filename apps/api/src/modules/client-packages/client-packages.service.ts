@@ -457,6 +457,10 @@ export class ClientPackagesService {
     clientPackage?: ClientPackage;
     balance?: ClientPackageBalance;
     remainingSessions?: number;
+    depletedPackage?: boolean;
+    depletedPackageId?: number;
+    previousBalance?: ClientPackageBalance;
+    service?: { id: number; name: string; totalSessions: number };
   }> {
     const today = new Date().toISOString().split('T')[0];
 
@@ -518,7 +522,13 @@ export class ClientPackagesService {
 
       if (existingBalance) {
         // Client already had a package for this service (sessions depleted or expired)
-        return { hasPackage: false };
+        return {
+          hasPackage: false,
+          depletedPackage: true,
+          depletedPackageId: cp.packageId,
+          previousBalance: existingBalance,
+          service: { id: service.id, name: service.name, totalSessions: service.totalSessions },
+        };
       }
     }
 

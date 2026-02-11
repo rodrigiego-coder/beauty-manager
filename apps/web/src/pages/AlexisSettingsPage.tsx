@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bot, Save, RefreshCw, Settings, Clock, MessageCircle, Volume2, Bell } from 'lucide-react';
+import { Bot, Save, RefreshCw, Settings, Clock, MessageCircle, Volume2, Bell, GraduationCap } from 'lucide-react';
 import api from '../services/api';
 
 interface AlexisSettings {
@@ -16,6 +16,7 @@ interface AlexisSettings {
   workingHoursEnabled: boolean;
   workingHoursStart: string;
   workingHoursEnd: string;
+  knowledgeBase: string;
 }
 
 export default function AlexisSettingsPage() {
@@ -56,6 +57,7 @@ export default function AlexisSettingsPage() {
         workingHoursEnabled: settings.workingHoursEnabled,
         workingHoursStart: settings.workingHoursStart,
         workingHoursEnd: settings.workingHoursEnd,
+        knowledgeBase: settings.knowledgeBase,
       });
       alert('Configuracoes salvas!');
     } catch (err) {
@@ -203,10 +205,42 @@ export default function AlexisSettingsPage() {
               <textarea
                 value={settings.greetingMessage}
                 onChange={(e) => updateSetting('greetingMessage', e.target.value)}
-                rows={3}
+                rows={4}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Ola! Sou a Alexia..."
+                placeholder="{saudacao}, {nome}! Eu sou a Alexia, assistente do {salao}. Seja bem-vinda!"
               />
+
+              {/* Códigos disponíveis */}
+              <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-xs font-semibold text-blue-800 mb-1.5">Codigos disponiveis (serao substituidos automaticamente):</p>
+                <div className="flex flex-wrap gap-2">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-xs font-mono text-blue-700">{'{saudacao}'}</span>
+                  <span className="text-xs text-blue-600">Bom dia / Boa tarde / Boa noite</span>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-xs font-mono text-blue-700">{'{nome}'}</span>
+                  <span className="text-xs text-blue-600">Nome do cliente no WhatsApp</span>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-xs font-mono text-blue-700">{'{salao}'}</span>
+                  <span className="text-xs text-blue-600">Nome do salao</span>
+                </div>
+                <p className="text-xs text-blue-500 mt-2 italic">O link de agendamento e as opcoes (1-Atendente / 2-IA) sao adicionados automaticamente apos a mensagem.</p>
+              </div>
+
+              {/* Preview */}
+              {settings.greetingMessage && (
+                <div className="mt-2 p-3 bg-green-50 rounded-lg border border-green-200">
+                  <p className="text-xs font-semibold text-green-800 mb-1">Preview:</p>
+                  <p className="text-sm text-green-900 whitespace-pre-line">
+                    {settings.greetingMessage
+                      .replace(/\{saudacao\}/gi, 'Boa tarde')
+                      .replace(/\{nome\}/gi, 'Maria')
+                      .replace(/\{salao\}/gi, 'Salao Camila Sanches')}
+                  </p>
+                  <p className="text-xs text-green-600 mt-1 italic">+ link de agendamento + opcoes 1/2</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -283,6 +317,33 @@ export default function AlexisSettingsPage() {
           <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
             <p className="text-sm text-yellow-800">
               <strong>Importante:</strong> Os comandos (#eu e #ia) NAO sao enviados ao cliente - apenas a mensagem de resposta e enviada.
+            </p>
+          </div>
+        </div>
+
+        {/* Ensinar Alexia */}
+        <div className="bg-white rounded-xl border-2 border-purple-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+            <GraduationCap className="w-6 h-6 text-purple-600" />
+            Ensinar Alexia
+          </h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Escreva aqui tudo que a Alexia precisa saber sobre o salao: precos, politicas, horarios, regras especiais, formas de pagamento, etc.
+            Ela vai seguir estas instrucoes ao responder os clientes. Se a pergunta nao estiver coberta aqui, ela pedira para aguardar atendimento humano.
+          </p>
+          <textarea
+            value={settings.knowledgeBase || ''}
+            onChange={(e) => updateSetting('knowledgeBase', e.target.value)}
+            rows={16}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg font-mono text-sm resize-y focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+            placeholder={`Exemplo de instrucoes:\n\n- Corte feminino: R$ 80 a R$ 120 dependendo do comprimento\n- Corte masculino: R$ 45\n- Nao fazemos progressiva com formol\n- Horario de almoco: 12h as 13h (sem atendimento)\n- Formas de pagamento: Pix, cartao debito/credito, dinheiro\n- Estacionamento gratuito para clientes\n- Pacote de 4 sessoes de hidratacao: R$ 200\n- Agendamento minimo com 2h de antecedencia\n- Cancelamento ate 4h antes sem multa`}
+          />
+          <div className="flex justify-between items-center mt-2">
+            <p className="text-xs text-gray-400">
+              {(settings.knowledgeBase || '').length} caracteres
+            </p>
+            <p className="text-xs text-purple-500 font-medium">
+              Salve para aplicar as mudancas
             </p>
           </div>
         </div>

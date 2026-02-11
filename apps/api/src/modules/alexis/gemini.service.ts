@@ -78,6 +78,7 @@ export class GeminiService implements OnModuleInit {
     userMessage: string,
     context: Record<string, any>,
     history: ConversationTurn[] = [],
+    knowledgeBase?: string | null,
   ): Promise<string> {
     if (!this.model) {
       return this.getFallbackResponse();
@@ -87,8 +88,12 @@ export class GeminiService implements OnModuleInit {
       const systemPrompt = ALEXIS_SYSTEM_PROMPT(salonName);
       const historyBlock = this.formatHistory(history);
 
-      const fullPrompt = `${systemPrompt}
+      const knowledgeBlock = knowledgeBase?.trim()
+        ? `\n═══ INSTRUÇÕES DO SALÃO (PRIORIDADE MÁXIMA) ═══\nO conteúdo abaixo foi escrito pelo dono do salão. Siga RIGOROSAMENTE estas instruções:\n\n${knowledgeBase.trim()}\n\n═══ FIM DAS INSTRUÇÕES DO SALÃO ═══\n\nREGRA CRÍTICA: Se a pergunta do cliente NÃO estiver coberta pelas instruções acima NEM pelos dados do CONTEXTO abaixo, responda EXATAMENTE: "Essa informação é fornecida apenas através de um atendimento personalizado. Por favor, aguarde que nossa equipe logo irá te responder."\n`
+        : '';
 
+      const fullPrompt = `${systemPrompt}
+${knowledgeBlock}
 CONTEXTO DO SISTEMA (produtos, serviços e dados do salão):
 ${JSON.stringify(context, null, 2)}
 ${historyBlock}

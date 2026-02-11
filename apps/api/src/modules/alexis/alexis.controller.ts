@@ -110,6 +110,11 @@ class UpdateSettingsDto {
   @IsOptional()
   @IsString()
   workingHoursEnd?: string;
+
+  @ApiPropertyOptional({ description: 'Base de conhecimento do salão', example: 'Horário de funcionamento: seg-sex 8h às 18h' })
+  @IsOptional()
+  @IsString()
+  knowledgeBase?: string;
 }
 
 class DashboardChatDto {

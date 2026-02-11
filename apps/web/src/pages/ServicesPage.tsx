@@ -59,6 +59,7 @@ export function ServicesPage() {
     basePrice: 0,
     commissionPercentage: 0,
     totalSessions: 1,
+    sessionCommissionValue: 0,
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -121,6 +122,7 @@ export function ServicesPage() {
       basePrice: 0,
       commissionPercentage: 0,
       totalSessions: 1,
+      sessionCommissionValue: 0,
     });
     setFormErrors({});
     setShowCreateModal(true);
@@ -136,6 +138,7 @@ export function ServicesPage() {
       basePrice: parseFloat(service.basePrice),
       commissionPercentage: parseFloat(service.commissionPercentage),
       totalSessions: service.totalSessions || 1,
+      sessionCommissionValue: parseFloat(service.sessionCommissionValue || '0'),
     });
     setFormErrors({});
     setEditTab('dados');
@@ -190,6 +193,9 @@ export function ServicesPage() {
       }
       if (formData.totalSessions !== (selectedService.totalSessions || 1)) {
         updateData.totalSessions = formData.totalSessions;
+      }
+      if ((formData.sessionCommissionValue || 0) !== parseFloat(selectedService.sessionCommissionValue || '0')) {
+        updateData.sessionCommissionValue = formData.sessionCommissionValue;
       }
 
       await api.patch(`/services/${selectedService.id}`, updateData);
@@ -665,6 +671,26 @@ export function ServicesPage() {
                 )}
               </div>
 
+              {(formData.totalSessions || 1) > 1 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Comissao por sessao (R$)
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.sessionCommissionValue || 0}
+                    onChange={(e) => setFormData({ ...formData, sessionCommissionValue: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    min="0"
+                    step="5"
+                    placeholder="50"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Valor fixo pago ao profissional por cada sessao executada
+                  </p>
+                </div>
+              )}
+
               {formErrors.submit && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
                   {formErrors.submit}
@@ -856,6 +882,26 @@ export function ServicesPage() {
                       </p>
                     )}
                   </div>
+
+                  {(formData.totalSessions || 1) > 1 && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Comissao por sessao (R$)
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.sessionCommissionValue || 0}
+                        onChange={(e) => setFormData({ ...formData, sessionCommissionValue: parseFloat(e.target.value) || 0 })}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        min="0"
+                        step="5"
+                        placeholder="50"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Valor fixo pago ao profissional por cada sessao executada
+                      </p>
+                    </div>
+                  )}
 
                   {formErrors.submit && (
                     <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">

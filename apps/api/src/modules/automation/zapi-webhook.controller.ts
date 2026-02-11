@@ -309,8 +309,11 @@ export class ZapiWebhookController {
       }
 
       // ========== CHECK HORÁRIO DE FUNCIONAMENTO ==========
-      // Só restringe mensagens de clientes; comandos do agente (#eu/#ia) passam sempre
-      if (!ignoreCheck.isAgentCommand) {
+      // Exceções que SEMPRE passam: comandos do agente (#eu/#ia) e respostas de confirmação/cancelamento
+      const lowerMsg = message.toLowerCase().trim();
+      const isConfirmOrDecline = lowerMsg.length <= 50 && /^(sim|s|não|nao|n|1|2|confirmo|confirmado|confirmada|confirmar|vou|vou sim|ok|certo|beleza|combinado|cancelar|cancela|desmarcar|desmarca|reagendar|não vou|nao vou|não posso|nao posso)$/.test(lowerMsg);
+
+      if (!ignoreCheck.isAgentCommand && !isConfirmOrDecline) {
         const [aiConfig] = await db
           .select({
             workingHoursEnabled: schema.aiSettings.workingHoursEnabled,

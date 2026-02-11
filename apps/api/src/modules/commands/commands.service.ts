@@ -604,6 +604,22 @@ export class CommandsService {
       }
     }
 
+    // Busca comissão fixa do cadastro do serviço para sessões de pacote
+    let sessionCommValue: string | null = null;
+    if (paidByPackage && data.referenceId) {
+      const svcId = parseInt(data.referenceId, 10);
+      if (!isNaN(svcId)) {
+        const [svc] = await this.db
+          .select({ sessionCommissionValue: services.sessionCommissionValue })
+          .from(services)
+          .where(eq(services.id, svcId))
+          .limit(1);
+        if (svc?.sessionCommissionValue && parseFloat(svc.sessionCommissionValue) > 0) {
+          sessionCommValue = svc.sessionCommissionValue;
+        }
+      }
+    }
+
     // Adiciona o item
     const [item] = await this.db
       .insert(commandItems)
@@ -622,6 +638,7 @@ export class CommandsService {
         clientPackageId,
         clientPackageUsageId,
         paidByPackage,
+        sessionCommissionValue: sessionCommValue,
         movementGroupId: kitMovementGroupId,
       })
       .returning();
@@ -1517,6 +1534,23 @@ export class CommandsService {
     );
 
     for (const item of serviceItems) {
+      // Sessao de pacote com comissao fixa informada no lancamento
+      if (item.paidByPackage && item.sessionCommissionValue) {
+        const fixedValue = parseFloat(item.sessionCommissionValue);
+        if (fixedValue > 0) {
+          await this.commissionsService.createFromCommandItem(
+            salonId,
+            commandId,
+            item.id,
+            item.performerId!,
+            item.description,
+            fixedValue, // valor base = valor fixo da comissao
+            100, // 100% do valor base
+          );
+        }
+        continue;
+      }
+
       // Se o item tem referenceId (ID do servico), busca o commissionPercentage do servico
       let commissionPercentage = 0;
 
@@ -1849,12 +1883,38 @@ export class CommandsService {
   }
 
   /**
-   * Busca pagamentos da comanda
+   * Busca pagamentos da comanda com método e destino
    */
-  async getPayments(commandId: string): Promise<CommandPayment[]> {
+  async getPayments(commandId: string) {
     return this.db
-      .select()
+      .select({
+        id: commandPayments.id,
+        commandId: commandPayments.commandId,
+        method: commandPayments.method,
+        amount: commandPayments.amount,
+        paymentMethodId: commandPayments.paymentMethodId,
+        paymentDestinationId: commandPayments.paymentDestinationId,
+        grossAmount: commandPayments.grossAmount,
+        feeAmount: commandPayments.feeAmount,
+        netAmount: commandPayments.netAmount,
+        receivedById: commandPayments.receivedById,
+        paidAt: commandPayments.paidAt,
+        notes: commandPayments.notes,
+        createdAt: commandPayments.createdAt,
+        paymentMethod: {
+          id: paymentMethods.id,
+          name: paymentMethods.name,
+          type: paymentMethods.type,
+        },
+        paymentDestination: {
+          id: paymentDestinations.id,
+          name: paymentDestinations.name,
+          type: paymentDestinations.type,
+        },
+      })
       .from(commandPayments)
+      .leftJoin(paymentMethods, eq(commandPayments.paymentMethodId, paymentMethods.id))
+      .leftJoin(paymentDestinations, eq(commandPayments.paymentDestinationId, paymentDestinations.id))
       .where(eq(commandPayments.commandId, commandId))
       .orderBy(commandPayments.paidAt);
   }

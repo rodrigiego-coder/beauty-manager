@@ -47,7 +47,7 @@ export class AdminBookingController {
    * Obtém configurações de booking online do salão
    */
   @Get('settings')
-  @Roles('OWNER', 'MANAGER')
+  @Roles('OWNER', 'MANAGER', 'STYLIST')
   async getSettings(@Request() req: any) {
     return this.settingsService.getSettings(req.user.salonId);
   }
@@ -56,7 +56,7 @@ export class AdminBookingController {
    * Atualiza configurações de booking online
    */
   @Put('settings')
-  @Roles('OWNER', 'MANAGER')
+  @Roles('OWNER', 'MANAGER', 'STYLIST')
   async updateSettings(
     @Request() req: any,
     @Body() dto: UpdateOnlineBookingSettingsDto,

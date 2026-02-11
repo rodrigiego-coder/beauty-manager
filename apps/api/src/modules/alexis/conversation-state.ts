@@ -5,7 +5,7 @@
  * =====================================================
  */
 
-export type ActiveSkill = 'NONE' | 'SCHEDULING' | 'PACKAGE_BATCH_SCHEDULING' | 'CANCELLATION';
+export type ActiveSkill = 'NONE' | 'SCHEDULING' | 'PACKAGE_BATCH_SCHEDULING' | 'CANCELLATION' | 'CHANNEL_CHOICE';
 
 export type ScheduleStep =
   | 'NONE'
@@ -25,6 +25,8 @@ export type PackageBatchStep =
   | 'AWAITING_DAY'           // "Qual dia da semana?"
   | 'AWAITING_TIME'          // "Que horário?"
   | 'AWAITING_CONFIRM';      // "Confirma X sessões?"
+
+export type ChannelChoiceStep = 'NONE' | 'AWAITING_CHOICE';
 
 export interface SchedulingSlots {
   serviceId?: string;
@@ -64,6 +66,7 @@ export interface ConversationState {
   slots: SchedulingSlots;
   cancellationSlots?: CancellationSlots;
   packageBatchSlots?: PackageBatchSlots;
+  channelChoiceStep?: ChannelChoiceStep;
   userAlreadyGreeted: boolean;
   lastGreetingAt: string | null;
   confusionCount: number;

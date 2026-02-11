@@ -10,6 +10,7 @@ export interface Service {
   basePrice: string;
   commissionPercentage: string;
   totalSessions: number;
+  sessionCommissionValue: string;
   active: boolean;
   createdAt: string;
   updatedAt: string;
@@ -23,6 +24,7 @@ export interface CreateServiceData {
   basePrice: number;
   commissionPercentage?: number;
   totalSessions?: number;
+  sessionCommissionValue?: number;
 }
 
 export interface UpdateServiceData {
@@ -33,6 +35,7 @@ export interface UpdateServiceData {
   basePrice?: number;
   commissionPercentage?: number;
   totalSessions?: number;
+  sessionCommissionValue?: number;
 }
 
 export const SERVICE_CATEGORIES: { value: ServiceCategory; label: string; color: string }[] = [

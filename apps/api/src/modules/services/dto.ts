@@ -41,6 +41,11 @@ export class CreateServiceDto {
   @IsNumber()
   @Min(1)
   totalSessions?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  sessionCommissionValue?: number;
 }
 
 export class UpdateServiceDto {
@@ -77,4 +82,9 @@ export class UpdateServiceDto {
   @IsNumber()
   @Min(1)
   totalSessions?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  sessionCommissionValue?: number;
 }

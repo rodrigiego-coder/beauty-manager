@@ -591,6 +591,8 @@ export const services = pgTable('services', {
   commissionPercentage: decimal('commission_percentage', { precision: 5, scale: 2 }).default('0').notNull(),
   // Campo para pacotes: número de sessões incluídas (1 = serviço avulso, >1 = pacote)
   totalSessions: integer('total_sessions').default(1).notNull(),
+  // Comissão fixa por sessão de pacote (R$) — definida no cadastro do serviço
+  sessionCommissionValue: decimal('session_commission_value', { precision: 10, scale: 2 }).default('0').notNull(),
   // Novos campos para agendamento v3.0
   bufferBefore: integer('buffer_before').default(0).notNull(),
   bufferAfter: integer('buffer_after').default(0).notNull(),
@@ -1841,6 +1843,9 @@ export const commandItems = pgTable('command_items', {
   clientPackageUsageId: integer('client_package_usage_id'), // FK managed at app level (avoids circular ref)
   paidByPackage: boolean('paid_by_package').default(false),
 
+  // Comissão fixa por sessão de pacote (informada ao lançar sessão)
+  sessionCommissionValue: decimal('session_commission_value', { precision: 10, scale: 2 }),
+
   // KIT: ID do grupo de movimentos de estoque (para reversão atômica)
   movementGroupId: uuid('movement_group_id'),
 
@@ -3077,6 +3082,9 @@ export const aiSettings = pgTable('ai_settings', {
   workingHoursEnabled: boolean('working_hours_enabled').default(false),
   workingHoursStart: varchar('working_hours_start', { length: 5 }).default('08:00'),
   workingHoursEnd: varchar('working_hours_end', { length: 5 }).default('20:00'),
+
+  // Base de conhecimento (texto livre do dono do salão)
+  knowledgeBase: text('knowledge_base'),
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
