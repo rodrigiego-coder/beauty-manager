@@ -45,6 +45,9 @@ import {
   CalendarX,
   Search,
   SlidersHorizontal,
+  Pencil,
+  Save,
+  Trash2,
 } from 'lucide-react';
 import api, { getTriageForAppointment } from '../services/api';
 import { TriageSummary } from '../components/TriageSummary';
@@ -256,6 +259,16 @@ export function AppointmentsPage() {
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [selectedTriage, setSelectedTriage] = useState<any>(null);
   const [triageLoading, setTriageLoading] = useState(false);
+  const [editingAppointment, setEditingAppointment] = useState<{
+    professionalId: string;
+    serviceId: string;
+    date: string;
+    time: string;
+    duration: number;
+    price: string;
+    notes: string;
+  } | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   // Form state for create/edit
   const [formData, setFormData] = useState({
@@ -720,6 +733,67 @@ export function AppointmentsPage() {
       window.location.href = `/comandas/${response.data.commandId}`;
     } catch (error: any) {
       setMessage({ type: 'error', text: error.response?.data?.message || 'Erro ao criar comanda' });
+    }
+  };
+
+  const handleEditAppointment = () => {
+    if (!selectedAppointment) return;
+    const apt = selectedAppointment;
+    setEditingAppointment({
+      professionalId: apt.professionalId,
+      serviceId: apt.serviceId?.toString() || '',
+      date: apt.date,
+      time: apt.time,
+      duration: apt.duration,
+      price: apt.price || '',
+      notes: apt.notes || '',
+    });
+  };
+
+  const handleEditSave = async () => {
+    if (!selectedAppointment || !editingAppointment) return;
+    setEditSaving(true);
+    try {
+      const payload: any = {
+        professionalId: editingAppointment.professionalId,
+        date: editingAppointment.date,
+        time: editingAppointment.time,
+        duration: editingAppointment.duration,
+        notes: editingAppointment.notes || undefined,
+      };
+      if (editingAppointment.serviceId) {
+        payload.serviceId = parseInt(editingAppointment.serviceId);
+        const svc = services.find(s => s.id === parseInt(editingAppointment.serviceId));
+        if (svc) payload.service = svc.name;
+      }
+      if (editingAppointment.price) {
+        payload.price = editingAppointment.price;
+      }
+      await api.patch(`/appointments/${selectedAppointment.id}`, payload);
+      setMessage({ type: 'success', text: 'Agendamento atualizado com sucesso!' });
+      setEditingAppointment(null);
+      setShowDetailsModal(false);
+      setSelectedAppointment(null);
+      loadData();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.response?.data?.message || 'Erro ao atualizar agendamento' });
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDeleteAppointment = async () => {
+    if (!selectedAppointment) return;
+    if (!confirm('Deseja realmente excluir este agendamento? Ele também será removido do Google Agenda.')) return;
+    try {
+      await api.delete(`/appointments/${selectedAppointment.id}`);
+      setMessage({ type: 'success', text: 'Agendamento excluído com sucesso!' });
+      setShowDetailsModal(false);
+      setSelectedAppointment(null);
+      setEditingAppointment(null);
+      loadData();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.response?.data?.message || 'Erro ao excluir agendamento' });
     }
   };
 
@@ -1471,12 +1545,144 @@ export function AppointmentsPage() {
               </span>
               <h2 className="font-semibold">{apt.service}</h2>
             </div>
-            <button onClick={() => setShowDetailsModal(false)}>
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {!isStylist && ['SCHEDULED', 'CONFIRMED'].includes(apt.status) && !editingAppointment && (
+                <>
+                  <button
+                    onClick={handleEditAppointment}
+                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
+                    title="Editar"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={handleDeleteAppointment}
+                    className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                    title="Excluir"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+              <button onClick={() => { setShowDetailsModal(false); setEditingAppointment(null); }}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           <div className="p-4 space-y-4">
+            {/* Edit Form */}
+            {editingAppointment && (
+              <div className="space-y-3 bg-blue-50 p-3 rounded-lg border border-blue-200">
+                <div className="text-sm font-medium text-blue-800 mb-2">Editando agendamento</div>
+
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Profissional</label>
+                  <select
+                    value={editingAppointment.professionalId}
+                    onChange={(e) => setEditingAppointment({ ...editingAppointment, professionalId: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  >
+                    {professionals.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Serviço</label>
+                  <select
+                    value={editingAppointment.serviceId}
+                    onChange={(e) => {
+                      const svc = services.find(s => s.id === parseInt(e.target.value));
+                      if (svc) {
+                        setEditingAppointment({
+                          ...editingAppointment,
+                          serviceId: e.target.value,
+                          duration: svc.durationMinutes,
+                          price: svc.basePrice,
+                        });
+                      }
+                    }}
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">Selecione...</option>
+                    {services.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Data</label>
+                    <input
+                      type="date"
+                      value={editingAppointment.date}
+                      onChange={(e) => setEditingAppointment({ ...editingAppointment, date: e.target.value })}
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Horário</label>
+                    <input
+                      type="time"
+                      value={editingAppointment.time}
+                      onChange={(e) => setEditingAppointment({ ...editingAppointment, time: e.target.value })}
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Duração (min)</label>
+                    <input
+                      type="number"
+                      value={editingAppointment.duration}
+                      onChange={(e) => setEditingAppointment({ ...editingAppointment, duration: parseInt(e.target.value) || 0 })}
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Preço (R$)</label>
+                    <input
+                      type="text"
+                      value={editingAppointment.price}
+                      onChange={(e) => setEditingAppointment({ ...editingAppointment, price: e.target.value })}
+                      className="w-full border rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Observações</label>
+                  <textarea
+                    value={editingAppointment.notes}
+                    onChange={(e) => setEditingAppointment({ ...editingAppointment, notes: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                    rows={2}
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleEditSave}
+                    disabled={editSaving}
+                    className="flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    <Save className="w-4 h-4" /> {editSaving ? 'Salvando...' : 'Salvar'}
+                  </button>
+                  <button
+                    onClick={() => setEditingAppointment(null)}
+                    className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Client info */}
             <div className="flex items-start gap-3">
               <User className="w-5 h-5 text-gray-400 mt-0.5" />
