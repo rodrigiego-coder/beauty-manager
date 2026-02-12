@@ -1384,57 +1384,55 @@ export function CommandPage() {
         </div>
       </div>
 
-      {/* Cards de Totais — oculto para STYLIST */}
-      {!isStylist && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-2 text-gray-500 mb-1">
-              <Wallet className="w-4 h-4" />
-              <p className="text-sm">Total Bruto</p>
-            </div>
-            <p className="text-2xl font-bold text-gray-900">{formatCurrency(command.totalGross)}</p>
-            {(serviceCount > 0 || productCount > 0) && (
-              <p className="text-xs text-gray-400 mt-1">
-                {serviceCount > 0 && `${serviceCount} serviço${serviceCount > 1 ? 's' : ''}`}
-                {serviceCount > 0 && productCount > 0 && ' • '}
-                {productCount > 0 && `${productCount} produto${productCount > 1 ? 's' : ''}`}
-              </p>
-            )}
+      {/* Cards de Totais */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-2 text-gray-500 mb-1">
+            <Wallet className="w-4 h-4" />
+            <p className="text-sm">Total Bruto</p>
           </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-2 text-gray-500 mb-1">
-              <Gift className="w-4 h-4" />
-              <p className="text-sm">Descontos</p>
-            </div>
-            <p className="text-2xl font-bold text-red-600">-{formatCurrency(command.totalDiscounts)}</p>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-2 text-gray-500 mb-1">
-              <Receipt className="w-4 h-4" />
-              <p className="text-sm">Total Líquido</p>
-            </div>
-            <p className="text-2xl font-bold text-gray-900">{formatCurrency(command.totalNet)}</p>
-          </div>
-
-          <div className={`rounded-xl border p-4 ${remaining > 0 ? 'bg-orange-50 border-orange-200' : totalNet > 0 ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'}`}>
-            <div className="flex items-center gap-2 text-gray-500 mb-1">
-              <CheckCircle className="w-4 h-4" />
-              <p className="text-sm">Restante</p>
-            </div>
-            <p className={`text-2xl font-bold ${remaining > 0 ? 'text-orange-600' : totalNet > 0 ? 'text-green-600' : 'text-gray-900'}`}>
-              {totalNet > 0 && remaining <= 0 ? '✅ Pago' : formatCurrency(remaining)}
+          <p className="text-2xl font-bold text-gray-900">{formatCurrency(command.totalGross)}</p>
+          {(serviceCount > 0 || productCount > 0) && (
+            <p className="text-xs text-gray-400 mt-1">
+              {serviceCount > 0 && `${serviceCount} serviço${serviceCount > 1 ? 's' : ''}`}
+              {serviceCount > 0 && productCount > 0 && ' • '}
+              {productCount > 0 && `${productCount} produto${productCount > 1 ? 's' : ''}`}
             </p>
-            {totalPaid > 0 && remaining > 0 && (
-              <p className="text-xs text-gray-500 mt-1">Pagamento parcial registrado</p>
-            )}
-          </div>
+          )}
         </div>
-      )}
 
-      {/* Espelho da Comanda — só para CLOSED, oculto para STYLIST */}
-      {!isStylist && command.status === 'CLOSED' && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-2 text-gray-500 mb-1">
+            <Gift className="w-4 h-4" />
+            <p className="text-sm">Descontos</p>
+          </div>
+          <p className="text-2xl font-bold text-red-600">-{formatCurrency(command.totalDiscounts)}</p>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-2 text-gray-500 mb-1">
+            <Receipt className="w-4 h-4" />
+            <p className="text-sm">Total Líquido</p>
+          </div>
+          <p className="text-2xl font-bold text-gray-900">{formatCurrency(command.totalNet)}</p>
+        </div>
+
+        <div className={`rounded-xl border p-4 ${remaining > 0 ? 'bg-orange-50 border-orange-200' : totalNet > 0 ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'}`}>
+          <div className="flex items-center gap-2 text-gray-500 mb-1">
+            <CheckCircle className="w-4 h-4" />
+            <p className="text-sm">Restante</p>
+          </div>
+          <p className={`text-2xl font-bold ${remaining > 0 ? 'text-orange-600' : totalNet > 0 ? 'text-green-600' : 'text-gray-900'}`}>
+            {totalNet > 0 && remaining <= 0 ? '✅ Pago' : formatCurrency(remaining)}
+          </p>
+          {totalPaid > 0 && remaining > 0 && (
+            <p className="text-xs text-gray-500 mt-1">Pagamento parcial registrado</p>
+          )}
+        </div>
+      </div>
+
+      {/* Espelho da Comanda — só para CLOSED */}
+      {command.status === 'CLOSED' && (
         <>
           <style>{`
             @media print {
@@ -1663,8 +1661,8 @@ export function CommandPage() {
               </div>
             )}
 
-            {/* Campo de Desconto Global — oculto para STYLIST */}
-            {!isStylist && isEditable && activeItems.length > 0 && (
+            {/* Campo de Desconto Global */}
+            {isEditable && activeItems.length > 0 && (
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Desconto Total (R$)
@@ -1699,8 +1697,7 @@ export function CommandPage() {
             )}
           </div>
 
-          {/* Pagamentos — oculto para STYLIST */}
-          {!isStylist && (
+          {/* Pagamentos */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Pagamentos</h2>
@@ -1793,7 +1790,6 @@ export function CommandPage() {
               </div>
             )}
           </div>
-          )}
         </div>
 
         {/* Coluna Lateral */}
@@ -3226,11 +3222,9 @@ export function CommandPage() {
                           </p>
                         </div>
                         <div className="text-right">
-                          {!isStylist && (
-                            <p className="font-semibold text-gray-900">
-                              {formatCurrency(cmd.totalNet || '0')}
-                            </p>
-                          )}
+                          <p className="font-semibold text-gray-900">
+                            {formatCurrency(cmd.totalNet || '0')}
+                          </p>
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full ${
                               cmd.status === 'CLOSED'
