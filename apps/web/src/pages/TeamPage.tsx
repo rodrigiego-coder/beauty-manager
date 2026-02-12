@@ -803,8 +803,8 @@ export function TeamPage() {
                   </select>
                 </div>
 
-                {/* Comissão - mostra para STYLIST ou OWNER profissional */}
-                {(formData.role === 'STYLIST' || (selectedMember?.role === 'OWNER' && selectedMember?.isProfessional)) && (
+                {/* Comissão - mostra para STYLIST ou qualquer membro profissional */}
+                {(formData.role === 'STYLIST' || selectedMember?.isProfessional) && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Comissao Padrao (%)
@@ -828,8 +828,8 @@ export function TeamPage() {
                 )}
 
                 {/* Especialidades (serviços que o profissional realiza) */}
-                {/* Mostra para STYLIST ou OWNER que é profissional */}
-                {(formData.role === 'STYLIST' || (selectedMember?.role === 'OWNER' && selectedMember?.isProfessional)) && salonServices.length > 0 && (
+                {/* Mostra para STYLIST ou qualquer membro que é profissional (OWNER/MANAGER) */}
+                {(formData.role === 'STYLIST' || selectedMember?.isProfessional) && salonServices.length > 0 && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Servicos que realiza
