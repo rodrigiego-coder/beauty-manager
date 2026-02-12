@@ -12,6 +12,7 @@ import {
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import api from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Command {
   id: string;
@@ -47,6 +48,8 @@ type TabType = 'active' | 'waiting';
 
 export function CommandsListPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isStylist = user?.role === 'STYLIST';
   const [activeTab, setActiveTab] = useState<TabType>('active');
   const [activeCommands, setActiveCommands] = useState<Command[]>([]);
   const [waitingCommands, setWaitingCommands] = useState<Command[]>([]);
@@ -215,12 +218,14 @@ export function CommandsListPage() {
                       {status.label}
                     </span>
                   </div>
-                  <div className="text-right">
-                    <p className="text-lg font-bold text-gray-900">{formatCurrency(cmd.totalNet)}</p>
-                    {cmd.itemCount !== undefined && (
-                      <p className="text-xs text-gray-500">{cmd.itemCount} {cmd.itemCount === 1 ? 'item' : 'itens'}</p>
-                    )}
-                  </div>
+                  {!isStylist && (
+                    <div className="text-right">
+                      <p className="text-lg font-bold text-gray-900">{formatCurrency(cmd.totalNet)}</p>
+                      {cmd.itemCount !== undefined && (
+                        <p className="text-xs text-gray-500">{cmd.itemCount} {cmd.itemCount === 1 ? 'item' : 'itens'}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {cmd.clientName && (
@@ -229,8 +234,8 @@ export function CommandsListPage() {
                   </p>
                 )}
 
-                {/* Mostrar saldo pendente para comandas aguardando pagamento */}
-                {activeTab === 'waiting' && hasRemainingBalance && (
+                {/* Mostrar saldo pendente para comandas aguardando pagamento — oculto para STYLIST */}
+                {!isStylist && activeTab === 'waiting' && hasRemainingBalance && (
                   <div className="flex items-center gap-2 mb-2 p-2 bg-orange-50 rounded-lg">
                     <AlertCircle className="w-4 h-4 text-orange-600" />
                     <div className="flex-1">

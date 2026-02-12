@@ -21,7 +21,8 @@ import {
   Gift,
 } from 'lucide-react';
 
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, Navigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 import {
   PieChart,
@@ -124,7 +125,13 @@ const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#6b7280'];
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // STYLIST não acessa o dashboard geral — redireciona para /meu-painel
+  if (user?.role === 'STYLIST') {
+    return <Navigate to="/meu-painel" replace />;
+  }
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);

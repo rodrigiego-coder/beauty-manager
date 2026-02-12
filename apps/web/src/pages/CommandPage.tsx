@@ -321,6 +321,7 @@ export function CommandPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isStylist = user?.role === 'STYLIST';
 
   const [command, setCommand] = useState<Command | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1383,55 +1384,57 @@ export function CommandPage() {
         </div>
       </div>
 
-      {/* Cards de Totais */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-2 text-gray-500 mb-1">
-            <Wallet className="w-4 h-4" />
-            <p className="text-sm">Total Bruto</p>
+      {/* Cards de Totais — oculto para STYLIST */}
+      {!isStylist && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center gap-2 text-gray-500 mb-1">
+              <Wallet className="w-4 h-4" />
+              <p className="text-sm">Total Bruto</p>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{formatCurrency(command.totalGross)}</p>
+            {(serviceCount > 0 || productCount > 0) && (
+              <p className="text-xs text-gray-400 mt-1">
+                {serviceCount > 0 && `${serviceCount} serviço${serviceCount > 1 ? 's' : ''}`}
+                {serviceCount > 0 && productCount > 0 && ' • '}
+                {productCount > 0 && `${productCount} produto${productCount > 1 ? 's' : ''}`}
+              </p>
+            )}
           </div>
-          <p className="text-2xl font-bold text-gray-900">{formatCurrency(command.totalGross)}</p>
-          {(serviceCount > 0 || productCount > 0) && (
-            <p className="text-xs text-gray-400 mt-1">
-              {serviceCount > 0 && `${serviceCount} serviço${serviceCount > 1 ? 's' : ''}`}
-              {serviceCount > 0 && productCount > 0 && ' • '}
-              {productCount > 0 && `${productCount} produto${productCount > 1 ? 's' : ''}`}
-            </p>
-          )}
-        </div>
-        
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-2 text-gray-500 mb-1">
-            <Gift className="w-4 h-4" />
-            <p className="text-sm">Descontos</p>
-          </div>
-          <p className="text-2xl font-bold text-red-600">-{formatCurrency(command.totalDiscounts)}</p>
-        </div>
-        
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-2 text-gray-500 mb-1">
-            <Receipt className="w-4 h-4" />
-            <p className="text-sm">Total Líquido</p>
-          </div>
-          <p className="text-2xl font-bold text-gray-900">{formatCurrency(command.totalNet)}</p>
-        </div>
-        
-        <div className={`rounded-xl border p-4 ${remaining > 0 ? 'bg-orange-50 border-orange-200' : totalNet > 0 ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'}`}>
-          <div className="flex items-center gap-2 text-gray-500 mb-1">
-            <CheckCircle className="w-4 h-4" />
-            <p className="text-sm">Restante</p>
-          </div>
-          <p className={`text-2xl font-bold ${remaining > 0 ? 'text-orange-600' : totalNet > 0 ? 'text-green-600' : 'text-gray-900'}`}>
-            {totalNet > 0 && remaining <= 0 ? '✅ Pago' : formatCurrency(remaining)}
-          </p>
-          {totalPaid > 0 && remaining > 0 && (
-            <p className="text-xs text-gray-500 mt-1">Pagamento parcial registrado</p>
-          )}
-        </div>
-      </div>
 
-      {/* Espelho da Comanda — só para CLOSED */}
-      {command.status === 'CLOSED' && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center gap-2 text-gray-500 mb-1">
+              <Gift className="w-4 h-4" />
+              <p className="text-sm">Descontos</p>
+            </div>
+            <p className="text-2xl font-bold text-red-600">-{formatCurrency(command.totalDiscounts)}</p>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center gap-2 text-gray-500 mb-1">
+              <Receipt className="w-4 h-4" />
+              <p className="text-sm">Total Líquido</p>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{formatCurrency(command.totalNet)}</p>
+          </div>
+
+          <div className={`rounded-xl border p-4 ${remaining > 0 ? 'bg-orange-50 border-orange-200' : totalNet > 0 ? 'bg-green-50 border-green-200' : 'bg-white border-gray-200'}`}>
+            <div className="flex items-center gap-2 text-gray-500 mb-1">
+              <CheckCircle className="w-4 h-4" />
+              <p className="text-sm">Restante</p>
+            </div>
+            <p className={`text-2xl font-bold ${remaining > 0 ? 'text-orange-600' : totalNet > 0 ? 'text-green-600' : 'text-gray-900'}`}>
+              {totalNet > 0 && remaining <= 0 ? '✅ Pago' : formatCurrency(remaining)}
+            </p>
+            {totalPaid > 0 && remaining > 0 && (
+              <p className="text-xs text-gray-500 mt-1">Pagamento parcial registrado</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Espelho da Comanda — só para CLOSED, oculto para STYLIST */}
+      {!isStylist && command.status === 'CLOSED' && (
         <>
           <style>{`
             @media print {
@@ -1660,8 +1663,8 @@ export function CommandPage() {
               </div>
             )}
 
-            {/* Campo de Desconto Global */}
-            {isEditable && activeItems.length > 0 && (
+            {/* Campo de Desconto Global — oculto para STYLIST */}
+            {!isStylist && isEditable && activeItems.length > 0 && (
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Desconto Total (R$)
@@ -1696,7 +1699,8 @@ export function CommandPage() {
             )}
           </div>
 
-          {/* Pagamentos */}
+          {/* Pagamentos — oculto para STYLIST */}
+          {!isStylist && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Pagamentos</h2>
@@ -1789,6 +1793,7 @@ export function CommandPage() {
               </div>
             )}
           </div>
+          )}
         </div>
 
         {/* Coluna Lateral */}
@@ -1807,10 +1812,12 @@ export function CommandPage() {
                     <p className="font-semibold text-gray-900 text-lg">
                       {linkedClient.name || 'Cliente sem nome'}
                     </p>
-                    <p className="text-sm text-gray-500 flex items-center gap-1">
-                      <Phone className="w-3 h-3" />
-                      {formatPhone(linkedClient.phone)}
-                    </p>
+                    {!isStylist && (
+                      <p className="text-sm text-gray-500 flex items-center gap-1">
+                        <Phone className="w-3 h-3" />
+                        {formatPhone(linkedClient.phone)}
+                      </p>
+                    )}
                   </div>
                   {isEditable && (
                     <button
@@ -2926,7 +2933,7 @@ export function CommandPage() {
                       <div className="flex justify-between items-start">
                         <div>
                           <p className="font-medium text-gray-900">{client.name || 'Sem nome'}</p>
-                          <p className="text-sm text-gray-500">{formatPhone(client.phone)}</p>
+                          {!isStylist && <p className="text-sm text-gray-500">{formatPhone(client.phone)}</p>}
                         </div>
                         <span className="text-xs text-gray-400">{client.totalVisits} visitas</span>
                       </div>
@@ -3153,7 +3160,7 @@ export function CommandPage() {
                 <h2 className="text-lg font-semibold text-gray-900">
                   Histórico de {linkedClient.name || 'Cliente'}
                 </h2>
-                <p className="text-sm text-gray-500">{formatPhone(linkedClient.phone)}</p>
+                {!isStylist && <p className="text-sm text-gray-500">{formatPhone(linkedClient.phone)}</p>}
               </div>
               <button
                 onClick={() => setShowClientHistoryModal(false)}
@@ -3171,19 +3178,23 @@ export function CommandPage() {
             ) : clientHistory ? (
               <>
                 {/* Stats */}
-                <div className="grid grid-cols-3 gap-4 mb-6">
-                  <div className="bg-green-50 rounded-lg p-4 text-center">
-                    <p className="text-2xl font-bold text-green-600">
-                      {formatCurrency(clientHistory.totalSpent)}
-                    </p>
-                    <p className="text-xs text-green-700">Total Gasto</p>
-                  </div>
-                  <div className="bg-blue-50 rounded-lg p-4 text-center">
-                    <p className="text-2xl font-bold text-blue-600">
-                      {formatCurrency(clientHistory.averageTicket)}
-                    </p>
-                    <p className="text-xs text-blue-700">Ticket Médio</p>
-                  </div>
+                <div className={`grid ${isStylist ? 'grid-cols-1' : 'grid-cols-3'} gap-4 mb-6`}>
+                  {!isStylist && (
+                    <div className="bg-green-50 rounded-lg p-4 text-center">
+                      <p className="text-2xl font-bold text-green-600">
+                        {formatCurrency(clientHistory.totalSpent)}
+                      </p>
+                      <p className="text-xs text-green-700">Total Gasto</p>
+                    </div>
+                  )}
+                  {!isStylist && (
+                    <div className="bg-blue-50 rounded-lg p-4 text-center">
+                      <p className="text-2xl font-bold text-blue-600">
+                        {formatCurrency(clientHistory.averageTicket)}
+                      </p>
+                      <p className="text-xs text-blue-700">Ticket Médio</p>
+                    </div>
+                  )}
                   <div className="bg-purple-50 rounded-lg p-4 text-center">
                     <p className="text-2xl font-bold text-purple-600">
                       {clientHistory.totalVisits}
@@ -3215,9 +3226,11 @@ export function CommandPage() {
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-semibold text-gray-900">
-                            {formatCurrency(cmd.totalNet || '0')}
-                          </p>
+                          {!isStylist && (
+                            <p className="font-semibold text-gray-900">
+                              {formatCurrency(cmd.totalNet || '0')}
+                            </p>
+                          )}
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full ${
                               cmd.status === 'CLOSED'

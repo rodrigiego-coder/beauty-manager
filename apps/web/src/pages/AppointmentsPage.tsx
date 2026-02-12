@@ -1205,10 +1205,12 @@ export function AppointmentsPage() {
                   </div>
                   <div>
                     <div className="font-medium text-gray-900">{formData.clientName}</div>
-                    <div className="text-sm text-gray-500 flex items-center gap-1">
-                      <Phone className="w-3 h-3" />
-                      {formData.clientPhone || 'Sem telefone'}
-                    </div>
+                    {!isStylist && (
+                      <div className="text-sm text-gray-500 flex items-center gap-1">
+                        <Phone className="w-3 h-3" />
+                        {formData.clientPhone || 'Sem telefone'}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <button
@@ -1251,7 +1253,7 @@ export function AppointmentsPage() {
                           onClick={() => handleClientSelect(client)}
                         >
                           <div className="font-medium text-gray-900">{client.name}</div>
-                          <div className="text-sm text-gray-500">{client.phone}</div>
+                          {!isStylist && <div className="text-sm text-gray-500">{client.phone}</div>}
                           {(client.noShowCount || 0) > 0 && (
                             <div className="text-xs text-red-500 mt-1">
                               <AlertTriangle className="w-3 h-3 inline mr-1" />
@@ -1293,23 +1295,25 @@ export function AppointmentsPage() {
                       placeholder="Nome do cliente"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600 mb-1">Telefone</label>
-                    <input
-                      type="text"
-                      value={formData.clientPhone}
-                      onChange={(e) => {
-                        setFormData({ ...formData, clientPhone: e.target.value });
-                        // Limpa busca ao digitar telefone
-                        if (clientSearch) {
-                          setClientSearch('');
-                          setClientResults([]);
-                        }
-                      }}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="(00) 00000-0000"
-                    />
-                  </div>
+                  {!isStylist && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Telefone</label>
+                      <input
+                        type="text"
+                        value={formData.clientPhone}
+                        onChange={(e) => {
+                          setFormData({ ...formData, clientPhone: e.target.value });
+                          // Limpa busca ao digitar telefone
+                          if (clientSearch) {
+                            setClientSearch('');
+                            setClientResults([]);
+                          }
+                        }}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="(00) 00000-0000"
+                      />
+                    </div>
+                  )}
                 </div>
               </>
             )}
@@ -1688,7 +1692,7 @@ export function AppointmentsPage() {
               <User className="w-5 h-5 text-gray-400 mt-0.5" />
               <div>
                 <div className="font-medium">{apt.clientName || 'Cliente não informado'}</div>
-                {apt.clientPhone && (
+                {!isStylist && apt.clientPhone && (
                   <a href={`tel:${apt.clientPhone}`} className="text-sm text-blue-600 flex items-center gap-1">
                     <Phone className="w-3 h-3" /> {apt.clientPhone}
                   </a>
@@ -1795,12 +1799,14 @@ export function AppointmentsPage() {
                   >
                     <Check className="w-4 h-4" /> Confirmar
                   </button>
-                  <button
-                    onClick={() => window.open(`https://wa.me/${apt.clientPhone?.replace(/\D/g, '')}`, '_blank')}
-                    className="flex items-center gap-1 px-3 py-2 border rounded-lg hover:bg-gray-50"
-                  >
-                    <Phone className="w-4 h-4" /> WhatsApp
-                  </button>
+                  {!isStylist && (
+                    <button
+                      onClick={() => window.open(`https://wa.me/${apt.clientPhone?.replace(/\D/g, '')}`, '_blank')}
+                      className="flex items-center gap-1 px-3 py-2 border rounded-lg hover:bg-gray-50"
+                    >
+                      <Phone className="w-4 h-4" /> WhatsApp
+                    </button>
+                  )}
                 </>
               )}
 
