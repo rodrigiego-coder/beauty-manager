@@ -10,7 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { TeamService } from './team.service';
-import { CreateTeamMemberDto, UpdateTeamMemberDto } from './dto';
+import { CreateTeamMemberDto, UpdateTeamMemberDto, SetServicesDto } from './dto';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -111,7 +111,7 @@ export class TeamController {
   @Roles('OWNER', 'MANAGER')
   async setServices(
     @Param('id') id: string,
-    @Body() body: { serviceIds?: number[]; manualServiceIds?: number[]; onlineServiceIds?: number[] },
+    @Body() body: SetServicesDto,
     @CurrentUser() user: any,
   ) {
     return this.teamService.setAssignedServices(

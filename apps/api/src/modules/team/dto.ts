@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsOptional, IsNumber, IsEnum, Min, Max } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsNumber, IsEnum, IsArray, Min, Max } from 'class-validator';
 
 export class CreateTeamMemberDto {
   @IsString()
@@ -51,4 +51,21 @@ export class UpdateTeamMemberDto {
   @IsOptional()
   @IsString()
   specialties?: string;
+}
+
+export class SetServicesDto {
+  @IsOptional()
+  @IsArray()
+  @IsNumber({}, { each: true })
+  serviceIds?: number[];
+
+  @IsOptional()
+  @IsArray()
+  @IsNumber({}, { each: true })
+  manualServiceIds?: number[];
+
+  @IsOptional()
+  @IsArray()
+  @IsNumber({}, { each: true })
+  onlineServiceIds?: number[];
 }
