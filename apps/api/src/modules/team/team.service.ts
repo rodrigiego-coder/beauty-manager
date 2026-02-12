@@ -258,7 +258,7 @@ export class TeamService {
     // Valida profissional pertence ao salão
     await this.findById(professionalId, salonId);
 
-    // Valida serviços pertencem ao salão
+    // Valida serviços pertencem ao salão (filtra inativos silenciosamente)
     if (serviceIds.length > 0) {
       const validServices = await this.db
         .select({ id: schema.services.id })
@@ -271,10 +271,8 @@ export class TeamService {
           ),
         );
       const validIds = new Set(validServices.map((s) => s.id));
-      const invalid = serviceIds.filter((id) => !validIds.has(id));
-      if (invalid.length > 0) {
-        throw new NotFoundException(`Serviços não encontrados: ${invalid.join(', ')}`);
-      }
+      // Silently filter out inactive/invalid services instead of throwing
+      serviceIds = serviceIds.filter((id) => validIds.has(id));
     }
 
     // Delete all existing
