@@ -58,6 +58,7 @@ export interface AppointmentWithDetails extends Appointment {
     bufferBefore: number;
     bufferAfter: number;
   };
+  createdByName?: string | null;
 }
 
 export interface DaySchedule {
@@ -1911,12 +1912,25 @@ Quer agendar a próxima? Responda *AGENDAR*! 😊`;
         }
       }
 
+      // Lookup do criador (createdById) para mostrar "Agendado por: [Nome]"
+      let createdByName: string | null = null;
+      if (apt.createdById) {
+        const creator = await this.db
+          .select({ name: users.name })
+          .from(users)
+          .where(eq(users.id, apt.createdById))
+          .limit(1);
+        createdByName = creator[0]?.name || null;
+      }
+
       enriched.push({
         ...apt,
         clientName: clientNameResolved,
         professionalName: professional[0]?.name || 'Profissional',
         serviceName,
         serviceDetails,
+        source: apt.source,
+        createdByName,
       });
     }
 

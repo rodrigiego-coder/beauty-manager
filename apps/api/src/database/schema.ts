@@ -623,6 +623,7 @@ export const professionalServices = pgTable(
       .references(() => services.id, { onDelete: 'cascade' })
       .notNull(),
     enabled: boolean('enabled').default(true).notNull(),
+    enabledOnline: boolean('enabled_online').default(true).notNull(),
     priority: integer('priority').default(0).notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),

@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { DatabaseModule } from '../../database/database.module';
 import { AutomationModule } from '../automation/automation.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AppointmentsModule } from '../appointments/appointments.module';
 
 // Services
 import { OnlineBookingSettingsService } from './online-booking-settings.service';
@@ -15,7 +16,7 @@ import { PublicBookingController } from './public-booking.controller';
 import { AdminBookingController } from './admin-booking.controller';
 
 @Module({
-  imports: [DatabaseModule, AutomationModule, NotificationsModule],
+  imports: [DatabaseModule, AutomationModule, NotificationsModule, forwardRef(() => AppointmentsModule)],
   controllers: [PublicBookingController, AdminBookingController],
   providers: [
     OnlineBookingSettingsService,

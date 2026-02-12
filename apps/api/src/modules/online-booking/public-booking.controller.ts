@@ -33,6 +33,7 @@ import { OtpService } from './otp.service';
 import { DepositsService } from './deposits.service';
 import { ClientBookingRulesService } from './client-booking-rules.service';
 import { ScheduledMessagesService } from '../notifications/scheduled-messages.service';
+import { AppointmentsService } from '../appointments/appointments.service';
 import { randomUUID } from 'crypto';
 import { ApiTags } from '@nestjs/swagger';
 
@@ -55,6 +56,7 @@ export class PublicBookingController {
     private readonly depositsService: DepositsService,
     private readonly rulesService: ClientBookingRulesService,
     private readonly scheduledMessagesService: ScheduledMessagesService,
+    private readonly appointmentsService: AppointmentsService,
   ) {}
 
   /**
@@ -156,7 +158,7 @@ export class PublicBookingController {
           .where(
             and(
               eq(schema.professionalServices.serviceId, sid),
-              eq(schema.professionalServices.enabled, true),
+              eq(schema.professionalServices.enabledOnline, true),
               eq(schema.users.salonId, salon.id),
             ),
           );
@@ -218,7 +220,7 @@ export class PublicBookingController {
       .from(schema.users)
       .where(and(...professionalsConditions));
 
-    // Filtra por professional_services quando serviceId informado
+    // Filtra por professional_services (enabledOnline) quando serviceId informado
     if (serviceId) {
       const enabledIds = await this.db
         .select({ professionalId: schema.professionalServices.professionalId })
@@ -227,7 +229,7 @@ export class PublicBookingController {
         .where(
           and(
             eq(schema.professionalServices.serviceId, serviceId),
-            eq(schema.professionalServices.enabled, true),
+            eq(schema.professionalServices.enabledOnline, true),
             eq(schema.users.salonId, salon.id),
           ),
         );
@@ -766,7 +768,12 @@ export class PublicBookingController {
   }
 
   /**
-   * Gera slots disponíveis para um profissional
+   * Gera slots disponíveis para um profissional usando lógica real de disponibilidade.
+   * Respeita os 4 pilares:
+   * 1. Bloqueios (professionalBlocks)
+   * 2. "Estou no salão" (minAdvanceHours)
+   * 3. Meus horários (professionalSchedules/professionalAvailabilities)
+   * 4. Horário do salão (fallback)
    */
   private async generateSlotsForProfessional(
     salonId: string,
@@ -781,46 +788,61 @@ export class PublicBookingController {
     const serviceId = service?.id || 0;
     const price = service?.basePrice || '0';
 
+    // Busca minAdvanceHours (pilar 2: "Estou no salão")
+    const settings = await this.settingsService.getSettings(salonId);
+    const minAdvanceHours = settings.minAdvanceHours || 0;
+
     // Gera datas no intervalo
     const start = new Date(startDate);
     const end = new Date(endDate);
     const current = new Date(start);
 
+    const now = new Date();
+
     while (current <= end) {
       const dateStr = current.toISOString().split('T')[0];
 
-      // TODO: Implementar lógica real de disponibilidade baseada em:
-      // 1. Horário de trabalho do profissional (work_schedule)
-      // 2. Bloqueios (blocks)
-      // 3. Agendamentos existentes
-      // 4. Holds ativos
+      // Usa AppointmentsService.getAvailableSlots que já implementa:
+      // - Working hours do profissional (com fallback para horário do salão)
+      // - Bloqueios
+      // - Agendamentos existentes + buffers
+      // - Breaks/intervalos
+      const timeSlots = await this.appointmentsService.getAvailableSlots(
+        professional.id,
+        salonId,
+        dateStr,
+        serviceId || undefined,
+        30, // intervalo de 30 minutos
+      );
 
-      // Por enquanto, gera slots de exemplo das 9h às 18h
-      for (let hour = 9; hour < 18; hour++) {
-        const time = `${hour.toString().padStart(2, '0')}:00`;
-        const endTime = this.addMinutes(time, duration);
+      for (const slot of timeSlots) {
+        if (!slot.available) continue;
 
-        // Verifica se não há conflitos
-        const hasConflict = await this.holdsService.checkAppointmentConflict(
-          salonId,
-          professional.id,
-          dateStr,
-          time,
-          endTime,
-        );
+        // Pilar 2: Filtrar por minAdvanceHours
+        const [slotH, slotM] = slot.time.split(':').map(Number);
+        const slotDate = new Date(dateStr + 'T00:00:00');
+        slotDate.setHours(slotH, slotM, 0, 0);
 
+        const minBookingTime = new Date(now.getTime() + minAdvanceHours * 60 * 60 * 1000);
+
+        if (slotDate <= now) continue; // Slot no passado
+        if (slotDate < minBookingTime) continue; // Dentro da janela de antecedência mínima
+
+        const endTime = this.addMinutes(slot.time, duration);
+
+        // Verifica holds ativos (mantém verificação existente)
         const hasHoldConflict = await this.holdsService.checkHoldConflict(
           salonId,
           professional.id,
           dateStr,
-          time,
+          slot.time,
           endTime,
         );
 
-        if (!hasConflict && !hasHoldConflict) {
+        if (!hasHoldConflict) {
           slots.push({
             date: dateStr,
-            time,
+            time: slot.time,
             endTime,
             professionalId: professional.id,
             professionalName: professional.name,

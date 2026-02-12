@@ -85,9 +85,10 @@ export function TeamPage() {
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Services for multi-select
+  // Services for multi-select (duas réguas: Interno e Online)
   const [salonServices, setSalonServices] = useState<SalonService[]>([]);
   const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
+  const [selectedOnlineIds, setSelectedOnlineIds] = useState<number[]>([]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -197,12 +198,15 @@ export function TeamPage() {
       defaultCommission: parseFloat(member.commissionRate) * 100,
     });
     setFormErrors({});
-    // Load assigned services
+    // Load assigned services (duas réguas: enabled = Interno, enabledOnline = Online)
     try {
       const res = await api.get(`/team/${member.id}/services`);
-      setSelectedServiceIds((res.data || []).map((s: any) => s.serviceId));
+      const data = res.data || [];
+      setSelectedServiceIds(data.filter((s: any) => s.enabled).map((s: any) => s.serviceId));
+      setSelectedOnlineIds(data.filter((s: any) => s.enabledOnline).map((s: any) => s.serviceId));
     } catch {
       setSelectedServiceIds([]);
+      setSelectedOnlineIds([]);
     }
     setShowEditModal(true);
   };
@@ -268,7 +272,10 @@ export function TeamPage() {
     try {
       await Promise.all([
         api.patch(`/team/${selectedMember.id}`, formData),
-        api.patch(`/team/${selectedMember.id}/services`, { serviceIds: selectedServiceIds }),
+        api.patch(`/team/${selectedMember.id}/services`, {
+          manualServiceIds: selectedServiceIds,
+          onlineServiceIds: selectedOnlineIds,
+        }),
       ]);
       setMessage({ type: 'success', text: 'Membro atualizado com sucesso!' });
       setShowEditModal(false);
@@ -827,27 +834,50 @@ export function TeamPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Servicos que realiza
                     </label>
-                    <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-3 space-y-2">
+                    <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg">
+                      {/* Header */}
+                      <div className="sticky top-0 bg-gray-50 border-b border-gray-200 px-3 py-2 flex items-center">
+                        <span className="flex-1 text-xs font-semibold text-gray-500 uppercase">Serviço</span>
+                        <span className="w-16 text-center text-xs font-semibold text-gray-500 uppercase">Interno</span>
+                        <span className="w-16 text-center text-xs font-semibold text-gray-500 uppercase">Online</span>
+                      </div>
+                      {/* Service rows */}
                       {salonServices.map((svc) => (
-                        <label key={svc.id} className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={selectedServiceIds.includes(svc.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedServiceIds([...selectedServiceIds, svc.id]);
-                              } else {
-                                setSelectedServiceIds(selectedServiceIds.filter((id) => id !== svc.id));
-                              }
-                            }}
-                            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                          />
-                          <span className="text-sm text-gray-700">{svc.name}</span>
-                        </label>
+                        <div key={svc.id} className="flex items-center px-3 py-2.5 border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
+                          <span className="flex-1 text-sm text-gray-700 pr-2 truncate">{svc.name}</span>
+                          <div className="w-16 flex justify-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedServiceIds.includes(svc.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedServiceIds([...selectedServiceIds, svc.id]);
+                                } else {
+                                  setSelectedServiceIds(selectedServiceIds.filter((id) => id !== svc.id));
+                                }
+                              }}
+                              className="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                            />
+                          </div>
+                          <div className="w-16 flex justify-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedOnlineIds.includes(svc.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedOnlineIds([...selectedOnlineIds, svc.id]);
+                                } else {
+                                  setSelectedOnlineIds(selectedOnlineIds.filter((id) => id !== svc.id));
+                                }
+                              }}
+                              className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                            />
+                          </div>
+                        </div>
                       ))}
                     </div>
                     <p className="text-xs text-gray-400 mt-1">
-                      Deixe vazio para permitir todos os servicos
+                      Interno = agenda do sistema | Online = agendamento pelo cliente
                     </p>
                   </div>
                 )}

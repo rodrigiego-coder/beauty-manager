@@ -105,14 +105,21 @@ export class TeamController {
 
   /**
    * PUT /team/:id/services - Define serviços do profissional (replace all)
+   * Suporta formato novo (manualServiceIds + onlineServiceIds) e legado (serviceIds)
    */
   @Patch(':id/services')
   @Roles('OWNER', 'MANAGER')
   async setServices(
     @Param('id') id: string,
-    @Body() body: { serviceIds: number[] },
+    @Body() body: { serviceIds?: number[]; manualServiceIds?: number[]; onlineServiceIds?: number[] },
     @CurrentUser() user: any,
   ) {
-    return this.teamService.setAssignedServices(id, user.salonId, body.serviceIds || []);
+    return this.teamService.setAssignedServices(
+      id,
+      user.salonId,
+      body.serviceIds || [],
+      body.manualServiceIds,
+      body.onlineServiceIds,
+    );
   }
 }

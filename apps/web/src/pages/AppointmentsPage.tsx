@@ -48,6 +48,8 @@ import {
   Pencil,
   Save,
   Trash2,
+  Globe,
+  ClipboardList,
 } from 'lucide-react';
 import api, { getTriageForAppointment } from '../services/api';
 import { TriageSummary } from '../components/TriageSummary';
@@ -96,6 +98,7 @@ interface Appointment {
   commandId: string | null;
   noShowCount: number;
   source: string;
+  createdByName?: string | null;
 }
 
 interface Block {
@@ -241,6 +244,7 @@ export function AppointmentsPage() {
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [professionalServiceIds, setProfessionalServiceIds] = useState<number[] | null>(null);
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
   // ========== FORM ERRORS - PROTEGIDO - NAO REMOVER ==========
   // Este state alimenta a validação JS visível no mobile.
@@ -457,6 +461,31 @@ export function AppointmentsPage() {
 
     loadSlots();
   }, [formData.professionalId, formData.date, formData.serviceId]);
+
+  // Load professional's enabled services (manual) when professional changes
+  useEffect(() => {
+    const loadProfServices = async () => {
+      if (!formData.professionalId) {
+        setProfessionalServiceIds(null); // null = show all
+        return;
+      }
+      try {
+        const res = await api.get(`/team/${formData.professionalId}/services`);
+        const data = res.data || [];
+        const enabledManual = data.filter((s: any) => s.enabled).map((s: any) => s.serviceId);
+        setProfessionalServiceIds(enabledManual.length > 0 ? enabledManual : null); // null fallback = show all
+      } catch {
+        setProfessionalServiceIds(null); // fallback = show all
+      }
+    };
+    loadProfServices();
+  }, [formData.professionalId]);
+
+  // Filtered services based on professional's enabled manual services
+  const filteredServices = useMemo(() => {
+    if (!professionalServiceIds) return services;
+    return services.filter(s => professionalServiceIds.includes(s.id));
+  }, [services, professionalServiceIds]);
 
   // Load triage when appointment is selected
   useEffect(() => {
@@ -1328,7 +1357,7 @@ export function AppointmentsPage() {
               className={`w-full border rounded-lg px-3 py-2 ${formErrors.serviceId ? 'border-red-500 ring-2 ring-red-200' : ''}`}
             >
               <option value="">Selecione um serviço</option>
-              {services.map(service => (
+              {filteredServices.map(service => (
                 <option key={service.id} value={service.id}>
                   {service.name} - {service.durationMinutes}min - R$ {parseFloat(service.basePrice).toFixed(2)}
                 </option>
@@ -1716,6 +1745,19 @@ export function AppointmentsPage() {
                 {apt.professionalName?.charAt(0)}
               </div>
               <span>{apt.professionalName}</span>
+            </div>
+
+            {/* Origem do agendamento */}
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              {apt.source === 'ONLINE' ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-green-700 text-xs font-medium">
+                  <Globe className="w-3 h-3" /> Agendamento Online
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-medium">
+                  <ClipboardList className="w-3 h-3" /> {apt.createdByName ? `Agendado por ${apt.createdByName}` : 'Agendamento Manual'}
+                </span>
+              )}
             </div>
 
             {/* Date/Time */}

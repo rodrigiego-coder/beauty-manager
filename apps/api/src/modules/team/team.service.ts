@@ -1,5 +1,5 @@
 import { Injectable, Inject, NotFoundException, ConflictException } from '@nestjs/common';
-import { eq, and, sql, inArray } from 'drizzle-orm';
+import { eq, and, or, sql, inArray } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../../database/schema';
 import { CreateTeamMemberDto, UpdateTeamMemberDto } from './dto';
@@ -233,6 +233,7 @@ export class TeamService {
       .select({
         serviceId: schema.professionalServices.serviceId,
         enabled: schema.professionalServices.enabled,
+        enabledOnline: schema.professionalServices.enabledOnline,
         priority: schema.professionalServices.priority,
         serviceName: schema.services.name,
         serviceCategory: schema.services.category,
@@ -243,7 +244,10 @@ export class TeamService {
       .where(
         and(
           eq(schema.professionalServices.professionalId, professionalId),
-          eq(schema.professionalServices.enabled, true),
+          or(
+            eq(schema.professionalServices.enabled, true),
+            eq(schema.professionalServices.enabledOnline, true),
+          ),
         ),
       );
 
@@ -253,13 +257,29 @@ export class TeamService {
   /**
    * Define serviços do profissional (replace all).
    * Deleta os existentes e insere os novos.
+   * Suporta duas réguas: manualServiceIds (agenda interna) e onlineServiceIds (booking online).
+   * Backward-compat: se receber serviceIds (formato antigo), trata como ambos enabled.
    */
-  async setAssignedServices(professionalId: string, salonId: string, serviceIds: number[]) {
+  async setAssignedServices(
+    professionalId: string,
+    salonId: string,
+    serviceIds: number[],
+    manualServiceIds?: number[],
+    onlineServiceIds?: number[],
+  ) {
     // Valida profissional pertence ao salão
     await this.findById(professionalId, salonId);
 
+    // Determina os IDs para cada régua
+    const manualIds = manualServiceIds || serviceIds;
+    const onlineIds = onlineServiceIds || serviceIds;
+
+    // Union de todos os IDs
+    const allIds = [...new Set([...manualIds, ...onlineIds])];
+
     // Valida serviços pertencem ao salão (filtra inativos silenciosamente)
-    if (serviceIds.length > 0) {
+    let validIdSet = new Set<number>();
+    if (allIds.length > 0) {
       const validServices = await this.db
         .select({ id: schema.services.id })
         .from(schema.services)
@@ -267,31 +287,34 @@ export class TeamService {
           and(
             eq(schema.services.salonId, salonId),
             eq(schema.services.active, true),
-            inArray(schema.services.id, serviceIds),
+            inArray(schema.services.id, allIds),
           ),
         );
-      const validIds = new Set(validServices.map((s) => s.id));
-      // Silently filter out inactive/invalid services instead of throwing
-      serviceIds = serviceIds.filter((id) => validIds.has(id));
+      validIdSet = new Set(validServices.map((s) => s.id));
     }
+
+    const validManualIds = new Set(manualIds.filter((id) => validIdSet.has(id)));
+    const validOnlineIds = new Set(onlineIds.filter((id) => validIdSet.has(id)));
+    const validAllIds = [...validIdSet].filter((id) => validManualIds.has(id) || validOnlineIds.has(id));
 
     // Delete all existing
     await this.db
       .delete(schema.professionalServices)
       .where(eq(schema.professionalServices.professionalId, professionalId));
 
-    // Insert new
-    if (serviceIds.length > 0) {
+    // Insert new with dual flags
+    if (validAllIds.length > 0) {
       await this.db.insert(schema.professionalServices).values(
-        serviceIds.map((serviceId) => ({
+        validAllIds.map((serviceId) => ({
           professionalId,
           serviceId,
-          enabled: true,
+          enabled: validManualIds.has(serviceId),
+          enabledOnline: validOnlineIds.has(serviceId),
         })),
       );
     }
 
-    return { success: true, count: serviceIds.length };
+    return { success: true, count: validAllIds.length };
   }
 
   /**
