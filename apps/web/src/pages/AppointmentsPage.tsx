@@ -50,6 +50,7 @@ import {
   Trash2,
   Globe,
   ClipboardList,
+  Loader2,
 } from 'lucide-react';
 import api, { getTriageForAppointment } from '../services/api';
 import { TriageSummary } from '../components/TriageSummary';
@@ -233,6 +234,10 @@ export function AppointmentsPage() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [filterProfessional, setFilterProfessional] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [searchAgenda, setSearchAgenda] = useState('');
+  const [searchResults, setSearchResults] = useState<Appointment[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showSearchResults, setShowSearchResults] = useState(false);
 
   // Mobile state
   const isMobile = useMediaQuery('(max-width: 767px)');
@@ -251,6 +256,8 @@ export function AppointmentsPage() {
   // SEM ele o botão Salvar volta a "não funcionar" (required HTML é invisível).
   // =============================================================
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [createModalError, setCreateModalError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -431,6 +438,32 @@ export function AppointmentsPage() {
     const debounce = setTimeout(searchClients, 300);
     return () => clearTimeout(debounce);
   }, [clientSearch]);
+
+  // Global search appointments by name/phone/service
+  useEffect(() => {
+    if (searchAgenda.trim().length < 2) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      return;
+    }
+
+    const searchAppointments = async () => {
+      setSearchLoading(true);
+      try {
+        const res = await api.get(`/appointments/search?q=${encodeURIComponent(searchAgenda.trim())}`);
+        setSearchResults(res.data || []);
+        setShowSearchResults(true);
+      } catch (err) {
+        console.error('Erro ao buscar agendamentos:', err);
+        setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    };
+
+    const debounce = setTimeout(searchAppointments, 400);
+    return () => clearTimeout(debounce);
+  }, [searchAgenda]);
 
   // Load available slots when professional/date selected
   useEffect(() => {
@@ -621,6 +654,9 @@ export function AppointmentsPage() {
     setFormErrors({});
     // ========== FIM VALIDAÇÃO JS - PROTEGIDO ================================================
 
+    setCreateModalError(null);
+    setSubmitting(true);
+
     try {
       let clientId = formData.clientId;
 
@@ -689,10 +725,14 @@ export function AppointmentsPage() {
       await api.post('/appointments', payload);
       setMessage({ type: 'success', text: 'Agendamento criado com sucesso!' });
       setShowCreateModal(false);
+      setCreateModalError(null);
       resetForm();
       loadData();
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.response?.data?.message || 'Erro ao criar agendamento' });
+      // Erro exibido DENTRO do modal para o usuário ver
+      setCreateModalError(error.response?.data?.message || 'Erro ao criar agendamento. Tente novamente.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -874,6 +914,7 @@ export function AppointmentsPage() {
     });
     setClientSearch('');
     setFormErrors({});
+    setCreateModalError(null);
   };
 
   const resetBlockForm = () => {
@@ -1221,6 +1262,16 @@ export function AppointmentsPage() {
 
         {/* noValidate OBRIGATÓRIO - sem ele o browser usa validação invisível no mobile */}
         <form onSubmit={handleSubmit} noValidate className="p-4 space-y-4">
+          {/* Erro da API - visível DENTRO do modal */}
+          {createModalError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-medium">Erro ao salvar</p>
+                <p>{createModalError}</p>
+              </div>
+            </div>
+          )}
           {/* Client Section */}
           <div className="space-y-3">
             <label className="block text-sm font-medium text-gray-700">Cliente</label>
@@ -1538,16 +1589,18 @@ export function AppointmentsPage() {
           <div className="flex justify-end gap-2 pt-4 border-t">
             <button
               type="button"
-              onClick={() => { setShowCreateModal(false); resetForm(); }}
+              onClick={() => { setShowCreateModal(false); setCreateModalError(null); resetForm(); }}
               className="px-4 py-2 border rounded-lg hover:bg-gray-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              disabled={submitting}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
             >
-              Salvar
+              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              {submitting ? 'Salvando...' : 'Salvar'}
             </button>
           </div>
           {/* ============ FIM BOTAO SALVAR - PROTEGIDO =================== */}
@@ -2160,9 +2213,12 @@ export function AppointmentsPage() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowFilters(true)}
-                className="p-2 hover:bg-gray-100 rounded-lg border border-gray-200"
+                className="p-2 hover:bg-gray-100 rounded-lg border border-gray-200 relative"
               >
                 <SlidersHorizontal className="w-5 h-5" />
+                {searchAgenda && (
+                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-blue-600 rounded-full" />
+                )}
               </button>
               <button
                 onClick={() => {
@@ -2281,6 +2337,26 @@ export function AppointmentsPage() {
               ))}
             </select>
 
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Buscar nome, telefone ou serviço..."
+                value={searchAgenda}
+                onChange={(e) => setSearchAgenda(e.target.value)}
+                className="border rounded pl-8 pr-8 py-1 text-sm w-56 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+              {searchAgenda && (
+                <button
+                  onClick={() => setSearchAgenda('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
             {/* Actions */}
             <button
               onClick={loadData}
@@ -2309,6 +2385,81 @@ export function AppointmentsPage() {
           </div>
         </div>
       </div>
+
+      {/* Search results panel */}
+      {showSearchResults && searchAgenda.trim().length >= 2 && (
+        <div className="mx-4 mt-3 bg-white border border-blue-200 rounded-xl shadow-lg overflow-hidden">
+          <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-200 flex items-center justify-between">
+            <span className="text-sm text-blue-700">
+              <Search className="w-3.5 h-3.5 inline mr-1.5" />
+              {searchLoading ? 'Buscando...' : (
+                <>
+                  {searchResults.length} {searchResults.length === 1 ? 'resultado' : 'resultados'} para "<span className="font-medium">{searchAgenda.trim()}</span>"
+                </>
+              )}
+            </span>
+            <button
+              onClick={() => { setSearchAgenda(''); setShowSearchResults(false); }}
+              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+            >
+              Fechar
+            </button>
+          </div>
+          {searchLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+            </div>
+          ) : searchResults.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 text-sm">
+              Nenhum agendamento encontrado
+            </div>
+          ) : (
+            <div className="max-h-80 overflow-y-auto divide-y divide-gray-100">
+              {searchResults.map((apt) => {
+                const colors = STATUS_COLORS[apt.status] || STATUS_COLORS.SCHEDULED;
+                return (
+                  <button
+                    key={apt.id}
+                    onClick={() => {
+                      setSelectedDate(apt.date);
+                      setViewMode('day');
+                      setSearchAgenda('');
+                      setShowSearchResults(false);
+                    }}
+                    className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-center gap-3"
+                  >
+                    <div className={`w-1.5 h-10 rounded-full ${colors.bg} ${colors.border} border`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900 text-sm truncate">
+                          {apt.clientName || 'Sem cliente'}
+                        </span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${colors.bg} ${colors.text}`}>
+                          {STATUS_LABELS[apt.status] || apt.status}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {apt.service} — {apt.professionalName}
+                      </div>
+                      {apt.clientPhone && (
+                        <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                          <Phone className="w-3 h-3" />{apt.clientPhone}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-sm font-medium text-gray-900">
+                        {new Date(apt.date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                      </div>
+                      <div className="text-xs text-gray-500">{apt.time}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Message */}
       {message && (
@@ -2349,6 +2500,29 @@ export function AppointmentsPage() {
         onClose={() => setShowFilters(false)}
         title="Filtros"
       >
+        {/* Search */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Buscar</label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Nome, telefone ou serviço..."
+              value={searchAgenda}
+              onChange={(e) => setSearchAgenda(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl pl-10 pr-10 py-3"
+            />
+            {searchAgenda && (
+              <button
+                onClick={() => setSearchAgenda('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Date Picker */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 mb-2">Data</label>

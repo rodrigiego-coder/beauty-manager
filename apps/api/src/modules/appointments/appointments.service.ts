@@ -177,6 +177,39 @@ export class AppointmentsService {
   }
 
   /**
+   * Busca global de agendamentos por nome, telefone ou serviço
+   */
+  async search(
+    salonId: string,
+    term: string,
+    professionalId?: string,
+  ): Promise<AppointmentWithDetails[]> {
+    const searchTerm = `%${term.trim()}%`;
+
+    const conditions = [
+      eq(appointments.salonId, salonId),
+      or(
+        sql`${appointments.clientName} ILIKE ${searchTerm}`,
+        sql`${appointments.clientPhone} ILIKE ${searchTerm}`,
+        sql`${appointments.service} ILIKE ${searchTerm}`,
+      ),
+    ];
+
+    if (professionalId) {
+      conditions.push(eq(appointments.professionalId, professionalId));
+    }
+
+    const results = await this.db
+      .select()
+      .from(appointments)
+      .where(and(...(conditions as any)))
+      .orderBy(desc(appointments.date), appointments.time)
+      .limit(50);
+
+    return this.enrichAppointments(results);
+  }
+
+  /**
    * Busca agendamento por ID
    */
   async findById(id: string, salonId: string): Promise<AppointmentWithDetails | null> {
@@ -496,7 +529,7 @@ export class AppointmentsService {
         confirmationStatus: 'PENDING',
         priority: data.priority || 'NORMAL',
         color: data.color || null,
-        price: data.price || '0',
+        price: data.price ? String(data.price).replace(',', '.') : '0',
         notes: data.notes || null,
         internalNotes: data.internalNotes || null,
         noShowCount,
@@ -570,6 +603,11 @@ export class AppointmentsService {
       if (hasConflict) {
         throw new BadRequestException('Profissional já tem agendamento neste horário');
       }
+    }
+
+    // Sanitize price (Brazilian comma → dot)
+    if (data.price) {
+      data.price = String(data.price).replace(',', '.');
     }
 
     // Recalculate end time if needed
