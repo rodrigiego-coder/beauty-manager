@@ -1579,7 +1579,7 @@ export function AppointmentsPage() {
               <h2 className="font-semibold">{apt.service}</h2>
             </div>
             <div className="flex items-center gap-2">
-              {!isStylist && ['SCHEDULED', 'CONFIRMED'].includes(apt.status) && !editingAppointment && (
+              {!isStylist && ['SCHEDULED', 'CONFIRMED', 'PENDING_CONFIRMATION'].includes(apt.status) && !editingAppointment && (
                 <>
                   <button
                     onClick={handleEditAppointment}
@@ -1888,7 +1888,7 @@ export function AppointmentsPage() {
                 </>
               )}
 
-              {['SCHEDULED', 'CONFIRMED'].includes(apt.status) && (
+              {['SCHEDULED', 'CONFIRMED', 'PENDING_CONFIRMATION'].includes(apt.status) && (
                 <>
                   <button
                     onClick={() => handleStatusChange(apt.id, 'no-show')}
