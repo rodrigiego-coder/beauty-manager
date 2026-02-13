@@ -464,8 +464,16 @@ export class PublicBookingController {
       throw new NotFoundException('Profissional não encontrado');
     }
 
-    // Verifica conflitos
+    // Verifica bloqueios profissionais (pilar 1)
     const endTime = this.addMinutes(dto.time, service.durationMinutes);
+    const hasBlock = await this.holdsService.checkBlockConflict(
+      salon.id, dto.professionalId, dto.date, dto.time, endTime,
+    );
+    if (hasBlock) {
+      throw new BadRequestException('Profissional tem bloqueio neste horário');
+    }
+
+    // Verifica conflitos
     const hasConflict = await this.holdsService.checkAppointmentConflict(
       salon.id,
       dto.professionalId,

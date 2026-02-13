@@ -6,7 +6,7 @@ import {
   Logger,
   Inject,
 } from '@nestjs/common';
-import { eq, and, or, gt, lt, ne } from 'drizzle-orm';
+import { eq, and, or, gt, lt, ne, lte, gte } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../../database/schema';
 import { CreateHoldDto, HoldResponse } from './dto';
@@ -72,6 +72,14 @@ export class AppointmentHoldsService {
 
     if (!professional) {
       throw new NotFoundException('Profissional não encontrado');
+    }
+
+    // Verifica bloqueios profissionais (pilar 1)
+    const hasBlockConflict = await this.checkBlockConflict(
+      salonId, professionalId, date, startTime, endTime,
+    );
+    if (hasBlockConflict) {
+      throw new ConflictException('Profissional tem bloqueio neste horário');
     }
 
     // Verifica conflitos com holds ativos
@@ -328,6 +336,38 @@ export class AppointmentHoldsService {
       }
     }
 
+    return false;
+  }
+
+  /**
+   * Verifica conflito com bloqueios profissionais
+   */
+  async checkBlockConflict(
+    salonId: string,
+    professionalId: string,
+    date: string,
+    startTime: string,
+    endTime: string,
+  ): Promise<boolean> {
+    const blocks = await this.db
+      .select()
+      .from(schema.professionalBlocks)
+      .where(and(
+        eq(schema.professionalBlocks.salonId, salonId),
+        eq(schema.professionalBlocks.professionalId, professionalId),
+        eq(schema.professionalBlocks.status, 'APPROVED'),
+        lte(schema.professionalBlocks.startDate, date),
+        gte(schema.professionalBlocks.endDate, date),
+      ));
+
+    for (const block of blocks) {
+      if (block.allDay) return true;
+      if (block.startTime && block.endTime) {
+        if (this.timesOverlap(startTime, endTime, block.startTime, block.endTime)) {
+          return true;
+        }
+      }
+    }
     return false;
   }
 
