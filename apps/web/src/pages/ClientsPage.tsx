@@ -25,6 +25,7 @@ import {
   Ban,
   CreditCard,
   Globe,
+  CheckSquare,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../services/api';
@@ -61,6 +62,12 @@ export function ClientsPage() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [clientHistory, setClientHistory] = useState<ClientHistory | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // State para exclusão em massa
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState('');
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // State para booking rules
   const [bookingRules, setBookingRules] = useState({
@@ -306,6 +313,44 @@ export function ClientsPage() {
     }
   };
 
+  // Handlers de seleção em massa
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredClients.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredClients.map((c) => c.id)));
+    }
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkDelete = async () => {
+    if (bulkDeleteConfirm !== 'EXCLUIR') return;
+    try {
+      setBulkDeleting(true);
+      await api.post('/clients/bulk-delete', { ids: Array.from(selectedIds) });
+      setSelectedIds(new Set());
+      setShowBulkDeleteModal(false);
+      setBulkDeleteConfirm('');
+      await loadClients();
+      await loadStats();
+    } catch (err: any) {
+      console.error('Erro ao excluir clientes:', err);
+      alert(err.response?.data?.message || 'Erro ao excluir clientes');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -449,12 +494,47 @@ export function ClientsPage() {
         </div>
       </div>
 
+      {/* Barra de ações em massa */}
+      {selectedIds.size > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <CheckSquare className="w-5 h-5 text-red-600" />
+            <span className="font-medium text-red-800">
+              {selectedIds.size} {selectedIds.size === 1 ? 'cliente selecionado' : 'clientes selecionados'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={clearSelection}
+              className="px-4 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
+            >
+              Cancelar seleção
+            </button>
+            <button
+              onClick={() => { setBulkDeleteConfirm(''); setShowBulkDeleteModal(true); }}
+              className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors flex items-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              Excluir selecionados
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Clients table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-3 py-4 w-10">
+                  <input
+                    type="checkbox"
+                    checked={filteredClients.length > 0 && selectedIds.size === filteredClients.length}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                  />
+                </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Cliente
                 </th>
@@ -486,8 +566,16 @@ export function ClientsPage() {
                     key={client.id}
                     className={`hover:bg-gray-50 transition-colors ${
                       client.churnRisk && client.active ? 'bg-amber-50' : ''
-                    } ${!client.active ? 'opacity-60' : ''}`}
+                    } ${!client.active ? 'opacity-60' : ''} ${selectedIds.has(client.id) ? 'bg-red-50' : ''}`}
                   >
+                    <td className="px-3 py-4 w-10">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(client.id)}
+                        onChange={() => toggleSelect(client.id)}
+                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                      />
+                    </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div
@@ -1040,6 +1128,74 @@ export function ClientsPage() {
                 >
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                   Confirmar Desativação
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Exclusão em Massa */}
+      {showBulkDeleteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+            <div className="p-6">
+              <div className="flex items-center justify-center w-12 h-12 mx-auto bg-red-100 rounded-full mb-4">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+              </div>
+
+              <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">
+                Excluir {selectedIds.size} {selectedIds.size === 1 ? 'cliente' : 'clientes'} permanentemente
+              </h3>
+
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                <p className="text-sm text-red-700 font-medium">
+                  Esta ação é permanente e não pode ser desfeita.
+                </p>
+                <p className="text-xs text-red-600 mt-1">
+                  Agendamentos e comandas serão preservados (sem vínculo ao cliente).
+                </p>
+              </div>
+
+              <div className="bg-gray-50 rounded-lg p-3 mb-4 max-h-40 overflow-y-auto">
+                <p className="text-xs text-gray-500 mb-2">Clientes a excluir:</p>
+                {clients
+                  .filter((c) => selectedIds.has(c.id))
+                  .map((c) => (
+                    <div key={c.id} className="flex items-center justify-between text-sm py-1">
+                      <span className="text-gray-800">{c.name || 'Sem nome'}</span>
+                      <span className="text-gray-500 text-xs">{formatPhone(c.phone)}</span>
+                    </div>
+                  ))}
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm text-gray-700 mb-1">
+                  Digite <span className="font-bold text-red-600">EXCLUIR</span> para confirmar:
+                </label>
+                <input
+                  type="text"
+                  value={bulkDeleteConfirm}
+                  onChange={(e) => setBulkDeleteConfirm(e.target.value)}
+                  placeholder="EXCLUIR"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setShowBulkDeleteModal(false); setBulkDeleteConfirm(''); }}
+                  className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleteConfirm !== 'EXCLUIR' || bulkDeleting}
+                  className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {bulkDeleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Excluir permanentemente
                 </button>
               </div>
             </div>

@@ -8,6 +8,7 @@ import {
   Body,
   Query,
   NotFoundException,
+  BadRequestException,
   UseGuards,
 } from '@nestjs/common';
 import { ClientsService } from './clients.service';
@@ -156,6 +157,25 @@ export class ClientsController {
       ...data,
       salonId: user.salonId,
     });
+  }
+
+  /**
+   * POST /clients/bulk-delete
+   * Hard delete em massa — apenas OWNER
+   */
+  @Post('bulk-delete')
+  @Roles('OWNER')
+  async bulkDelete(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: { ids: string[] },
+  ) {
+    if (!body.ids || !Array.isArray(body.ids) || body.ids.length === 0) {
+      throw new BadRequestException('Informe ao menos um ID');
+    }
+    if (body.ids.length > 50) {
+      throw new BadRequestException('Limite de 50 clientes por vez');
+    }
+    return this.clientsService.hardDeleteMany(user.salonId, body.ids);
   }
 
   /**

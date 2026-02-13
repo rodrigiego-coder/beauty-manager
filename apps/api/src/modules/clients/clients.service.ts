@@ -1,7 +1,20 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException } from '@nestjs/common';
 import { eq, and, desc, ilike, or, inArray } from 'drizzle-orm';
 import { DATABASE_CONNECTION } from '../../database/database.module';
-import { Database, clients, commands, commandPayments, Client, NewClient } from '../../database';
+import {
+  Database, clients, commands, commandPayments, Client, NewClient,
+  clientNotesAi, productRecommendationsLog, triageResponses,
+  clientNoShows, clientHairProfiles, clientLoyaltyAccounts,
+  clientBookingRules, appointmentDeposits,
+  clientPackages, clientPackageBalances, clientPackageUsages,
+  clientProductSubscriptions,
+  marketingEvents, abTestAssignments, upsellOffers,
+  cartLinks, productReservations,
+  scheduledMessages, messageLogs, alexisSessions, aiConversations,
+  conversations, appointments, accountsReceivable,
+  loyaltyTransactions, loyaltyRedemptions,
+  appointmentHolds,
+} from '../../database';
 
 export interface FindAllOptions {
   salonId: string;
@@ -318,5 +331,124 @@ export class ClientsService {
       averageTicket,
       totalVisits: closedCommands.length,
     };
+  }
+
+  /**
+   * Hard delete em massa — remove permanentemente clientes e dados relacionados.
+   * Preserva agendamentos e comandas (seta clientId = null).
+   */
+  async hardDeleteMany(salonId: string, clientIds: string[]): Promise<{ deleted: number }> {
+    if (!clientIds.length) return { deleted: 0 };
+    if (clientIds.length > 50) {
+      throw new BadRequestException('Limite de 50 clientes por vez');
+    }
+
+    // Valida que todos os IDs pertencem ao salonId
+    const found = await this.db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(and(eq(clients.salonId, salonId), inArray(clients.id, clientIds)));
+
+    if (found.length !== clientIds.length) {
+      throw new BadRequestException('Um ou mais clientes nao pertencem a este salao');
+    }
+
+    // Executa tudo em uma transação
+    const result = await this.db.transaction(async (tx) => {
+      // 1. Tabelas-folha sem sub-dependencias
+      await tx.delete(clientNotesAi).where(inArray(clientNotesAi.clientId, clientIds));
+      await tx.delete(productRecommendationsLog).where(inArray(productRecommendationsLog.clientId, clientIds));
+      await tx.delete(triageResponses).where(inArray(triageResponses.clientId, clientIds));
+
+      // 2. Perfil e historico do cliente
+      await tx.delete(clientNoShows).where(inArray(clientNoShows.clientId, clientIds));
+      await tx.delete(clientHairProfiles).where(inArray(clientHairProfiles.clientId, clientIds));
+
+      // 3. Fidelidade — sub-tabelas primeiro
+      const loyaltyAccounts = await tx
+        .select({ id: clientLoyaltyAccounts.id })
+        .from(clientLoyaltyAccounts)
+        .where(inArray(clientLoyaltyAccounts.clientId, clientIds));
+      const loyaltyAccountIds = loyaltyAccounts.map(a => a.id);
+      if (loyaltyAccountIds.length > 0) {
+        await tx.delete(loyaltyRedemptions).where(inArray(loyaltyRedemptions.accountId, loyaltyAccountIds));
+        await tx.delete(loyaltyTransactions).where(inArray(loyaltyTransactions.accountId, loyaltyAccountIds));
+      }
+      // Limpa referredById para não quebrar FK circular
+      await tx
+        .update(clientLoyaltyAccounts)
+        .set({ referredById: null })
+        .where(inArray(clientLoyaltyAccounts.referredById, clientIds));
+      await tx.delete(clientLoyaltyAccounts).where(inArray(clientLoyaltyAccounts.clientId, clientIds));
+
+      // 4. Booking rules e deposits
+      await tx.delete(clientBookingRules).where(inArray(clientBookingRules.clientId, clientIds));
+      await tx.delete(appointmentDeposits).where(inArray(appointmentDeposits.clientId, clientIds));
+
+      // 5. Pacotes — sub-tabelas primeiro
+      const pkgs = await tx
+        .select({ id: clientPackages.id })
+        .from(clientPackages)
+        .where(inArray(clientPackages.clientId, clientIds));
+      const pkgIds = pkgs.map(p => p.id);
+      if (pkgIds.length > 0) {
+        await tx.delete(clientPackageUsages).where(inArray(clientPackageUsages.clientPackageId, pkgIds));
+        await tx.delete(clientPackageBalances).where(inArray(clientPackageBalances.clientPackageId, pkgIds));
+      }
+      await tx.delete(clientPackages).where(inArray(clientPackages.clientId, clientIds));
+
+      // 6. Assinaturas de produto
+      await tx.delete(clientProductSubscriptions).where(inArray(clientProductSubscriptions.clientId, clientIds));
+
+      // 7. Marketing e upsell
+      await tx.delete(marketingEvents).where(inArray(marketingEvents.clientId, clientIds));
+      await tx.delete(abTestAssignments).where(inArray(abTestAssignments.clientId, clientIds));
+      await tx.delete(upsellOffers).where(inArray(upsellOffers.clientId, clientIds));
+
+      // 8. Carrinho e reservas
+      await tx.delete(cartLinks).where(inArray(cartLinks.clientId, clientIds));
+      await tx.delete(productReservations).where(inArray(productReservations.clientId, clientIds));
+
+      // 9. Mensagens
+      await tx.delete(scheduledMessages).where(inArray(scheduledMessages.clientId, clientIds));
+      await tx.delete(messageLogs).where(inArray(messageLogs.clientId, clientIds));
+
+      // 10. IA / conversas
+      await tx.delete(alexisSessions).where(inArray(alexisSessions.clientId, clientIds));
+      await tx.delete(aiConversations).where(inArray(aiConversations.clientId, clientIds));
+      await tx.delete(conversations).where(inArray(conversations.clientId, clientIds));
+
+      // 11. Holds de agendamento
+      await tx
+        .update(appointmentHolds)
+        .set({ clientId: null })
+        .where(inArray(appointmentHolds.clientId, clientIds));
+
+      // 12. Preserva agendamentos e comandas (seta clientId = null)
+      await tx
+        .update(appointments)
+        .set({ clientId: null })
+        .where(inArray(appointments.clientId, clientIds));
+
+      await tx
+        .update(commands)
+        .set({ clientId: null })
+        .where(inArray(commands.clientId, clientIds));
+
+      await tx
+        .update(accountsReceivable)
+        .set({ clientId: null })
+        .where(inArray(accountsReceivable.clientId, clientIds));
+
+      // 13. Finalmente, deleta os clientes
+      const deleted = await tx
+        .delete(clients)
+        .where(and(eq(clients.salonId, salonId), inArray(clients.id, clientIds)))
+        .returning({ id: clients.id });
+
+      return deleted.length;
+    });
+
+    return { deleted: result };
   }
 }
