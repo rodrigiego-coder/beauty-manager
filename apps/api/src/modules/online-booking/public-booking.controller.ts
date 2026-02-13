@@ -126,7 +126,7 @@ export class PublicBookingController {
     const salon = await this.findSalonBySlug(salonSlug);
     await this.checkBookingEnabled(salon.id);
 
-    // Busca profissionais ativos que são stylists
+    // Busca profissionais ativos (STYLIST ou isProfessional=true)
     const professionals = await this.db
       .select({
         id: schema.users.id,
@@ -140,8 +140,7 @@ export class PublicBookingController {
           eq(schema.users.active, true),
           or(
             eq(schema.users.role, 'STYLIST'),
-            eq(schema.users.role, 'OWNER'),
-            eq(schema.users.role, 'MANAGER'),
+            eq(schema.users.isProfessional, true),
           ),
         ),
       )
@@ -205,10 +204,14 @@ export class PublicBookingController {
       service = svc;
     }
 
-    // Busca profissionais
+    // Busca profissionais (STYLIST ou isProfessional=true)
     const professionalsConditions = [
       eq(schema.users.salonId, salon.id),
       eq(schema.users.active, true),
+      or(
+        eq(schema.users.role, 'STYLIST'),
+        eq(schema.users.isProfessional, true),
+      ),
     ];
 
     if (professionalId) {
