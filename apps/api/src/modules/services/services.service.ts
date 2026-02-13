@@ -1,5 +1,5 @@
 import { Injectable, Inject, NotFoundException } from '@nestjs/common';
-import { eq, and, ilike, or, desc, inArray } from 'drizzle-orm';
+import { eq, and, ilike, or, asc, inArray } from 'drizzle-orm';
 import { services } from '../../database/schema';
 import type { Service } from '../../database/schema';
 import { DATABASE_CONNECTION } from '../../database/database.module';
@@ -23,13 +23,13 @@ export class ServicesService {
         .select()
         .from(services)
         .where(eq(services.salonId, salonId))
-        .orderBy(desc(services.createdAt));
+        .orderBy(asc(services.name));
     }
     return this.db
       .select()
       .from(services)
       .where(and(eq(services.salonId, salonId), eq(services.active, true)))
-      .orderBy(desc(services.createdAt));
+      .orderBy(asc(services.name));
   }
 
   /**
@@ -52,7 +52,7 @@ export class ServicesService {
       .select()
       .from(services)
       .where(and(...conditions))
-      .orderBy(desc(services.createdAt));
+      .orderBy(asc(services.name));
   }
 
   /**
@@ -205,7 +205,7 @@ export class ServicesService {
           eq(services.active, true),
         ),
       )
-      .orderBy(desc(services.createdAt));
+      .orderBy(asc(services.name));
   }
 
   /**
