@@ -19,6 +19,7 @@ import {
   CommandPayment,
   PaymentMethod,
   PaymentDestination,
+  accountsReceivable,
 } from '../../database';
 import {
   OpenCommandDto,
@@ -1017,6 +1018,92 @@ export class CommandsService {
     }
 
     return updatedCommand;
+  }
+
+  /**
+   * Fecha comanda com pagamento pendente (gera conta a receber)
+   */
+  async closePendingPayment(
+    commandId: string,
+    currentUser: CurrentUser,
+    data: { dueDate?: Date; notes?: string },
+  ): Promise<{ command: Command; accountReceivable: any }> {
+    const command = await this.findById(commandId);
+    if (!command) {
+      throw new NotFoundException('Comanda nao encontrada');
+    }
+
+    if (command.status === 'CLOSED') {
+      throw new BadRequestException('Comanda ja foi fechada');
+    }
+
+    if (command.status === 'CANCELED') {
+      throw new BadRequestException('Comanda foi cancelada');
+    }
+
+    if (command.status === 'PENDING_PAYMENT') {
+      throw new BadRequestException('Comanda ja esta com pagamento pendente');
+    }
+
+    // Calcula valores
+    const payments = await this.getPayments(commandId);
+    const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    const totalNet = parseFloat(command.totalNet || '0');
+    const remainingAmount = totalNet - totalPaid;
+
+    if (remainingAmount <= 0) {
+      throw new BadRequestException('Nao ha valor pendente. Use o fechamento normal.');
+    }
+
+    // Atualiza status da comanda para PENDING_PAYMENT
+    const [updatedCommand] = await this.db
+      .update(commands)
+      .set({
+        status: 'PENDING_PAYMENT',
+        serviceClosedAt: command.serviceClosedAt || new Date(),
+        serviceClosedById: command.serviceClosedById || currentUser.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(commands.id, commandId))
+      .returning();
+
+    // Cria registro em contas a receber
+    const [accountReceivable] = await this.db
+      .insert(accountsReceivable)
+      .values({
+        salonId: command.salonId,
+        clientId: command.clientId || undefined,
+        commandId: command.id,
+        totalAmount: totalNet.toString(),
+        paidAmount: totalPaid.toString(),
+        remainingAmount: remainingAmount.toString(),
+        status: 'OPEN',
+        dueDate: data.dueDate || undefined,
+        notes: data.notes || `Comanda #${command.cardNumber}`,
+        createdById: currentUser.id,
+      })
+      .returning();
+
+    // Registra evento
+    await this.addEvent(commandId, currentUser.id, 'STATUS_CHANGED', {
+      oldStatus: command.status,
+      newStatus: 'PENDING_PAYMENT',
+      totalNet,
+      totalPaid,
+      remainingAmount,
+      accountReceivableId: accountReceivable.id,
+      notes: data.notes,
+    });
+
+    this.logger.log(
+      `Comanda ${commandId} fechada com pagamento pendente: ` +
+      `total=${totalNet}, pago=${totalPaid}, restante=${remainingAmount}`,
+    );
+
+    return {
+      command: updatedCommand,
+      accountReceivable,
+    };
   }
 
   /**
