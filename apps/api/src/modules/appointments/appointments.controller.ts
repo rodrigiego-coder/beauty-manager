@@ -55,6 +55,21 @@ export class AppointmentsController {
   }
 
   /**
+   * GET /appointments/search?q=xxx - Busca global por nome, telefone ou serviço
+   */
+  @Get('search')
+  @Roles('OWNER', 'MANAGER', 'RECEPTIONIST', 'STYLIST')
+  async search(
+    @CurrentUser() user: any,
+    @Query('q') q: string,
+  ) {
+    if (!q || q.trim().length < 2) return [];
+    // STYLIST só busca nos próprios agendamentos
+    const professionalId = user.role === 'STYLIST' ? user.id : undefined;
+    return this.appointmentsService.search(user.salonId, q, professionalId);
+  }
+
+  /**
    * GET /appointments/kpis - KPIs de agendamentos
    */
   @Get('kpis')
